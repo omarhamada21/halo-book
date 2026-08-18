@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login — Halo Book</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<style>
+  :root{
+    --ink:#16233F; --ink-soft:#4A5670; --paper:#E3E9F6;
+    --paper-line:#CBD6ED; --card:#FBFCFE; --pen:#1D3A66;
+    --pen-soft:#DDE3EE; --border:#C2CEE7;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:'Inter',sans-serif; min-height:100vh;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .auth-box{
+    background:var(--card); border:1px solid var(--border);
+    border-radius:12px; max-width:440px; width:100%;
+    padding:36px 32px; box-shadow: 0 4px 20px rgba(22, 35, 63, 0.05);
+  }
+  .eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:var(--pen); margin:0 0 6px; }
+  h1{ font-family:'Source Serif 4',serif; font-weight:600; font-size:26px; margin:0 0 20px; }
+  
+  .tabs{ display:flex; gap:10px; margin-bottom:20px; border-bottom:1px solid var(--border); padding-bottom:12px; }
+  .tab{ cursor:pointer; font-size:13.5px; font-weight:500; color:var(--ink-soft); background:none; border:none; padding:4px 8px; border-radius:4px; }
+  .tab.active{ color:var(--pen); background:var(--pen-soft); font-weight:600; }
+  
+  .form-group{ margin-bottom:16px; }
+  label{ display:block; font-size:13px; font-weight:500; margin-bottom:6px; color:var(--ink); }
+  input{
+    width:100%; padding:10px 12px; border:1px solid var(--border);
+    border-radius:6px; font-size:14px; font-family:'Inter',sans-serif;
+    outline:none; transition: border-color 0.2s;
+  }
+  input:focus{ border-color:var(--pen); box-shadow:0 0 0 2px var(--pen-soft); }
+  
+  .forgot-link{
+    display:flex; justify-content:flex-end; margin-top:-6px; margin-bottom:14px;
+  }
+  .forgot-link a{
+    font-size:12.5px; color:var(--pen); text-decoration:none; font-weight:500; cursor:pointer;
+  }
+  .forgot-link a:hover{ text-decoration:underline; }
+
+  .password-meter-wrap{
+    margin-top:8px;
+    display:none;
+  }
+  .meter-bar{
+    height:5px;
+    background:var(--paper-line);
+    border-radius:3px;
+    overflow:hidden;
+    display:flex;
+  }
+  .meter-fill{
+    height:100%;
+    width:0%;
+    transition: width 0.3s ease, background-color 0.3s ease;
+  }
+  .meter-label{
+    display:flex;
+    justify-content:space-between;
+    font-size:11.5px;
+    font-family:'IBM Plex Mono',monospace;
+    margin-top:4px;
+    color:var(--ink-soft);
+  }
+  .rules-list{
+    list-style:none;
+    padding:0;
+    margin:8px 0 0;
+    font-size:12px;
+    color:var(--ink-soft);
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:4px;
+  }
+  .rules-list li{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    transition: color 0.2s;
+  }
+  .rules-list li.valid{
+    color:#059669;
+    font-weight:500;
+  }
+  .rules-list li.invalid{
+    color:#9B1C1C;
+  }
+  .rule-icon{
+    font-size:11px;
+    width:14px;
+    display:inline-block;
+  }
+
+  button.submit-btn{
+    width:100%; background:var(--ink); color:#fff; border:none;
+    border-radius:6px; padding:12px; font-size:14px; font-weight:500;
+    cursor:pointer; margin-top:10px; transition: background 0.2s;
+  }
+  button.submit-btn:hover{ background:var(--pen); }
+  button.submit-btn:disabled{ background:#B7B3A6; cursor:not-allowed; }
+
+  .divider{
+    display:flex; align-items:center; text-align:center;
+    margin:20px 0; color:var(--ink-soft); font-size:12px; font-family:'IBM Plex Mono',monospace;
+  }
+  .divider::before, .divider::after{ content:''; flex:1; border-bottom:1px solid var(--border); }
+  .divider:not(:empty)::before{ margin-right:12px; }
+  .divider:not(:empty)::after{ margin-left:12px; }
+
+  .google-btn-wrap{
+    display:flex; justify-content:center; width:100%; margin-top:6px;
+  }
+
+  .msg{ font-size:13px; margin-top:14px; padding:10px 12px; border-radius:6px; display:none; line-height:1.4; }
+  .msg.error{ background:#FDE8E8; color:#9B1C1C; border:1px solid #F8B4B4; display:block; }
+  .msg.success{ background:#DEF7EC; color:#03543F; border:1px solid #BCF0DA; display:block; }
+</style>
+</head>
+<body>
+
+<div class="auth-box">
+  <div class="eyebrow">Halo Book</div>
+  <h1 id="auth-title">Sign In to Dashboard</h1>
+
+  <div class="tabs" id="tab-container">
+    <button class="tab active" id="tab-login" onclick="switchMode('login')">Sign In</button>
+    <button class="tab" id="tab-register" onclick="switchMode('register')">Create Account</button>
+  </div>
+
+  <form id="auth-form">
+    <div class="form-group" id="name-group" style="display:none;">
+      <label for="name">Full Name / Academy Name</label>
+      <input type="text" id="name" placeholder="e.g. Mr. Ahmed Hassan">
+    </div>
+
+    <div class="form-group">
+      <label for="email">Email Address</label>
+      <input type="email" id="email" placeholder="teacher@school.com" required>
+    </div>
+
+    <div class="form-group" id="password-group">
+      <label for="password">Password</label>
+      <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password">
+      
+      <div class="password-meter-wrap" id="reg-password-meter">
+        <div class="meter-bar">
+          <div class="meter-fill" id="reg-meter-fill"></div>
+        </div>
+        <div class="meter-label">
+          <span>Strength: <b id="reg-strength-text">—</b></span>
+        </div>
+        <ul class="rules-list" id="reg-rules-list">
+          <li id="rule-len"><span class="rule-icon">○</span> Min 8 chars</li>
+          <li id="rule-num"><span class="rule-icon">○</span> 1+ Number (0-9)</li>
+          <li id="rule-upper"><span class="rule-icon">○</span> 1+ Uppercase (A-Z)</li>
+          <li id="rule-lower"><span class="rule-icon">○</span> 1+ Lowercase (a-z)</li>
+          <li id="rule-spec"><span class="rule-icon">○</span> 1+ Symbol (!@#$)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="forgot-link" id="forgot-link-wrap">
+      <a onclick="switchMode('forgot')">Forgot password?</a>
+    </div>
+
+    <button type="submit" class="submit-btn" id="submit-btn">Sign In</button>
+
+    <div id="google-section">
+      <div class="divider">OR</div>
+      <div class="google-btn-wrap">
+        <div id="google-btn"></div>
+      </div>
+    </div>
+
+    <div class="msg" id="auth-msg"></div>
+  </form>
+
+  <form id="forgot-form" style="display:none;">
+    <div class="form-group">
+      <label for="forgot-email">Enter your registered email address</label>
+      <input type="email" id="forgot-email" placeholder="teacher@school.com" required>
+    </div>
+    <button type="submit" class="submit-btn" id="forgot-submit-btn">Send Reset Code</button>
+    <div class="msg" id="forgot-msg"></div>
+    <div style="text-align:center; margin-top:16px;">
+      <a style="font-size:12.5px; color:var(--pen); cursor:pointer;" onclick="switchMode('login')">← Back to Sign In</a>
+    </div>
+  </form>
+
+  <form id="reset-form" style="display:none;">
+    <div class="msg success" id="reset-banner-msg" style="display:block; margin-bottom:14px; margin-top:0;">
+      ✉️ A 6-digit verification code has been dispatched. Enter it below with your new password.
+    </div>
+    <div class="form-group">
+      <label for="reset-code">6-Digit Verification Code</label>
+      <input type="text" id="reset-code" placeholder="123456" maxlength="6" required>
+    </div>
+    <div class="form-group">
+      <label for="reset-password">New Password</label>
+      <input type="password" id="reset-password" placeholder="••••••••" required>
+      
+      <div class="password-meter-wrap" id="reset-password-meter" style="display:block;">
+        <div class="meter-bar">
+          <div class="meter-fill" id="reset-meter-fill"></div>
+        </div>
+        <div class="meter-label">
+          <span>Strength: <b id="reset-strength-text">—</b></span>
+        </div>
+        <ul class="rules-list" id="reset-rules-list">
+          <li id="reset-rule-len"><span class="rule-icon">○</span> Min 8 chars</li>
+          <li id="reset-rule-num"><span class="rule-icon">○</span> 1+ Number</li>
+          <li id="reset-rule-upper"><span class="rule-icon">○</span> 1+ Uppercase</li>
+          <li id="reset-rule-lower"><span class="rule-icon">○</span> 1+ Lowercase</li>
+          <li id="reset-rule-spec"><span class="rule-icon">○</span> 1+ Symbol</li>
+        </ul>
+      </div>
+    </div>
+    <button type="submit" class="submit-btn" id="reset-submit-btn">Reset Password</button>
+    <div class="msg" id="reset-msg"></div>
+    <div style="text-align:center; margin-top:16px;">
+      <a style="font-size:12.5px; color:var(--pen); cursor:pointer;" onclick="switchMode('login')">← Back to Sign In</a>
+    </div>
+  </form>
+</div>
+
+<script>
+let mode = 'login';
+let resetTargetEmail = '';
+
+const authForm = document.getElementById('auth-form');
+const forgotForm = document.getElementById('forgot-form');
+const resetForm = document.getElementById('reset-form');
+
+const nameGroup = document.getElementById('name-group');
+const authTitle = document.getElementById('auth-title');
+const submitBtn = document.getElementById('submit-btn');
+const authMsg = document.getElementById('auth-msg');
+const forgotMsg = document.getElementById('forgot-msg');
+const resetMsg = document.getElementById('reset-msg');
+const forgotSubmitBtn = document.getElementById('forgot-submit-btn');
+const resetSubmitBtn = document.getElementById('reset-submit-btn');
+const tabContainer = document.getElementById('tab-container');
+const forgotLinkWrap = document.getElementById('forgot-link-wrap');
+const googleSection = document.getElementById('google-section');
+
+const passwordInput = document.getElementById('password');
+const regPasswordMeter = document.getElementById('reg-password-meter');
+const resetPasswordInput = document.getElementById('reset-password');
+
+function evaluatePassword(pwd, prefix = 'rule') {
+  const rules = {
+    len: pwd.length >= 8,
+    num: /[0-9]/.test(pwd),
+    upper: /[A-Z]/.test(pwd),
+    lower: /[a-z]/.test(pwd),
+    spec: /[^A-Za-z0-9]/.test(pwd)
+  };
+
+  const idPrefix = prefix === 'rule' ? 'rule-' : 'reset-rule-';
+  let passedCount = 0;
+
+  for (const [key, passed] of Object.entries(rules)) {
+    const el = document.getElementById(`${idPrefix}${key}`);
+    if (el) {
+      if (passed) {
+        el.className = 'valid';
+        el.querySelector('.rule-icon').textContent = '✓';
+        passedCount++;
+      } else {
+        el.className = pwd.length > 0 ? 'invalid' : '';
+        el.querySelector('.rule-icon').textContent = pwd.length > 0 ? '✕' : '○';
+      }
+    }
+  }
+
+  const fillEl = document.getElementById(prefix === 'rule' ? 'reg-meter-fill' : 'reset-meter-fill');
+  const textEl = document.getElementById(prefix === 'rule' ? 'reg-strength-text' : 'reset-strength-text');
+
+  let strengthPct = (passedCount / 5) * 100;
+  fillEl.style.width = `${strengthPct}%`;
+
+  if (passedCount <= 2) {
+    fillEl.style.backgroundColor = '#DC2626';
+    textEl.textContent = pwd.length ? 'Weak' : '—';
+    textEl.style.color = '#DC2626';
+  } else if (passedCount === 3 || passedCount === 4) {
+    fillEl.style.backgroundColor = '#D97706';
+    textEl.textContent = 'Medium';
+    textEl.style.color = '#D97706';
+  } else {
+    fillEl.style.backgroundColor = '#059669';
+    textEl.textContent = 'Strong';
+    textEl.style.color = '#059669';
+  }
+
+  return passedCount === 5;
+}
+
+passwordInput.addEventListener('input', (e) => {
+  if (mode === 'register') {
+    evaluatePassword(e.target.value, 'rule');
+  }
+});
+
+resetPasswordInput.addEventListener('input', (e) => {
+  evaluatePassword(e.target.value, 'reset');
+});
+
+function switchMode(newMode) {
+  mode = newMode;
+  [authMsg, forgotMsg, resetMsg].forEach(el => {
+    el.className = 'msg';
+    el.style.display = 'none';
+  });
+
+  authForm.style.display = (mode === 'login' || mode === 'register') ? 'block' : 'none';
+  forgotForm.style.display = (mode === 'forgot') ? 'block' : 'none';
+  resetForm.style.display = (mode === 'reset') ? 'block' : 'none';
+  tabContainer.style.display = (mode === 'login' || mode === 'register') ? 'flex' : 'none';
+
+  if (mode === 'register') {
+    document.getElementById('tab-register').classList.add('active');
+    document.getElementById('tab-login').classList.remove('active');
+    nameGroup.style.display = 'block';
+    forgotLinkWrap.style.display = 'none';
+    googleSection.style.display = 'block';
+    regPasswordMeter.style.display = 'block';
+    authTitle.textContent = 'Create Teacher Account';
+    submitBtn.textContent = 'Create Account';
+    evaluatePassword(passwordInput.value, 'rule');
+  } else if (mode === 'login') {
+    document.getElementById('tab-login').classList.add('active');
+    document.getElementById('tab-register').classList.remove('active');
+    nameGroup.style.display = 'none';
+    forgotLinkWrap.style.display = 'flex';
+    googleSection.style.display = 'block';
+    regPasswordMeter.style.display = 'none';
+    authTitle.textContent = 'Sign In to Dashboard';
+    submitBtn.textContent = 'Sign In';
+  } else if (mode === 'forgot') {
+    authTitle.textContent = 'Reset Password';
+  } else if (mode === 'reset') {
+    authTitle.textContent = 'Set New Password';
+  }
+}
+
+window.onload = async () => {
+  try {
+    const res = await fetch('/api/auth/config');
+    const { googleClientId } = await res.json();
+
+    if (!googleClientId) return;
+
+    if (window.google) {
+      google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: handleGoogleCredentialResponse,
+        auto_select: false,
+        cancel_on_tap_outside: true
+      });
+
+      google.accounts.id.renderButton(
+        document.getElementById('google-btn'),
+        { 
+          type: 'standard',
+          theme: 'outline', 
+          size: 'large', 
+          width: 370, 
+          text: 'continue_with',
+          shape: 'rectangular'
+        }
+      );
+    }
+  } catch (err) {
+    console.error('Google Auth configuration load error:', err);
+  }
+};
+
+async function handleGoogleCredentialResponse(response) {
+  authMsg.className = 'msg';
+  authMsg.style.display = 'none';
+
+  if (!response || !response.credential) {
+    authMsg.className = 'msg error';
+    authMsg.textContent = 'Google did not return a valid credential token.';
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: response.credential })
+    });
+
+    const data = await res.json();
+
+    if (data.success) {
+      authMsg.className = 'msg success';
+      authMsg.textContent = 'Google sign-in successful! Redirecting...';
+      window.location.replace('/');
+    } else {
+      authMsg.className = 'msg error';
+      authMsg.textContent = data.error || 'Google Sign-In failed on server.';
+    }
+  } catch (err) {
+    authMsg.className = 'msg error';
+    authMsg.textContent = 'Connection error during Google authentication.';
+  }
+}
+
+authForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  authMsg.className = 'msg';
+  authMsg.style.display = 'none';
+
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const name = document.getElementById('name').value.trim();
+
+  if (mode === 'register' && !evaluatePassword(password, 'rule')) {
+    authMsg.className = 'msg error';
+    authMsg.textContent = 'Please satisfy all 5 password security requirements.';
+    return;
+  }
+
+  submitBtn.disabled = true;
+  const endpoint = mode === 'register' ? '/api/auth/register' : '/api/auth/login';
+  const payload = mode === 'register' ? { name, email, password } : { email, password };
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      authMsg.className = 'msg success';
+      authMsg.textContent = mode === 'register' ? 'Account created! Redirecting...' : 'Success! Logging in...';
+      setTimeout(() => { window.location.replace('/'); }, 800);
+    } else {
+      authMsg.className = 'msg error';
+      authMsg.textContent = data.error || 'Authentication failed.';
+      submitBtn.disabled = false;
+    }
+  } catch (err) {
+    authMsg.className = 'msg error';
+    authMsg.textContent = 'Connection error. Please try again.';
+    submitBtn.disabled = false;
+  }
+});
+
+forgotForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  forgotMsg.className = 'msg';
+  forgotMsg.style.display = 'none';
+  forgotSubmitBtn.disabled = true;
+  forgotSubmitBtn.textContent = 'Sending email...';
+
+  const email = document.getElementById('forgot-email').value.trim();
+  resetTargetEmail = email;
+
+  try {
+    const res = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      forgotMsg.className = 'msg success';
+      forgotMsg.textContent = '✅ Verification code sent! Check your email inbox.';
+      setTimeout(() => {
+        switchMode('reset');
+        forgotSubmitBtn.disabled = false;
+        forgotSubmitBtn.textContent = 'Send Reset Code';
+      }, 900);
+    } else {
+      forgotMsg.className = 'msg error';
+      forgotMsg.textContent = data.error || 'Failed to send reset code.';
+      forgotSubmitBtn.disabled = false;
+      forgotSubmitBtn.textContent = 'Send Reset Code';
+    }
+  } catch (err) {
+    forgotMsg.className = 'msg error';
+    forgotMsg.textContent = 'Connection error. Please try again.';
+    forgotSubmitBtn.disabled = false;
+    forgotSubmitBtn.textContent = 'Send Reset Code';
+  }
+});
+
+resetForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  resetMsg.className = 'msg';
+  resetMsg.style.display = 'none';
+
+  const code = document.getElementById('reset-code').value.trim();
+  const newPassword = document.getElementById('reset-password').value;
+
+  if (!evaluatePassword(newPassword, 'reset')) {
+    resetMsg.className = 'msg error';
+    resetMsg.textContent = 'New password must satisfy all 5 security requirements.';
+    return;
+  }
+
+  resetSubmitBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: resetTargetEmail, code, newPassword })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      resetMsg.className = 'msg success';
+      resetMsg.textContent = '✅ Password updated! Redirecting to sign in...';
+      setTimeout(() => {
+        switchMode('login');
+        resetSubmitBtn.disabled = false;
+      }, 1200);
+    } else {
+      resetMsg.className = 'msg error';
+      resetMsg.textContent = data.error || 'Invalid verification code.';
+      resetSubmitBtn.disabled = false;
+    }
+  } catch (err) {
+    resetMsg.className = 'msg error';
+    resetMsg.textContent = 'Connection error. Please try again.';
+    resetSubmitBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
