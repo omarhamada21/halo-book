@@ -119,10 +119,10 @@
   .divider:not(:empty)::after{ margin-left:12px; }
 
   .google-btn-wrap{
-    display:flex; justify-content:center; width:100%; margin-top:6px;
+    display:flex; justify-content:center; width:100%; margin-top:6px; min-height:44px;
   }
 
-  .msg{ font-size:13px; margin-top:14px; padding:10px 12px; border-radius:6px; display:none; line-height:1.4; }
+  .msg{ font-size:13px; margin-top:14px; padding:10px 12px; border-radius:6px; display:none; line-height:1.4; word-break:break-word; }
   .msg.error{ background:#FDE8E8; color:#9B1C1C; border:1px solid #F8B4B4; display:block; }
   .msg.success{ background:#DEF7EC; color:#03543F; border:1px solid #BCF0DA; display:block; }
 </style>
@@ -355,41 +355,11 @@ function switchMode(newMode) {
   }
 }
 
-window.onload = async () => {
-  try {
-    const res = await fetch('/api/auth/config');
-    const { googleClientId } = await res.json();
-
-    if (!googleClientId) return;
-
-    if (window.google) {
-      google.accounts.id.initialize({
-        client_id: googleClientId,
-        callback: handleGoogleCredentialResponse,
-        auto_select: false,
-        cancel_on_tap_outside: true
-      });
-
-      google.accounts.id.renderButton(
-        document.getElementById('google-btn'),
-        { 
-          type: 'standard',
-          theme: 'outline', 
-          size: 'large', 
-          width: 370, 
-          text: 'continue_with',
-          shape: 'rectangular'
-        }
-      );
-    }
-  } catch (err) {
-    console.error('Google Auth configuration load error:', err);
-  }
-};
-
-async function handleGoogleCredentialResponse(response) {
-  authMsg.className = 'msg';
-  authMsg.style.display = 'none';
+// Global Google handler
+window.handleGoogleCredentialResponse = async function(response) {
+  authMsg.className = 'msg success';
+  authMsg.style.display = 'block';
+  authMsg.textContent = 'Verifying with server...';
 
   if (!response || !response.credential) {
     authMsg.className = 'msg error';
@@ -416,9 +386,45 @@ async function handleGoogleCredentialResponse(response) {
     }
   } catch (err) {
     authMsg.className = 'msg error';
-    authMsg.textContent = 'Connection error during Google authentication.';
+    authMsg.textContent = 'Network connection error during Google authentication.';
   }
-}
+};
+
+window.onload = async () => {
+  try {
+    const res = await fetch('/api/auth/config');
+    const { googleClientId } = await res.json();
+
+    if (!googleClientId) {
+      authMsg.className = 'msg error';
+      authMsg.textContent = '⚠️ Warning: GOOGLE_CLIENT_ID is missing in Render Environment Variables.';
+      return;
+    }
+
+    if (window.google && window.google.accounts) {
+      google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: window.handleGoogleCredentialResponse,
+        auto_select: false,
+        cancel_on_tap_outside: true
+      });
+
+      google.accounts.id.renderButton(
+        document.getElementById('google-btn'),
+        { 
+          type: 'standard',
+          theme: 'outline', 
+          size: 'large', 
+          width: 370, 
+          text: 'continue_with',
+          shape: 'rectangular'
+        }
+      );
+    }
+  } catch (err) {
+    console.error('Google Auth configuration load error:', err);
+  }
+};
 
 authForm.addEventListener('submit', async (e) => {
   e.preventDefault();
