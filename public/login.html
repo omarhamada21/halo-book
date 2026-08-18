@@ -355,7 +355,7 @@ function switchMode(newMode) {
   }
 }
 
-// Global Google handler
+// Global Google Handler
 window.handleGoogleCredentialResponse = async function(response) {
   authMsg.className = 'msg success';
   authMsg.style.display = 'block';
@@ -405,8 +405,10 @@ window.onload = async () => {
       google.accounts.id.initialize({
         client_id: googleClientId,
         callback: window.handleGoogleCredentialResponse,
+        ux_mode: 'popup',
         auto_select: false,
-        cancel_on_tap_outside: true
+        cancel_on_tap_outside: true,
+        itp_support: true
       });
 
       google.accounts.id.renderButton(
@@ -489,12 +491,12 @@ forgotForm.addEventListener('submit', async (e) => {
 
     if (data.success) {
       forgotMsg.className = 'msg success';
-      forgotMsg.textContent = '✅ Verification code sent! Check your email inbox.';
+      forgotMsg.textContent = data.message || '✅ Verification code sent! Check your email.';
       setTimeout(() => {
         switchMode('reset');
         forgotSubmitBtn.disabled = false;
         forgotSubmitBtn.textContent = 'Send Reset Code';
-      }, 900);
+      }, 800);
     } else {
       forgotMsg.className = 'msg error';
       forgotMsg.textContent = data.error || 'Failed to send reset code.';

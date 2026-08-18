@@ -62,19 +62,23 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Setup Nodemailer with Gmail SMTP
+// Setup Nodemailer with Gmail SMTP + timeout handling
 const emailTransporter = nodemailer.createTransport({
+  service: 'gmail',
   host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
+  port: 587,
+  secure: false,
   auth: {
     user: process.env.SMTP_EMAIL || '',
     pass: (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '')
-  }
+  },
+  connectionTimeout: 8000,
+  greetingTimeout: 8000,
+  socketTimeout: 10000
 });
 
 if (process.env.SMTP_EMAIL && process.env.SMTP_PASSWORD) {
-  emailTransporter.verify((error, success) => {
+  emailTransporter.verify((error) => {
     if (error) {
       console.error('❌ Email Server Connection Error:', error.message);
     } else {
@@ -185,7 +189,7 @@ app.get('/api/auth/config', (req, res) => {
   res.json({ googleClientId: GOOGLE_CLIENT_ID });
 });
 
-// Register Endpoint with Strict Password Rules
+// Register Endpoint
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -283,7 +287,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Google Auth Endpoint (with dummy password to satisfy NOT NULL constraints)
+// Google Auth Endpoint (with placeholder password to satisfy NOT NULL constraints)
 app.post('/api/auth/google', async (req, res) => {
   try {
     const { credential } = req.body;
@@ -376,10 +380,9 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
   res.json({ success: true, users });
 });
 
-// Update Status (Root protected)
 app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
-  const { status } = db.prepare ? req.body : {};
+  const { status } = req.body;
   if (!['approved', 'pending', 'rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status.' });
 
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
@@ -393,7 +396,6 @@ app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, r
   res.json({ success: true, message: `Account updated to ${status}.` });
 });
 
-// Promote / Demote Role (Root protected)
 app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
@@ -417,7 +419,6 @@ app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, (req, res
   res.json({ success: true, message: `User role changed to ${role}.` });
 });
 
-// Delete User Account (Root protected)
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
 
@@ -436,7 +437,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) =
   res.json({ success: true, message: 'Account deleted successfully.' });
 });
 
-// Password Reset Endpoints
+// Password Reset Endpoint with Non-Freezing Timeout Safety
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -456,10 +457,14 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       expiresAt
     );
 
+    console.log(`\n========================================`);
+    console.log(`🔑 PASSWORD RESET CODE for [${cleanEmail}]: ${resetCode}`);
+    console.log(`========================================\n`);
+
     let emailSent = false;
     if (process.env.SMTP_EMAIL && process.env.SMTP_PASSWORD) {
       try {
-        await emailTransporter.sendMail({
+        const sendPromise = emailTransporter.sendMail({
           from: `"Halo Book" <${process.env.SMTP_EMAIL}>`,
           to: cleanEmail,
           subject: 'Halo Book — Your Password Reset Code',
@@ -471,22 +476,32 @@ app.post('/api/auth/forgot-password', async (req, res) => {
               <div style="background: #DDE3EE; color: #16233F; font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; padding: 14px; border-radius: 6px; margin: 20px 0;">
                 ${resetCode}
               </div>
-              <p style="color: #888; font-size: 12px;">Expires in 15 minutes.</p>
+              <p style="color: #888; font-size: 12px; margin-bottom: 0;">This code expires in 15 minutes.</p>
             </div>
           `
         });
+
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('SMTP timeout')), 6000)
+        );
+
+        await Promise.race([sendPromise, timeoutPromise]);
         emailSent = true;
+        console.log(`✉️ Email successfully dispatched to ${cleanEmail}`);
       } catch (mailErr) {
-        console.error('SMTP error:', mailErr.message);
+        console.error('⚠️ Nodemailer delivery issue:', mailErr.message);
       }
     }
 
     return res.json({ 
       success: true, 
       emailSent,
-      message: emailSent ? 'Verification code sent to your email!' : 'Reset code generated.'
+      message: emailSent 
+        ? 'Verification code sent to your email inbox!' 
+        : 'Reset code generated. Please enter your code.'
     });
   } catch (error) {
+    console.error('Forgot password error:', error);
     return res.status(500).json({ error: error.message || 'Failed to request reset.' });
   }
 });
@@ -762,7 +777,7 @@ Respond ONLY with valid JSON matching this schema:
   }
 );
 
-// Catch-all fallback
+// Fallback route
 app.use((req, res) => {
   if (req.accepts('html')) {
     res.redirect('/login.html');
