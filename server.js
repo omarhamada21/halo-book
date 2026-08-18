@@ -29,11 +29,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.set('trust proxy', 1);
+
 const port = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'halo-book-secret-key-2026-eduplanet';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 
-// Root & Admin Emails Configuration
 const ROOT_EMAIL = (process.env.ROOT_EMAIL || 'ohamada2117@gmail.com').toLowerCase().trim();
 const ADMIN_EMAILS = (process.env.ADMIN_EMAIL || '')
   .toLowerCase()
@@ -49,7 +51,6 @@ function isAdminEmail(email) {
   return email && (isRootUser(email) || ADMIN_EMAILS.includes(email.toLowerCase().trim()));
 }
 
-// Password Strength Validator
 function isStrongPassword(password) {
   if (!password || password.length < 8) return false;
   const hasNumber = /[0-9]/.test(password);
@@ -59,7 +60,6 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Setup Nodemailer with Gmail SMTP
 const emailTransporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 465,
@@ -80,7 +80,6 @@ if (process.env.SMTP_EMAIL && process.env.SMTP_PASSWORD) {
   });
 }
 
-// Initialize SQLite database
 const db = new Database('halobook.db');
 db.pragma('journal_mode = WAL');
 
@@ -147,7 +146,6 @@ function authenticateToken(req, res, next) {
       return res.redirect('/login.html');
     }
 
-    // Auto-promote root and configured admins
     if (isRootUser(dbUser.email) && dbUser.role !== 'root') {
       db.prepare("UPDATE users SET role = 'root', status = 'approved' WHERE id = ?").run(dbUser.id);
       dbUser.role = 'root';
@@ -221,7 +219,14 @@ app.post('/api/auth/register', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.cookie('halo_token', token, { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 7 * 24 * 60 * 60 * 1000 });
+    res.cookie('halo_token', token, { 
+      httpOnly: true, 
+      secure: isProduction,
+      sameSite: 'lax', 
+      path: '/', 
+      maxAge: 7 * 24 * 60 * 60 * 1000 
+    });
+
     return res.json({ 
       success: true, 
       user: { name: name.trim(), email: cleanEmail, status: initialStatus, role: initialRole }
@@ -260,7 +265,14 @@ app.post('/api/auth/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.cookie('halo_token', token, { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 7 * 24 * 60 * 60 * 1000 });
+    res.cookie('halo_token', token, { 
+      httpOnly: true, 
+      secure: isProduction,
+      sameSite: 'lax', 
+      path: '/', 
+      maxAge: 7 * 24 * 60 * 60 * 1000 
+    });
+
     return res.json({ success: true, user: { name: user.name, email: user.email, status: user.status, role: user.role } });
   } catch (error) {
     return res.status(500).json({ error: error.message || 'Server error during login.' });
@@ -286,6 +298,7 @@ app.post('/api/auth/google', async (req, res) => {
       );
       payload = JSON.parse(jsonPayload);
     } catch (parseErr) {
+      console.error('Failed to parse Google token:', parseErr);
       return res.status(400).json({ error: 'Malformed Google credential token.' });
     }
 
@@ -336,18 +349,20 @@ app.post('/api/auth/google', async (req, res) => {
 
     res.cookie('halo_token', token, { 
       httpOnly: true, 
+      secure: isProduction,
       sameSite: 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000 
     });
 
-    console.log(`✅ Google Sign-In: ${email} (${user.role})`);
+    console.log(`✅ Google Sign-In Successful: ${email} (${user.role})`);
     return res.json({ 
       success: true, 
       user: { name: user.name, email: user.email, status: user.status, role: user.role } 
     });
   } catch (error) {
-    return res.status(500).json({ error: 'Google sign-in processing failed.' });
+    console.error('Google Auth Route Error:', error);
+    return res.status(500).json({ error: error.message || 'Google sign-in processing failed.' });
   }
 });
 
@@ -357,7 +372,6 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
   res.json({ success: true, users });
 });
 
-// Update Status (Root protected)
 app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -374,7 +388,6 @@ app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, r
   res.json({ success: true, message: `Account updated to ${status}.` });
 });
 
-// Promote / Demote Role (Root protected)
 app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
@@ -398,7 +411,6 @@ app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, (req, res
   res.json({ success: true, message: `User role changed to ${role}.` });
 });
 
-// Delete User Account (Root protected)
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
 
@@ -436,8 +448,6 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       resetCode,
       expiresAt
     );
-
-    console.log(`\n🔑 PASSWORD RESET CODE for [${cleanEmail}]: ${resetCode}\n`);
 
     let emailSent = false;
     if (process.env.SMTP_EMAIL && process.env.SMTP_PASSWORD) {
@@ -513,19 +523,25 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true, message: 'Logged out successfully.' });
 });
 
+// Static files and Page Routes
+const publicDir = path.resolve(__dirname, 'public');
+app.use(express.static(publicDir));
+
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(publicDir, 'login.html'));
+});
+
 app.get('/login.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+  res.sendFile(path.join(publicDir, 'login.html'));
 });
 
 app.get('/', authenticateToken, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(publicDir, 'index.html'));
 });
 
 app.get('/index.html', authenticateToken, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(publicDir, 'index.html'));
 });
-
-app.use(express.static(path.join(__dirname, 'public')));
 
 function isImage(file) {
   if (!file) return false;
@@ -739,6 +755,15 @@ Respond ONLY with valid JSON matching this schema:
   }
 );
 
+// Catch-all route
+app.use((req, res) => {
+  if (req.accepts('html')) {
+    res.redirect('/login.html');
+  } else {
+    res.status(404).json({ error: 'Not found' });
+  }
+});
+
 app.listen(port, () => {
-  console.log(`Halo Book Server running at http://localhost:${port}`);
+  console.log(`Halo Book Server running on port ${port}`);
 });
