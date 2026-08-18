@@ -1,0 +1,5 @@
+node_modules/
+.env
+halobook.db
+halobook.db-wal
+halobook.db-shm
