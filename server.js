@@ -36,6 +36,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'halo-book-secret-key-2026-eduplane
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 
+// Root & Admin Emails Configuration
 const ROOT_EMAIL = (process.env.ROOT_EMAIL || 'ohamada2117@gmail.com').toLowerCase().trim();
 const ADMIN_EMAILS = (process.env.ADMIN_EMAIL || '')
   .toLowerCase()
@@ -51,6 +52,7 @@ function isAdminEmail(email) {
   return email && (isRootUser(email) || ADMIN_EMAILS.includes(email.toLowerCase().trim()));
 }
 
+// Password Strength Validator: Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 symbol
 function isStrongPassword(password) {
   if (!password || password.length < 8) return false;
   const hasNumber = /[0-9]/.test(password);
@@ -60,6 +62,7 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
+// Setup Nodemailer with Gmail SMTP
 const emailTransporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 465,
@@ -80,6 +83,7 @@ if (process.env.SMTP_EMAIL && process.env.SMTP_PASSWORD) {
   });
 }
 
+// Initialize SQLite database
 const db = new Database('halobook.db');
 db.pragma('journal_mode = WAL');
 
@@ -181,7 +185,7 @@ app.get('/api/auth/config', (req, res) => {
   res.json({ googleClientId: GOOGLE_CLIENT_ID });
 });
 
-// Register Endpoint
+// Register Endpoint with Strict Password Rules
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -279,7 +283,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Google Auth Endpoint
+// Google Auth Endpoint (with dummy password to satisfy NOT NULL constraints)
 app.post('/api/auth/google', async (req, res) => {
   try {
     const { credential } = req.body;
@@ -324,8 +328,8 @@ app.post('/api/auth/google', async (req, res) => {
         initialStatus = 'approved';
       }
 
-      const insert = db.prepare('INSERT INTO users (name, email, google_id, status, role) VALUES (?, ?, ?, ?, ?)');
-      const info = insert.run(name, email, googleId, initialStatus, initialRole);
+      const insert = db.prepare('INSERT INTO users (name, email, password, google_id, status, role) VALUES (?, ?, ?, ?, ?, ?)');
+      const info = insert.run(name, email, 'GOOGLE_AUTH_ACCOUNT', googleId, initialStatus, initialRole);
       user = { id: info.lastInsertRowid, name, email, status: initialStatus, role: initialRole };
     } else {
       if (isRootUser(email) && user.role !== 'root') {
@@ -372,9 +376,10 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
   res.json({ success: true, users });
 });
 
+// Update Status (Root protected)
 app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status } = db.prepare ? req.body : {};
   if (!['approved', 'pending', 'rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status.' });
 
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
@@ -388,6 +393,7 @@ app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, r
   res.json({ success: true, message: `Account updated to ${status}.` });
 });
 
+// Promote / Demote Role (Root protected)
 app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
@@ -411,6 +417,7 @@ app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, (req, res
   res.json({ success: true, message: `User role changed to ${role}.` });
 });
 
+// Delete User Account (Root protected)
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
 
@@ -755,7 +762,7 @@ Respond ONLY with valid JSON matching this schema:
   }
 );
 
-// Catch-all route
+// Catch-all fallback
 app.use((req, res) => {
   if (req.accepts('html')) {
     res.redirect('/login.html');
