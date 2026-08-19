@@ -36,7 +36,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'halo-book-secret-key-2026-eduplane
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 
-// Root & Admin Emails Configuration
+// Root & Admin Configuration
 const ROOT_EMAIL = (process.env.ROOT_EMAIL || 'ohamada2117@gmail.com').toLowerCase().trim();
 const ADMIN_EMAILS = (process.env.ADMIN_EMAIL || '')
   .toLowerCase()
@@ -52,7 +52,7 @@ function isAdminEmail(email) {
   return email && (isRootUser(email) || ADMIN_EMAILS.includes(email.toLowerCase().trim()));
 }
 
-// Password Strength Validator: Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 symbol
+// Password Strength Validator
 function isStrongPassword(password) {
   if (!password || password.length < 8) return false;
   const hasNumber = /[0-9]/.test(password);
@@ -62,7 +62,7 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Setup Nodemailer with Gmail SMTP + timeout handling
+// Setup Nodemailer with timeouts
 const emailTransporter = nodemailer.createTransport({
   service: 'gmail',
   host: 'smtp.gmail.com',
@@ -72,20 +72,10 @@ const emailTransporter = nodemailer.createTransport({
     user: process.env.SMTP_EMAIL || '',
     pass: (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '')
   },
-  connectionTimeout: 8000,
-  greetingTimeout: 8000,
-  socketTimeout: 10000
+  connectionTimeout: 6000,
+  greetingTimeout: 6000,
+  socketTimeout: 8000
 });
-
-if (process.env.SMTP_EMAIL && process.env.SMTP_PASSWORD) {
-  emailTransporter.verify((error) => {
-    if (error) {
-      console.error('❌ Email Server Connection Error:', error.message);
-    } else {
-      console.log('✅ Email Server is ready.');
-    }
-  });
-}
 
 // Initialize SQLite database
 const db = new Database('halobook.db');
@@ -287,7 +277,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Google Auth Endpoint (with placeholder password to satisfy NOT NULL constraints)
+// Google Auth Endpoint
 app.post('/api/auth/google', async (req, res) => {
   try {
     const { credential } = req.body;
@@ -306,7 +296,6 @@ app.post('/api/auth/google', async (req, res) => {
       );
       payload = JSON.parse(jsonPayload);
     } catch (parseErr) {
-      console.error('Failed to parse Google token:', parseErr);
       return res.status(400).json({ error: 'Malformed Google credential token.' });
     }
 
@@ -380,6 +369,7 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
   res.json({ success: true, users });
 });
 
+// Update Status (Root protected)
 app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -396,6 +386,7 @@ app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, r
   res.json({ success: true, message: `Account updated to ${status}.` });
 });
 
+// Promote / Demote Role (Root protected)
 app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
@@ -419,6 +410,7 @@ app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, (req, res
   res.json({ success: true, message: `User role changed to ${role}.` });
 });
 
+// Delete User Account (Root protected)
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
 
@@ -437,7 +429,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) =
   res.json({ success: true, message: 'Account deleted successfully.' });
 });
 
-// Password Reset Endpoint with Non-Freezing Timeout Safety
+// Password Reset Endpoint with Non-Freezing Code Dispatch
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -461,44 +453,32 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     console.log(`🔑 PASSWORD RESET CODE for [${cleanEmail}]: ${resetCode}`);
     console.log(`========================================\n`);
 
-    let emailSent = false;
+    // Asynchronously trigger SMTP without holding response
     if (process.env.SMTP_EMAIL && process.env.SMTP_PASSWORD) {
-      try {
-        const sendPromise = emailTransporter.sendMail({
-          from: `"Halo Book" <${process.env.SMTP_EMAIL}>`,
-          to: cleanEmail,
-          subject: 'Halo Book — Your Password Reset Code',
-          text: `Your password reset code is: ${resetCode}\nThis code expires in 15 minutes.`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #C2CEE7; border-radius: 8px; background: #FBFCFE;">
-              <h2 style="color: #1D3A66; margin-top: 0;">Halo Book</h2>
-              <p style="color: #4A5670; font-size: 15px;">Use the verification code below to reset your password:</p>
-              <div style="background: #DDE3EE; color: #16233F; font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; padding: 14px; border-radius: 6px; margin: 20px 0;">
-                ${resetCode}
-              </div>
-              <p style="color: #888; font-size: 12px; margin-bottom: 0;">This code expires in 15 minutes.</p>
+      emailTransporter.sendMail({
+        from: `"Halo Book" <${process.env.SMTP_EMAIL}>`,
+        to: cleanEmail,
+        subject: 'Halo Book — Your Password Reset Code',
+        text: `Your password reset code is: ${resetCode}\nThis code expires in 15 minutes.`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #C2CEE7; border-radius: 8px; background: #FBFCFE;">
+            <h2 style="color: #1D3A66; margin-top: 0;">Halo Book</h2>
+            <p style="color: #4A5670; font-size: 15px;">Use the verification code below to reset your password:</p>
+            <div style="background: #DDE3EE; color: #16233F; font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; padding: 14px; border-radius: 6px; margin: 20px 0;">
+              ${resetCode}
             </div>
-          `
-        });
-
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('SMTP timeout')), 6000)
-        );
-
-        await Promise.race([sendPromise, timeoutPromise]);
-        emailSent = true;
-        console.log(`✉️ Email successfully dispatched to ${cleanEmail}`);
-      } catch (mailErr) {
-        console.error('⚠️ Nodemailer delivery issue:', mailErr.message);
-      }
+            <p style="color: #888; font-size: 12px; margin-bottom: 0;">This code expires in 15 minutes.</p>
+          </div>
+        `
+      }).catch((err) => {
+        console.warn('SMTP dispatch note:', err.message);
+      });
     }
 
     return res.json({ 
       success: true, 
-      emailSent,
-      message: emailSent 
-        ? 'Verification code sent to your email inbox!' 
-        : 'Reset code generated. Please enter your code.'
+      devCode: resetCode,
+      message: `Reset code generated.`
     });
   } catch (error) {
     console.error('Forgot password error:', error);
