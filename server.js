@@ -11,7 +11,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import Database from 'better-sqlite3';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 const require = createRequire(import.meta.url);
 
@@ -62,20 +62,8 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Setup Nodemailer with timeouts
-const emailTransporter = nodemailer.createTransport({
-  service: 'gmail',
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.SMTP_EMAIL || '',
-    pass: (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '')
-  },
-  connectionTimeout: 6000,
-  greetingTimeout: 6000,
-  socketTimeout: 8000
-});
+// Resend HTTP Email Client
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 // Initialize SQLite database
 const db = new Database('halobook.db');
@@ -363,13 +351,12 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
-// Admin User Management Endpoints
+// Admin Endpoints
 app.get('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
   const users = db.prepare('SELECT id, name, email, status, role, created_at FROM users ORDER BY id DESC').all();
   res.json({ success: true, users });
 });
 
-// Update Status (Root protected)
 app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -386,7 +373,6 @@ app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, r
   res.json({ success: true, message: `Account updated to ${status}.` });
 });
 
-// Promote / Demote Role (Root protected)
 app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
@@ -410,7 +396,6 @@ app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, (req, res
   res.json({ success: true, message: `User role changed to ${role}.` });
 });
 
-// Delete User Account (Root protected)
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
 
@@ -429,7 +414,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) =
   res.json({ success: true, message: 'Account deleted successfully.' });
 });
 
-// Password Reset Endpoint with Non-Freezing Code Dispatch
+// Password Reset Endpoint with Resend HTTPS Delivery
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -453,32 +438,35 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     console.log(`🔑 PASSWORD RESET CODE for [${cleanEmail}]: ${resetCode}`);
     console.log(`========================================\n`);
 
-    // Asynchronously trigger SMTP without holding response
-    if (process.env.SMTP_EMAIL && process.env.SMTP_PASSWORD) {
-      emailTransporter.sendMail({
-        from: `"Halo Book" <${process.env.SMTP_EMAIL}>`,
-        to: cleanEmail,
-        subject: 'Halo Book — Your Password Reset Code',
-        text: `Your password reset code is: ${resetCode}\nThis code expires in 15 minutes.`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #C2CEE7; border-radius: 8px; background: #FBFCFE;">
-            <h2 style="color: #1D3A66; margin-top: 0;">Halo Book</h2>
-            <p style="color: #4A5670; font-size: 15px;">Use the verification code below to reset your password:</p>
-            <div style="background: #DDE3EE; color: #16233F; font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; padding: 14px; border-radius: 6px; margin: 20px 0;">
-              ${resetCode}
+    let emailSent = false;
+    if (resend) {
+      try {
+        await resend.emails.send({
+          from: 'Halo Book <onboarding@resend.dev>',
+          to: cleanEmail,
+          subject: 'Halo Book — Your Password Reset Code',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #C2CEE7; border-radius: 8px; background: #FBFCFE;">
+              <h2 style="color: #1D3A66; margin-top: 0;">Halo Book</h2>
+              <p style="color: #4A5670; font-size: 15px;">Use the verification code below to reset your password:</p>
+              <div style="background: #DDE3EE; color: #16233F; font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; padding: 14px; border-radius: 6px; margin: 20px 0;">
+                ${resetCode}
+              </div>
+              <p style="color: #888; font-size: 12px; margin-bottom: 0;">This code expires in 15 minutes.</p>
             </div>
-            <p style="color: #888; font-size: 12px; margin-bottom: 0;">This code expires in 15 minutes.</p>
-          </div>
-        `
-      }).catch((err) => {
-        console.warn('SMTP dispatch note:', err.message);
-      });
+          `
+        });
+        emailSent = true;
+        console.log(`✉️ Email delivered successfully to ${cleanEmail}`);
+      } catch (mailErr) {
+        console.error('Resend delivery error:', mailErr.message);
+      }
     }
 
     return res.json({ 
       success: true, 
-      devCode: resetCode,
-      message: `Reset code generated.`
+      emailSent,
+      message: 'A verification code has been dispatched to your email.'
     });
   } catch (error) {
     console.error('Forgot password error:', error);
