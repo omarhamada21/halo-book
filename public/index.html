@@ -113,7 +113,6 @@
   input[type=file]{display:none;}
   textarea{ margin-left:38px; margin-top:12px; width:calc(100% - 38px); min-height:100px; border:1px solid var(--border); border-radius:8px; padding:14px; font-family:'Inter',sans-serif; font-size:14px; color:var(--ink); background:var(--card); resize:vertical; }
   
-  /* Student Submission Cards */
   .student-list{margin-left:38px; display:flex; flex-direction:column; gap:12px; margin-top:16px;}
   .student-card{
     border:1px solid var(--border); border-radius:8px; padding:14px; background:var(--card);
@@ -159,12 +158,46 @@
   .result-name{font-weight:500;font-size:14.5px;flex:1;}
   .result-score{font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--ink-soft);}
   .result-body{ max-height:0;overflow:hidden;transition:max-height .2s ease; border-top:1px solid var(--paper-line); }
-  .result-body.open{max-height:1400px;}
+  .result-body.open{max-height:1600px;}
   .result-body-inner{padding:14px 16px;font-size:13.5px;line-height:1.65;color:var(--ink-soft);}
   
+  /* Line Item with Integrated Delete Button */
   .line-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-  .line-item { padding: 6px 10px; background: #f8fafc; border: 1px solid var(--border); border-radius: 6px; font-size: 13.5px; line-height: 1.5; outline: none; }
-  .line-item:focus { background: #fff; border-color: var(--pen); box-shadow: 0 0 0 2px var(--pen-soft); }
+  .line-item-wrap {
+    display: flex;
+    align-items: center;
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    transition: all 0.2s;
+  }
+  .line-item-wrap:focus-within {
+    background: #fff;
+    border-color: var(--pen);
+    box-shadow: 0 0 0 2px var(--pen-soft);
+  }
+  .line-item {
+    padding: 6px 10px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    outline: none;
+    flex: 1;
+    word-break: break-word;
+  }
+  .line-delete-btn {
+    border: none;
+    background: transparent;
+    color: var(--ink-soft);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 6px 10px;
+    transition: color 0.2s;
+    flex-shrink: 0;
+  }
+  .line-delete-btn:hover {
+    color: #DC2626;
+  }
+
   .editable-field { outline: none; padding: 4px 6px; border-radius: 4px; }
   .editable-field:focus { background: #fff; box-shadow: inset 0 0 0 1px var(--pen); }
   
@@ -176,15 +209,15 @@
   .scheme-status{margin-left:38px;font-size:12.5px;color:var(--pen);font-family:'IBM Plex Mono',monospace;margin-top:8px;}
   .hint{font-size:11.5px;color:var(--ink-soft);margin-top:4px;display:block;}
 
-  /* Add Mistake Button Styles */
-  .btn-add-mistake {
+  /* General In-Card & Summary + Add Action Buttons */
+  .section-add-btn {
     background: #fff;
-    border: 1px dashed #F87171;
-    color: #DC2626;
+    border: 1px dashed var(--border);
+    color: var(--pen);
     border-radius: 4px;
-    padding: 3px 8px;
-    font-size: 11px;
-    font-weight: 600;
+    padding: 4px 10px;
+    font-size: 11.5px;
+    font-weight: 500;
     cursor: pointer;
     font-family: 'Inter', sans-serif;
     transition: all 0.2s ease;
@@ -193,22 +226,39 @@
     gap: 4px;
     margin-top: 6px;
   }
-  .btn-add-mistake:hover {
+  .section-add-btn:hover {
+    background: var(--pen-soft);
+    border-color: var(--pen);
+  }
+  .section-add-btn.mistake-theme {
+    border-color: #FCA5A5;
+    color: #DC2626;
+  }
+  .section-add-btn.mistake-theme:hover {
     background: #FEF2F2;
     border-color: #DC2626;
   }
-  .btn-add-mistake-sm {
+  .section-add-btn.practice-theme {
+    border-color: #86EFAC;
+    color: #059669;
+  }
+  .section-add-btn.practice-theme:hover {
+    background: #F0FDF4;
+    border-color: #059669;
+  }
+
+  .table-add-btn {
     background: #fff;
     border: 1px dashed #CBD6ED;
     color: var(--pen);
     border-radius: 4px;
     padding: 2px 6px;
-    font-size: 10px;
+    font-size: 10.5px;
     font-weight: 500;
     cursor: pointer;
     margin-top: 4px;
   }
-  .btn-add-mistake-sm:hover {
+  .table-add-btn:hover {
     background: var(--pen-soft);
     border-color: var(--pen);
   }
@@ -225,7 +275,7 @@
   /* Print Styles - Guaranteed hidden buttons in print & exported PDFs */
   @media print {
     body { background: #fff !important; color: #000 !important; }
-    .top-nav, .pending-banner, .admin-modal, header, .step:nth-child(1), .step:nth-child(2), .step-head, .step-desc, button, .toolbar, .dropzone, textarea, .progress-wrap, .empty, .student-list, .student-count, .edit-hint, #custom-modal-overlay, #custom-toast, .no-print, .btn-add-mistake, .btn-add-mistake-sm { display: none !important; }
+    .top-nav, .pending-banner, .admin-modal, header, .step:nth-child(1), .step:nth-child(2), .step-head, .step-desc, button, .toolbar, .dropzone, textarea, .progress-wrap, .empty, .student-list, .student-count, .edit-hint, #custom-modal-overlay, #custom-toast, .no-print, .section-add-btn, .table-add-btn, .line-delete-btn { display: none !important; }
     .wrap { max-width: 100% !important; padding: 0 !important; }
     .step { border: none !important; padding: 0 !important; background: transparent !important; margin-bottom: 0 !important; }
     .print-summary { display: block !important; page-break-after: always; padding-top: 20px; }
@@ -234,6 +284,7 @@
     .summary-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     .summary-table th, .summary-table td { border: 1px solid #ccc; padding: 10px 12px; text-align: left; font-size: 12.5px; vertical-align: top; }
     .summary-table th { background: #f2f4f8; font-family: 'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase; }
+    .line-item-wrap { border: none !important; background: transparent !important; }
     .line-item { border: none !important; padding: 2px 0 !important; background: transparent !important; }
     .results { margin-left: 0 !important; }
     .result-card { border: 1px solid #ccc !important; margin-bottom: 16px !important; page-break-inside: avoid; }
@@ -349,7 +400,7 @@
   </div>
 </div>
 
-<!-- In-App Deletion Confirmation Modal -->
+<!-- Confirmation Modal -->
 <div id="custom-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.45); backdrop-filter:blur(3px); z-index:9999; align-items:center; justify-content:center; padding:16px;">
   <div style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:400px; width:100%; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.15); animation:modalPop 0.15s ease-out;">
     <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; color:#DC2626; letter-spacing:0.08em; margin-bottom:6px;">Confirm Deletion</div>
@@ -362,10 +413,10 @@
   </div>
 </div>
 
-<!-- In-App Notification Toast Banner -->
+<!-- Notification Toast -->
 <div id="custom-toast" style="display:none; position:fixed; bottom:24px; right:24px; background:#064E3B; color:#ECFDF5; border:1px solid #059669; padding:12px 18px; border-radius:8px; font-size:13.5px; font-weight:500; box-shadow:0 6px 20px rgba(0,0,0,0.18); z-index:10000; align-items:center; gap:8px;">
   <span style="font-size:16px;">✓</span>
-  <span id="custom-toast-text">User deleted successfully.</span>
+  <span id="custom-toast-text">Action completed successfully.</span>
 </div>
 
 <script>
@@ -698,38 +749,84 @@ window.removeStudent = function(studentId) {
   renderStudentSubmissions();
 };
 
+// Render editable list with individual line delete 'x' button
 function renderLineList(rawText, idx, fieldName) {
-  if (!rawText) return '<div class="line-item" contenteditable="true">- None</div>';
+  if (!rawText) return '<div class="line-item-wrap"><div class="line-item editable-line" contenteditable="true" data-idx="' + idx + '" data-field="' + fieldName + '">- None</div><button class="line-delete-btn no-print" onclick="deleteLineItem(this, ' + idx + ', \'' + fieldName + '\')" title="Delete item">&times;</button></div>';
+  
   const lines = rawText.split(/\n|(?=- Section)|(?=- Question)|(?=- Q\d)/g)
     .map(line => line.trim())
     .filter(line => line.length > 0);
 
   if (lines.length === 0) {
-    return `<div class="line-item" contenteditable="true" data-idx="${idx}" data-field="${fieldName}">- None</div>`;
+    return '<div class="line-item-wrap"><div class="line-item editable-line" contenteditable="true" data-idx="' + idx + '" data-field="' + fieldName + '">- None</div><button class="line-delete-btn no-print" onclick="deleteLineItem(this, ' + idx + ', \'' + fieldName + '\')" title="Delete item">&times;</button></div>';
   }
 
   return lines.map(line => {
     const formatted = line.startsWith('-') ? line : `- ${line}`;
-    return `<div contenteditable="true" class="line-item editable-line" data-idx="${idx}" data-field="${fieldName}">${formatted}</div>`;
+    return `
+      <div class="line-item-wrap">
+        <div contenteditable="true" class="line-item editable-line" data-idx="${idx}" data-field="${fieldName}">${formatted}</div>
+        <button class="line-delete-btn no-print" onclick="deleteLineItem(this, ${idx}, '${fieldName}')" title="Delete item">&times;</button>
+      </div>
+    `;
   }).join('');
 }
 
-// Function to dynamically append a new mistake line item
-window.addNewMistake = function(idx) {
-  const container = document.getElementById(`m-container-${idx}`);
-  const summaryContainer = document.getElementById(`summary-m-container-${idx}`);
+// Delete a specific line item and update totals
+window.deleteLineItem = function(btn, idx, fieldName) {
+  const wrap = btn.closest('.line-item-wrap');
+  if (wrap) {
+    wrap.remove();
+    if (fieldName === 'category_breakdown') {
+      recalculateTotal(idx);
+    }
+  }
+};
 
-  const newLine = document.createElement('div');
-  newLine.className = 'line-item editable-line';
-  newLine.contentEditable = 'true';
-  newLine.dataset.idx = idx;
-  newLine.dataset.field = 'mistakes';
-  newLine.textContent = '- ';
+// Dynamic Line Insertion Function for All Sections
+window.addNewSectionLine = function(idx, fieldName, defaultPrefix = '- ') {
+  let containerId = '';
+  if (fieldName === 'category_breakdown') containerId = `bd-container-${idx}`;
+  else if (fieldName === 'mistakes') containerId = `m-container-${idx}`;
+  else if (fieldName === 'weaknesses') containerId = `w-container-${idx}`;
+
+  const container = document.getElementById(containerId);
+  const summaryContainer = (fieldName === 'mistakes' || fieldName === 'category_breakdown') 
+    ? document.getElementById(`summary-${fieldName === 'category_breakdown' ? 'bd' : 'm'}-container-${idx}`) 
+    : null;
+
+  function createWrap() {
+    const wrap = document.createElement('div');
+    wrap.className = 'line-item-wrap';
+
+    const newLine = document.createElement('div');
+    newLine.className = 'line-item editable-line';
+    newLine.contentEditable = 'true';
+    newLine.dataset.idx = idx;
+    newLine.dataset.field = fieldName;
+    newLine.textContent = defaultPrefix;
+
+    newLine.addEventListener('input', () => {
+      if (fieldName === 'category_breakdown') recalculateTotal(idx);
+    });
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'line-delete-btn no-print';
+    delBtn.innerHTML = '&times;';
+    delBtn.title = 'Delete item';
+    delBtn.onclick = function() { deleteLineItem(delBtn, idx, fieldName); };
+
+    wrap.appendChild(newLine);
+    wrap.appendChild(delBtn);
+    return { wrap, newLine };
+  }
 
   if (container) {
-    container.appendChild(newLine);
+    const { wrap, newLine } = createWrap();
+    container.appendChild(wrap);
     newLine.focus();
-    // Move cursor to end of text
+
+    // Focus cursor to end of text
     const range = document.createRange();
     const sel = window.getSelection();
     range.selectNodeContents(newLine);
@@ -739,13 +836,8 @@ window.addNewMistake = function(idx) {
   }
 
   if (summaryContainer) {
-    const summaryLine = document.createElement('div');
-    summaryLine.className = 'line-item editable-line';
-    summaryLine.contentEditable = 'true';
-    summaryLine.dataset.idx = idx;
-    summaryLine.dataset.field = 'mistakes';
-    summaryLine.textContent = '- ';
-    summaryContainer.appendChild(summaryLine);
+    const { wrap } = createWrap();
+    summaryContainer.appendChild(wrap);
   }
 };
 
@@ -846,7 +938,7 @@ function renderResults(){
   results.forEach((r, idx) => {
     const displayName = r.name || r.student_name || 'Student';
 
-    // Summary Table Row with Add Mistake Button
+    // Summary Table Row
     const tr = document.createElement('tr');
     tr.id = `summary-tr-${idx}`;
     tr.innerHTML = `
@@ -854,15 +946,18 @@ function renderResults(){
         <b contenteditable="true" class="editable-field" data-idx="${idx}" data-field="name">${displayName}</b><br>
         <small style="color:var(--pen); font-family:'IBM Plex Mono',monospace;">Total: <span id="summary-total-${idx}">${r.total_score || '—'}</span> (${r.pageCount || 1} page${r.pageCount > 1 ? 's' : ''})</small>
       </td>
-      <td><div class="line-list" id="summary-bd-container-${idx}">${renderLineList(r.category_breakdown, idx, 'category_breakdown')}</div></td>
+      <td>
+        <div class="line-list" id="summary-bd-container-${idx}">${renderLineList(r.category_breakdown, idx, 'category_breakdown')}</div>
+        <button class="table-add-btn no-print" onclick="addNewSectionLine(${idx}, 'category_breakdown', '- Section: 0/10')">+ Add Section</button>
+      </td>
       <td>
         <div class="line-list" id="summary-m-container-${idx}">${renderLineList(r.mistakes, idx, 'mistakes')}</div>
-        <button class="btn-add-mistake-sm no-print" onclick="addNewMistake(${idx})">+ Add Mistake</button>
+        <button class="table-add-btn no-print" onclick="addNewSectionLine(${idx}, 'mistakes', '- ')">+ Add Mistake</button>
       </td>
     `;
     summaryTableBody.appendChild(tr);
 
-    // Individual Result Card with Add Mistake Button
+    // Individual Result Card with Buttons for Every Section
     const card = document.createElement('div');
     card.className = 'result-card';
     card.innerHTML = `
@@ -873,24 +968,37 @@ function renderResults(){
       </div>
       <div class="result-body" id="body-${idx}">
         <div class="result-body-inner">
+          <!-- Section 1: Score Breakdown -->
           <div class="fb-section">
-            <div class="fb-label">Score Breakdown by Category <span class="edit-hint">(Edit marks below to auto-update total)</span></div>
+            <div class="fb-label">
+              <span>Score Breakdown by Category <span class="edit-hint">(Edit marks below to auto-update total)</span></span>
+            </div>
             <div class="line-list" id="bd-container-${idx}">${renderLineList(r.category_breakdown, idx, 'category_breakdown')}</div>
+            <button class="section-add-btn no-print" onclick="addNewSectionLine(${idx}, 'category_breakdown', '- Section: 0/10')">+ Add Category</button>
           </div>
+
+          <!-- Total Score Display -->
           <div class="fb-section">
             <div class="fb-label">Total Score</div>
             <b id="total-score-val-${idx}">${r.total_score || '—'}</b>
           </div>
+
+          <!-- Section 2: Mistakes -->
           <div class="fb-section">
             <div class="fb-label">
-              <span>Mistakes in Your Work <span class="edit-hint">(Click item to edit/remove)</span></span>
+              <span>Mistakes in Your Work <span class="edit-hint">(Click text to edit or ✕ to remove)</span></span>
             </div>
             <div class="line-list" id="m-container-${idx}">${renderLineList(r.mistakes, idx, 'mistakes')}</div>
-            <button class="btn-add-mistake no-print" onclick="addNewMistake(${idx})">+ Add Mistake</button>
+            <button class="section-add-btn mistake-theme no-print" onclick="addNewSectionLine(${idx}, 'mistakes', '- ')">+ Add Mistake</button>
           </div>
+
+          <!-- Section 3: What to Practice Next -->
           <div class="fb-section">
-            <div class="fb-label">What to Practice Next <span class="edit-hint">(Click item to edit)</span></div>
+            <div class="fb-label">
+              <span>What to Practice Next <span class="edit-hint">(Click text to edit or ✕ to remove)</span></span>
+            </div>
             <div class="line-list" id="w-container-${idx}">${renderLineList(r.weaknesses, idx, 'weaknesses')}</div>
+            <button class="section-add-btn practice-theme no-print" onclick="addNewSectionLine(${idx}, 'weaknesses', '- ')">+ Add Recommendation</button>
           </div>
         </div>
       </div>
