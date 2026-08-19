@@ -113,6 +113,37 @@
   input[type=file]{display:none;}
   textarea{ margin-left:38px; margin-top:12px; width:calc(100% - 38px); min-height:100px; border:1px solid var(--border); border-radius:8px; padding:14px; font-family:'Inter',sans-serif; font-size:14px; color:var(--ink); background:var(--card); resize:vertical; }
   
+  /* Badges container for multiple files */
+  .badge-grid {
+    margin-left:38px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:12px;
+  }
+  .file-chip {
+    background:var(--pen-soft);
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:5px 10px;
+    font-size:12.5px;
+    font-family:'IBM Plex Mono',monospace;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    color:var(--pen);
+  }
+  .file-chip-remove {
+    cursor:pointer;
+    color:#DC2626;
+    border:none;
+    background:none;
+    font-weight:bold;
+    font-size:14px;
+    padding:0 2px;
+  }
+
+  /* Student Submission Cards */
   .student-list{margin-left:38px; display:flex; flex-direction:column; gap:12px; margin-top:16px;}
   .student-card{
     border:1px solid var(--border); border-radius:8px; padding:14px; background:var(--card);
@@ -206,10 +237,8 @@
   .edit-hint{font-size:10px;color:var(--ink-soft);font-weight:normal;text-transform:none;}
   .empty{margin-left:38px;color:var(--ink-soft);font-size:13.5px;}
   .toolbar{margin-left:38px;display:flex;gap:10px;margin-bottom:14px;}
-  .scheme-status{margin-left:38px;font-size:12.5px;color:var(--pen);font-family:'IBM Plex Mono',monospace;margin-top:8px;}
   .hint{font-size:11.5px;color:var(--ink-soft);margin-top:4px;display:block;}
 
-  /* General In-Card & Summary + Add Action Buttons */
   .section-add-btn {
     background: #fff;
     border: 1px dashed var(--border);
@@ -272,10 +301,9 @@
 
   footer { margin-top: 40px; text-align: center; font-size: 12px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; border-top: 1px solid var(--border); padding-top: 20px; }
 
-  /* Print Styles - Guaranteed hidden buttons in print & exported PDFs */
   @media print {
     body { background: #fff !important; color: #000 !important; }
-    .top-nav, .pending-banner, .admin-modal, header, .step:nth-child(1), .step:nth-child(2), .step-head, .step-desc, button, .toolbar, .dropzone, textarea, .progress-wrap, .empty, .student-list, .student-count, .edit-hint, #custom-modal-overlay, #custom-toast, .no-print, .section-add-btn, .table-add-btn, .line-delete-btn { display: none !important; }
+    .top-nav, .pending-banner, .admin-modal, header, .step:nth-child(1), .step:nth-child(2), .step-head, .step-desc, button, .toolbar, .dropzone, textarea, .progress-wrap, .empty, .student-list, .student-count, .edit-hint, #custom-modal-overlay, #custom-toast, .no-print, .section-add-btn, .table-add-btn, .line-delete-btn, .badge-grid { display: none !important; }
     .wrap { max-width: 100% !important; padding: 0 !important; }
     .step { border: none !important; padding: 0 !important; background: transparent !important; margin-bottom: 0 !important; }
     .print-summary { display: block !important; page-break-after: always; padding-top: 20px; }
@@ -310,24 +338,26 @@
 
   <header>
     <h1>Mark a class set in one pass</h1>
-    <p class="sub">Upload your rubric, attach student papers or multi-page photos (.pdf, .docx, .txt, .jpg, .png), and let Google Gemini evaluate the full batch.</p>
+    <p class="sub">Upload your rubric papers, attach student multi-page submissions, and let Google Gemini evaluate the entire batch.</p>
   </header>
 
-  <!-- Step 1: Marking Scheme -->
+  <!-- Step 1: Marking Scheme (Supports Multiple Rubric Papers) -->
   <div class="step">
-    <div class="step-head"><div class="step-num">1</div><h2 class="step-title">Marking scheme</h2></div>
-    <p class="step-desc">Drag & drop a rubric file and/or paste extra comments, tips, or specific criteria below.</p>
+    <div class="step-head"><div class="step-num">1</div><h2 class="step-title">Marking Scheme / Rubric Papers</h2></div>
+    <p class="step-desc">Drag & drop or select multiple rubric files/photos (e.g. Page 1, Page 2, Answer keys) and/or paste extra instructions below.</p>
     <div class="dropzone" id="scheme-dz">
-      <div><b>Drop rubric file here</b> or click to browse — .pdf, .docx, .txt, .png, .jpg</div>
+      <div><b>Drop rubric files or photos here</b> or click to browse</div>
+      <span class="hint">(Supports multiple .pdf, .docx, .txt, .png, .jpg files)</span>
     </div>
-    <input type="file" id="scheme-file" accept=".txt,.md,.pdf,.docx,.jpg,.jpeg,.png">
-    <div class="scheme-status" id="scheme-status"></div>
+    <input type="file" id="scheme-file" accept=".txt,.md,.pdf,.docx,.jpg,.jpeg,.png,.webp" multiple>
+    
+    <div class="badge-grid" id="scheme-badge-grid"></div>
     <textarea id="scheme-text" placeholder="Add extra comments, tips, or special notes here (e.g., Deduct 2 marks if late, focus heavily on punctuation, grade total out of 25)."></textarea>
   </div>
 
   <!-- Step 2: Multi-Page Essays -->
   <div class="step">
-    <div class="step-head"><div class="step-num">2</div><h2 class="step-title">Student Submissions (Supports Multiple Pages/Photos)</h2></div>
+    <div class="step-head"><div class="step-num">2</div><h2 class="step-title">Student Submissions</h2></div>
     <p class="step-desc">Drag & drop essay files/photos or paste from clipboard (<b>Ctrl+V</b>). You can attach multiple photos/pages per student.</p>
     <div class="dropzone" id="essay-dz">
       <div><b>Drop new student papers or photos here</b> or click to browse</div>
@@ -588,16 +618,16 @@ async function deleteUser(userId, userEmail) {
   }
 }
 
-// Multi-page Student Submissions Management
+// Multi-file Scheme & Multi-page Submissions State
+let schemeFilesList = [];
 let studentSubmissions = [];
-let selectedSchemeFile = null;
 let results = [];
 let targetStudentForAddPage = null;
 
 const schemeDz = document.getElementById('scheme-dz');
 const schemeFileInput = document.getElementById('scheme-file');
+const schemeBadgeGrid = document.getElementById('scheme-badge-grid');
 const schemeText = document.getElementById('scheme-text');
-const schemeStatus = document.getElementById('scheme-status');
 
 const essayDz = document.getElementById('essay-dz');
 const essayFileInput = document.getElementById('essay-file');
@@ -627,26 +657,52 @@ const summaryTableBody = document.getElementById('summary-table-body');
   essayDz.addEventListener(eventName, () => essayDz.classList.remove('drag'), false);
 });
 
+// Step 1: Multiple Scheme Files
 schemeDz.addEventListener('click', () => schemeFileInput.click());
 schemeDz.addEventListener('drop', e => {
   const files = e.dataTransfer.files;
-  if (files && files[0]) handleSchemeFile(files[0]);
+  if (files && files.length) addSchemeFiles(files);
 });
 schemeFileInput.addEventListener('change', e => {
-  if (e.target.files[0]) handleSchemeFile(e.target.files[0]);
+  if (e.target.files && e.target.files.length) addSchemeFiles(e.target.files);
+  schemeFileInput.value = '';
 });
 
-function handleSchemeFile(file) {
-  selectedSchemeFile = file;
-  schemeStatus.textContent = `Attached rubric: ${file.name}`;
+function addSchemeFiles(fileList) {
+  for (const file of fileList) {
+    schemeFilesList.push(file);
+  }
+  renderSchemeBadges();
 }
 
+function renderSchemeBadges() {
+  schemeBadgeGrid.innerHTML = '';
+  schemeFilesList.forEach((f, idx) => {
+    const chip = document.createElement('div');
+    chip.className = 'file-chip';
+    chip.innerHTML = `
+      <span>📋 Rubric Page ${idx + 1}: ${f.name}</span>
+      <button class="file-chip-remove" onclick="removeSchemeFile(${idx})" title="Remove file">&times;</button>
+    `;
+    schemeBadgeGrid.appendChild(chip);
+  });
+}
+
+window.removeSchemeFile = function(idx) {
+  schemeFilesList.splice(idx, 1);
+  renderSchemeBadges();
+};
+
+// Step 2: Multiple Essays & Pages
 essayDz.addEventListener('click', () => essayFileInput.click());
 essayDz.addEventListener('drop', e => {
   const files = e.dataTransfer.files;
   if (files && files.length) addSubmissions(files);
 });
-essayFileInput.addEventListener('change', e => addSubmissions(e.target.files));
+essayFileInput.addEventListener('change', e => {
+  if (e.target.files && e.target.files.length) addSubmissions(e.target.files);
+  essayFileInput.value = '';
+});
 
 pageFileInput.addEventListener('change', e => {
   if (targetStudentForAddPage && e.target.files && e.target.files.length) {
@@ -749,7 +805,6 @@ window.removeStudent = function(studentId) {
   renderStudentSubmissions();
 };
 
-// Render editable list with individual line delete 'x' button
 function renderLineList(rawText, idx, fieldName) {
   if (!rawText) return '<div class="line-item-wrap"><div class="line-item editable-line" contenteditable="true" data-idx="' + idx + '" data-field="' + fieldName + '">- None</div><button class="line-delete-btn no-print" onclick="deleteLineItem(this, ' + idx + ', \'' + fieldName + '\')" title="Delete item">&times;</button></div>';
   
@@ -772,7 +827,6 @@ function renderLineList(rawText, idx, fieldName) {
   }).join('');
 }
 
-// Delete a specific line item and update totals
 window.deleteLineItem = function(btn, idx, fieldName) {
   const wrap = btn.closest('.line-item-wrap');
   if (wrap) {
@@ -783,7 +837,6 @@ window.deleteLineItem = function(btn, idx, fieldName) {
   }
 };
 
-// Dynamic Line Insertion Function for All Sections
 window.addNewSectionLine = function(idx, fieldName, defaultPrefix = '- ') {
   let containerId = '';
   if (fieldName === 'category_breakdown') containerId = `bd-container-${idx}`;
@@ -826,7 +879,6 @@ window.addNewSectionLine = function(idx, fieldName, defaultPrefix = '- ') {
     container.appendChild(wrap);
     newLine.focus();
 
-    // Focus cursor to end of text
     const range = document.createRange();
     const sel = window.getSelection();
     range.selectNodeContents(newLine);
@@ -879,11 +931,22 @@ function recalculateTotal(idx) {
 markBtn.addEventListener('click', async () => {
   const schemeTextVal = schemeText.value.trim();
 
-  if (!selectedSchemeFile && !schemeTextVal) { alert('Add a marking scheme file or type extra notes/criteria.'); return; }
-  if (studentSubmissions.length === 0) { alert('Add at least one student submission.'); return; }
+  if (schemeFilesList.length === 0 && !schemeTextVal) { 
+    alert('Please add at least one marking scheme file/photo or enter extra criteria notes.'); 
+    return; 
+  }
+  if (studentSubmissions.length === 0) { 
+    alert('Add at least one student submission.'); 
+    return; 
+  }
 
   const formData = new FormData();
-  if (selectedSchemeFile) formData.append('scheme', selectedSchemeFile);
+  
+  // Attach all rubric files
+  schemeFilesList.forEach(file => {
+    formData.append('scheme', file);
+  });
+  
   if (schemeTextVal) formData.append('schemeText', schemeTextVal);
 
   const meta = [];
@@ -902,14 +965,14 @@ markBtn.addEventListener('click', async () => {
   markBtn.disabled = true;
   progressWrap.style.display = 'block';
   progressFill.style.width = '30%';
-  progressLabel.textContent = 'Uploading files to server...';
+  progressLabel.textContent = 'Uploading rubric and student submissions...';
   resultsEl.innerHTML = '';
   emptyMsg.style.display = 'none';
   toolbar.style.display = 'none';
 
   try {
     progressFill.style.width = '60%';
-    progressLabel.textContent = 'Gemini is evaluating multi-page submissions...';
+    progressLabel.textContent = 'Gemini is evaluating multi-page submissions against rubric...';
 
     const response = await fetch('/api/mark-batch', { method: 'POST', body: formData });
     const data = await response.json();
@@ -957,7 +1020,7 @@ function renderResults(){
     `;
     summaryTableBody.appendChild(tr);
 
-    // Individual Result Card with Buttons for Every Section
+    // Individual Result Card
     const card = document.createElement('div');
     card.className = 'result-card';
     card.innerHTML = `
@@ -968,7 +1031,6 @@ function renderResults(){
       </div>
       <div class="result-body" id="body-${idx}">
         <div class="result-body-inner">
-          <!-- Section 1: Score Breakdown -->
           <div class="fb-section">
             <div class="fb-label">
               <span>Score Breakdown by Category <span class="edit-hint">(Edit marks below to auto-update total)</span></span>
@@ -977,13 +1039,11 @@ function renderResults(){
             <button class="section-add-btn no-print" onclick="addNewSectionLine(${idx}, 'category_breakdown', '- Section: 0/10')">+ Add Category</button>
           </div>
 
-          <!-- Total Score Display -->
           <div class="fb-section">
             <div class="fb-label">Total Score</div>
             <b id="total-score-val-${idx}">${r.total_score || '—'}</b>
           </div>
 
-          <!-- Section 2: Mistakes -->
           <div class="fb-section">
             <div class="fb-label">
               <span>Mistakes in Your Work <span class="edit-hint">(Click text to edit or ✕ to remove)</span></span>
@@ -992,7 +1052,6 @@ function renderResults(){
             <button class="section-add-btn mistake-theme no-print" onclick="addNewSectionLine(${idx}, 'mistakes', '- ')">+ Add Mistake</button>
           </div>
 
-          <!-- Section 3: What to Practice Next -->
           <div class="fb-section">
             <div class="fb-label">
               <span>What to Practice Next <span class="edit-hint">(Click text to edit or ✕ to remove)</span></span>

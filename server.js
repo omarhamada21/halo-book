@@ -101,10 +101,10 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY
 });
 
-// Increased file limit to support up to 60 total uploaded pages per batch
+// Increased limits to support multiple rubric sheets and student essays
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024 }
+  limits: { fileSize: 20 * 1024 * 1024 }
 });
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -168,7 +168,7 @@ app.get('/api/auth/config', (req, res) => {
   res.json({ googleClientId: GOOGLE_CLIENT_ID });
 });
 
-// Register Endpoint
+// Auth Routes
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -223,7 +223,6 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// Login Endpoint
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -266,7 +265,6 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Google Auth Endpoint
 app.post('/api/auth/google', async (req, res) => {
   try {
     const { credential } = req.body;
@@ -414,7 +412,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) =
   res.json({ success: true, message: 'Account deleted successfully.' });
 });
 
-// Password Reset Endpoint with Resend Delivery
+// Password Reset Endpoint
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -570,27 +568,22 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route — Supports Multiple Pages/Photos Per Student Submission
+// AI Batch Marking Route — Supports Multiple Rubric Sheets & Multiple Student Pages
 app.post(
   '/api/mark-batch',
   authenticateToken,
   requireApprovedUser,
   upload.fields([
-    { name: 'scheme', maxCount: 1 },
+    { name: 'scheme', maxCount: 20 },
     { name: 'essays', maxCount: 60 }
   ]),
   async (req, res) => {
     try {
-      const schemeFile = req.files && req.files['scheme'] ? req.files['scheme'][0] : null;
+      const schemeFiles = (req.files && req.files['scheme']) || [];
       let extraNotes = req.body.schemeText || '';
-      let fileSchemeText = '';
 
-      if (schemeFile) {
-        fileSchemeText = await extractText(schemeFile);
-      }
-
-      if (!fileSchemeText.trim() && !extraNotes.trim() && !schemeFile) {
-        return res.status(400).json({ error: 'Please provide a valid marking scheme file or text notes.' });
+      if (schemeFiles.length === 0 && !extraNotes.trim()) {
+        return res.status(400).json({ error: 'Please provide at least one marking scheme file or text criteria.' });
       }
 
       const allUploadedFiles = (req.files && req.files['essays']) || [];
@@ -598,7 +591,6 @@ app.post(
         return res.status(400).json({ error: 'No essay pages/files uploaded.' });
       }
 
-      // Parse metadata describing which files belong to which student
       let submissionsMeta = [];
       try {
         submissionsMeta = JSON.parse(req.body.submissionsMetadata || '[]');
@@ -606,12 +598,22 @@ app.post(
         submissionsMeta = [];
       }
 
-      // Fallback: 1 file per student if no metadata provided
       if (!submissionsMeta.length) {
         submissionsMeta = allUploadedFiles.map((f) => ({
           name: f.originalname.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' '),
           fileCount: 1
         }));
+      }
+
+      // Pre-extract all scheme document text
+      let allSchemeText = '';
+      for (const sFile of schemeFiles) {
+        if (!isImage(sFile) && !isPdf(sFile)) {
+          const txt = await extractText(sFile);
+          if (txt.trim()) {
+            allSchemeText += `\n[Rubric File: ${sFile.originalname}]\n${txt}\n`;
+          }
+        }
       }
 
       const results = [];
@@ -628,28 +630,30 @@ app.post(
         const assignedStudentName = sub.name || `Student ${sIdx + 1}`;
         const inputPayload = [];
 
-        // Attach marking scheme file
-        if (schemeFile) {
-          if (isImage(schemeFile)) {
-            let mimeType = schemeFile.mimetype || 'image/png';
+        // 1. Attach all rubric photos/documents to payload
+        for (let rIdx = 0; rIdx < schemeFiles.length; rIdx++) {
+          const sFile = schemeFiles[rIdx];
+          if (isImage(sFile)) {
+            let mimeType = sFile.mimetype || 'image/png';
             if (!mimeType.startsWith('image/')) mimeType = 'image/png';
             inputPayload.push({
               type: 'image',
               mime_type: mimeType,
-              data: schemeFile.buffer.toString('base64')
+              data: sFile.buffer.toString('base64')
             });
-          } else if (isPdf(schemeFile)) {
+          } else if (isPdf(sFile)) {
             inputPayload.push({
               type: 'document',
               mime_type: 'application/pdf',
-              data: schemeFile.buffer.toString('base64')
+              data: sFile.buffer.toString('base64')
             });
           }
         }
 
         let promptText = `You are a strict, high-precision exam evaluator reviewing a student's test sheet / essay.
 
-IMPORTANT MULTI-PAGE & NAME EXTRACTION INSTRUCTION:
+IMPORTANT MULTI-PAGE & RUBRIC INSTRUCTIONS:
+- The marking scheme / rubric is provided across ${schemeFiles.length} file(s)/image(s) and any extra criteria notes attached. Read all rubric pages completely.
 - This student submission consists of ${studentFiles.length} page(s)/image(s). Evaluate ALL attached pages as a single unified exam work.
 - Extract the student's handwritten or printed name from the header/page. If none is clearly written, fallback to: "${assignedStudentName}".
 
@@ -668,17 +672,14 @@ Respond ONLY with valid JSON matching this schema:
   "weaknesses": "- Practice identifying sentence fragments\\n- Review vocabulary on animal habitats\\n- Practice past tense verb rules"
 }`;
 
-        if (fileSchemeText.trim()) {
-          promptText += `\n\nMARKING SCHEME FILE CONTENT:\n${fileSchemeText}`;
-        } else if (schemeFile) {
-          promptText += `\n\nMARKING SCHEME FILE: Refer to the rubric document or image attached above.`;
+        if (allSchemeText.trim()) {
+          promptText += `\n\nMARKING SCHEME FILE CONTENT:\n${allSchemeText}`;
         }
-
         if (extraNotes.trim()) {
-          promptText += `\n\nTEACHER EXTRA NOTES & INSTRUCTIONS:\n${extraNotes}`;
+          promptText += `\n\nTEACHER EXTRA NOTES & CRITERIA:\n${extraNotes}`;
         }
 
-        // Attach all pages for this student
+        // 2. Attach all student essay pages/photos
         for (let p = 0; p < studentFiles.length; p++) {
           const file = studentFiles[p];
           if (isImage(file)) {
