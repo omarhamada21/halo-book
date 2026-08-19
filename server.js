@@ -340,7 +340,6 @@ app.post('/api/auth/google', async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000 
     });
 
-    console.log(`✅ Google Sign-In Successful: ${email} (${user.role})`);
     return res.json({ 
       success: true, 
       user: { name: user.name, email: user.email, status: user.status, role: user.role } 
@@ -351,7 +350,7 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
-// Admin Endpoints
+// Admin User Management Endpoints
 app.get('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
   const users = db.prepare('SELECT id, name, email, status, role, created_at FROM users ORDER BY id DESC').all();
   res.json({ success: true, users });
@@ -414,7 +413,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) =
   res.json({ success: true, message: 'Account deleted successfully.' });
 });
 
-// Password Reset Endpoint with Resend HTTPS Delivery
+// Password Reset Endpoint with Resend Delivery
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -433,10 +432,6 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       resetCode,
       expiresAt
     );
-
-    console.log(`\n========================================`);
-    console.log(`🔑 PASSWORD RESET CODE for [${cleanEmail}]: ${resetCode}`);
-    console.log(`========================================\n`);
 
     let emailSent = false;
     if (resend) {
@@ -457,7 +452,6 @@ app.post('/api/auth/forgot-password', async (req, res) => {
           `
         });
         emailSent = true;
-        console.log(`✉️ Email delivered successfully to ${cleanEmail}`);
       } catch (mailErr) {
         console.error('Resend delivery error:', mailErr.message);
       }

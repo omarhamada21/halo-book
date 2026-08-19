@@ -227,7 +227,9 @@
       </div>
     </div>
     <button type="submit" class="submit-btn" id="reset-submit-btn">Reset Password</button>
+    
     <div class="msg" id="reset-msg"></div>
+
     <div style="text-align:center; margin-top:16px;">
       <a style="font-size:12.5px; color:var(--pen); cursor:pointer;" onclick="switchMode('login')">← Back to Sign In</a>
     </div>
@@ -518,10 +520,12 @@ resetForm.addEventListener('submit', async (e) => {
   if (!evaluatePassword(newPassword, 'reset')) {
     resetMsg.className = 'msg error';
     resetMsg.textContent = 'New password must satisfy all 5 security requirements.';
+    resetMsg.style.display = 'block';
     return;
   }
 
   resetSubmitBtn.disabled = true;
+  resetSubmitBtn.textContent = 'Verifying code...';
 
   try {
     const res = await fetch('/api/auth/reset-password', {
@@ -533,20 +537,26 @@ resetForm.addEventListener('submit', async (e) => {
 
     if (data.success) {
       resetMsg.className = 'msg success';
-      resetMsg.textContent = '✅ Password updated! Redirecting to sign in...';
+      resetMsg.textContent = '✅ Password updated successfully! Redirecting to sign in...';
+      resetMsg.style.display = 'block';
       setTimeout(() => {
         switchMode('login');
         resetSubmitBtn.disabled = false;
-      }, 1000);
+        resetSubmitBtn.textContent = 'Reset Password';
+      }, 1200);
     } else {
       resetMsg.className = 'msg error';
-      resetMsg.textContent = data.error || 'Invalid verification code.';
+      resetMsg.textContent = data.error || 'The code is wrong or has expired. Please check your email.';
+      resetMsg.style.display = 'block';
       resetSubmitBtn.disabled = false;
+      resetSubmitBtn.textContent = 'Reset Password';
     }
   } catch (err) {
     resetMsg.className = 'msg error';
     resetMsg.textContent = 'Connection error. Please try again.';
+    resetMsg.style.display = 'block';
     resetSubmitBtn.disabled = false;
+    resetSubmitBtn.textContent = 'Reset Password';
   }
 });
 </script>

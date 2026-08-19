@@ -154,7 +154,6 @@
 
   .print-summary { display: none; }
 
-  /* In-app Modal & Toast Animations */
   @keyframes modalPop {
     from { transform: scale(0.95); opacity: 0; }
     to { transform: scale(1); opacity: 1; }
@@ -305,7 +304,6 @@
 <script>
 let currentUser = null;
 
-// Toast Banner helper
 function showToast(message) {
   const toast = document.getElementById('custom-toast');
   const text = document.getElementById('custom-toast-text');
@@ -316,7 +314,6 @@ function showToast(message) {
   }, 3500);
 }
 
-// In-app styled confirmation modal helper
 function showConfirmModal(message) {
   return new Promise((resolve) => {
     const overlay = document.getElementById('custom-modal-overlay');
