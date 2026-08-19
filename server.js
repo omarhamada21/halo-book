@@ -101,9 +101,10 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY
 });
 
+// Increased file limit to support up to 60 total uploaded pages per batch
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }
+  limits: { fileSize: 15 * 1024 * 1024 }
 });
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -569,14 +570,14 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route
+// AI Batch Marking Route — Supports Multiple Pages/Photos Per Student Submission
 app.post(
   '/api/mark-batch',
   authenticateToken,
   requireApprovedUser,
   upload.fields([
     { name: 'scheme', maxCount: 1 },
-    { name: 'essays', maxCount: 30 }
+    { name: 'essays', maxCount: 60 }
   ]),
   async (req, res) => {
     try {
@@ -592,23 +593,42 @@ app.post(
         return res.status(400).json({ error: 'Please provide a valid marking scheme file or text notes.' });
       }
 
-      const essayFiles = (req.files && req.files['essays']) || [];
-      if (essayFiles.length === 0) {
-        return res.status(400).json({ error: 'No essay files uploaded.' });
+      const allUploadedFiles = (req.files && req.files['essays']) || [];
+      if (allUploadedFiles.length === 0) {
+        return res.status(400).json({ error: 'No essay pages/files uploaded.' });
+      }
+
+      // Parse metadata describing which files belong to which student
+      let submissionsMeta = [];
+      try {
+        submissionsMeta = JSON.parse(req.body.submissionsMetadata || '[]');
+      } catch (err) {
+        submissionsMeta = [];
+      }
+
+      // Fallback: 1 file per student if no metadata provided
+      if (!submissionsMeta.length) {
+        submissionsMeta = allUploadedFiles.map((f) => ({
+          name: f.originalname.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' '),
+          fileCount: 1
+        }));
       }
 
       const results = [];
+      let fileCursor = 0;
 
-      for (let i = 0; i < essayFiles.length; i++) {
-        const file = essayFiles[i];
+      for (let sIdx = 0; sIdx < submissionsMeta.length; sIdx++) {
+        const sub = submissionsMeta[sIdx];
+        const pageCount = sub.fileCount || 1;
+        const studentFiles = allUploadedFiles.slice(fileCursor, fileCursor + pageCount);
+        fileCursor += pageCount;
 
-        const fallbackName = file.originalname
-          .replace(/\.[^/.]+$/, '')
-          .replace(/[_-]+/g, ' ')
-          .replace(/\b\w/g, (c) => c.toUpperCase());
+        if (studentFiles.length === 0) continue;
 
+        const assignedStudentName = sub.name || `Student ${sIdx + 1}`;
         const inputPayload = [];
 
+        // Attach marking scheme file
         if (schemeFile) {
           if (isImage(schemeFile)) {
             let mimeType = schemeFile.mimetype || 'image/png';
@@ -627,15 +647,16 @@ app.post(
           }
         }
 
-        let promptText = `You are a strict, high-precision exam evaluator reviewing a student's test sheet.
+        let promptText = `You are a strict, high-precision exam evaluator reviewing a student's test sheet / essay.
 
-IMPORTANT NAME EXTRACTION INSTRUCTION:
-- Extract the student's handwritten or printed name from the top header. If none found, fallback to: "${fallbackName}".
+IMPORTANT MULTI-PAGE & NAME EXTRACTION INSTRUCTION:
+- This student submission consists of ${studentFiles.length} page(s)/image(s). Evaluate ALL attached pages as a single unified exam work.
+- Extract the student's handwritten or printed name from the header/page. If none is clearly written, fallback to: "${assignedStudentName}".
 
 CRITICAL FORMATTING RULES:
 - EVERY item in 'category_breakdown', 'mistakes', and 'weaknesses' MUST be on a NEW LINE starting with a hyphen '-'. Do NOT group multiple items into a single paragraph!
-- Calculate scores category by category (e.g. - Section 1: 6/10\\n- Section 2: 9/10).
-- Compute total_score as the sum of all sections (e.g. 31/40).
+- Calculate scores category by category across all submitted pages (e.g. - Section 1: 6/10\\n- Section 2: 9/10).
+- Compute total_score as the sum of all sections across all pages (e.g. 31/40).
 - Use simple, student-friendly English. Be direct and avoid polite filler.
 
 Respond ONLY with valid JSON matching this schema:
@@ -657,27 +678,30 @@ Respond ONLY with valid JSON matching this schema:
           promptText += `\n\nTEACHER EXTRA NOTES & INSTRUCTIONS:\n${extraNotes}`;
         }
 
-        if (isImage(file)) {
-          let mimeType = file.mimetype || 'image/png';
-          if (!mimeType.startsWith('image/')) mimeType = 'image/png';
-          inputPayload.push({
-            type: 'image',
-            mime_type: mimeType,
-            data: file.buffer.toString('base64')
-          });
-          promptText += `\n\nSTUDENT ESSAY: Read handwritten/printed text from image and extract student name.`;
-        } else if (isPdf(file)) {
-          inputPayload.push({
-            type: 'document',
-            mime_type: 'application/pdf',
-            data: file.buffer.toString('base64')
-          });
-          promptText += `\n\nSTUDENT ESSAY: Read essay in PDF and extract student name.`;
-        } else {
-          const essayText = await extractText(file);
-          promptText += `\n\nSTUDENT ESSAY:\n${essayText}`;
+        // Attach all pages for this student
+        for (let p = 0; p < studentFiles.length; p++) {
+          const file = studentFiles[p];
+          if (isImage(file)) {
+            let mimeType = file.mimetype || 'image/png';
+            if (!mimeType.startsWith('image/')) mimeType = 'image/png';
+            inputPayload.push({
+              type: 'image',
+              mime_type: mimeType,
+              data: file.buffer.toString('base64')
+            });
+          } else if (isPdf(file)) {
+            inputPayload.push({
+              type: 'document',
+              mime_type: 'application/pdf',
+              data: file.buffer.toString('base64')
+            });
+          } else {
+            const essayText = await extractText(file);
+            promptText += `\n\nSTUDENT ESSAY (Page ${p + 1}):\n${essayText}`;
+          }
         }
 
+        promptText += `\n\nSTUDENT ESSAY: Attached above are ${studentFiles.length} file(s)/page(s) representing this student's full submission.`;
         inputPayload.push({ type: 'text', text: promptText });
 
         const interaction = await ai.interactions.create({
@@ -707,7 +731,7 @@ Respond ONLY with valid JSON matching this schema:
           parsedFeedback = JSON.parse(interaction.output_text);
         } catch (err) {
           parsedFeedback = {
-            student_name: fallbackName,
+            student_name: assignedStudentName,
             total_score: '—',
             category_breakdown: 'Failed to generate category breakdown.',
             mistakes: 'Failed to extract specific mistakes.',
@@ -717,17 +741,17 @@ Respond ONLY with valid JSON matching this schema:
 
         const finalStudentName = (parsedFeedback.student_name && parsedFeedback.student_name.trim()) 
           ? parsedFeedback.student_name.trim() 
-          : fallbackName;
+          : assignedStudentName;
 
         results.push({
-          filename: file.originalname,
+          pageCount: studentFiles.length,
           name: finalStudentName,
           score: parsedFeedback.total_score,
           ...parsedFeedback
         });
 
-        if (i < essayFiles.length - 1) {
-          await delay(2500);
+        if (sIdx < submissionsMeta.length - 1) {
+          await delay(2000);
         }
       }
 
