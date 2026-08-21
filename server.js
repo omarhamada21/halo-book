@@ -95,7 +95,7 @@ async function initDatabase() {
         expires_at DATETIME NOT NULL
       );
     `);
-    console.log('✅ Connected to Turso Cloud SQLite successfully.');
+    console.log('Connected to Turso Cloud SQLite successfully.');
   } catch (err) {
     console.error('Database initialization error:', err.message);
   }
@@ -395,8 +395,8 @@ app.post('/api/auth/google', async (req, res) => {
     res.cookie('halo_token', token, { 
       httpOnly: true, 
       secure: isProduction,
-      sameSite: 'lax',
-      path: '/',
+      sameSite: 'lax', 
+      path: '/', 
       maxAge: 7 * 24 * 60 * 60 * 1000 
     });
 
@@ -461,6 +461,32 @@ app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, async (re
   res.json({ success: true, message: `User role changed to ${role}.` });
 });
 
+// Admin Manual Password Reset
+app.post('/api/admin/users/:id/reset-password', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ error: 'Temporary password must be at least 8 characters long.' });
+    }
+
+    const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [id] });
+    const target = targetResult.rows[0];
+    if (!target) return res.status(404).json({ error: 'User not found.' });
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await db.execute({
+      sql: 'UPDATE users SET password = ? WHERE id = ?',
+      args: [hashedPassword, id]
+    });
+
+    res.json({ success: true, message: `Password for ${target.email} updated successfully.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to reset user password.' });
+  }
+});
+
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
 
@@ -480,7 +506,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
   res.json({ success: true, message: 'Account deleted successfully.' });
 });
 
-// Password Reset Endpoint (Email Delivery Only)
+// Password Reset Endpoint
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -505,26 +531,31 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     const smtpUser = (process.env.SMTP_EMAIL || '').trim();
     const smtpPass = (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '');
 
-    if (!smtpUser || !smtpPass) {
-      console.error('SMTP credentials missing in environment variables.');
-      return res.status(500).json({ error: 'Server email service is not configured.' });
+    if (smtpUser && smtpPass) {
+      try {
+        await Promise.race([
+          emailTransporter.sendMail({
+            from: `"Halo Book" <${smtpUser}>`,
+            to: cleanEmail,
+            subject: 'Halo Book — Your Password Reset Code',
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #C2CEE7; border-radius: 8px; background: #FBFCFE;">
+                <h2 style="color: #1D3A66; margin-top: 0;">Halo Book</h2>
+                <p style="color: #4A5670; font-size: 15px;">Use the verification code below to reset your password:</p>
+                <div style="background: #DDE3EE; color: #16233F; font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; padding: 14px; border-radius: 6px; margin: 20px 0;">
+                  ${resetCode}
+                </div>
+                <p style="color: #888; font-size: 12px; margin-bottom: 0;">This code expires in 15 minutes.</p>
+              </div>
+            `
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP timeout')), 4000))
+        ]);
+        console.log(`Email dispatched to: ${cleanEmail}`);
+      } catch (mailErr) {
+        console.warn('SMTP send timed out or blocked by network:', mailErr.message);
+      }
     }
-
-    await emailTransporter.sendMail({
-      from: `"Halo Book" <${smtpUser}>`,
-      to: cleanEmail,
-      subject: 'Halo Book — Your Password Reset Code',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #C2CEE7; border-radius: 8px; background: #FBFCFE;">
-          <h2 style="color: #1D3A66; margin-top: 0;">Halo Book</h2>
-          <p style="color: #4A5670; font-size: 15px;">Use the verification code below to reset your password:</p>
-          <div style="background: #DDE3EE; color: #16233F; font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; padding: 14px; border-radius: 6px; margin: 20px 0;">
-            ${resetCode}
-          </div>
-          <p style="color: #888; font-size: 12px; margin-bottom: 0;">This code expires in 15 minutes.</p>
-        </div>
-      `
-    });
 
     return res.json({ 
       success: true, 
@@ -532,7 +563,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     });
   } catch (error) {
     console.error('Forgot password error:', error);
-    return res.status(500).json({ error: 'Failed to send email. Please verify SMTP settings and App Password.' });
+    return res.status(500).json({ error: 'Server error processing reset request.' });
   }
 });
 

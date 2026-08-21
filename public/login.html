@@ -490,6 +490,9 @@ forgotForm.addEventListener('submit', async (e) => {
     });
     const data = await res.json();
 
+    forgotSubmitBtn.disabled = false;
+    forgotSubmitBtn.textContent = 'Send Reset Code';
+
     if (data.success) {
       switchMode('reset');
       
@@ -500,20 +503,15 @@ forgotForm.addEventListener('submit', async (e) => {
       
       const codeInput = document.getElementById('reset-code');
       if (codeInput) codeInput.value = '';
-
-      forgotSubmitBtn.disabled = false;
-      forgotSubmitBtn.textContent = 'Send Reset Code';
     } else {
       forgotMsg.className = 'msg error';
       forgotMsg.textContent = data.error || 'Failed to send reset code.';
-      forgotSubmitBtn.disabled = false;
-      forgotSubmitBtn.textContent = 'Send Reset Code';
     }
   } catch (err) {
-    forgotMsg.className = 'msg error';
-    forgotMsg.textContent = 'Connection error. Please try again.';
     forgotSubmitBtn.disabled = false;
     forgotSubmitBtn.textContent = 'Send Reset Code';
+    forgotMsg.className = 'msg error';
+    forgotMsg.textContent = 'Connection error. Please try again.';
   }
 });
 
