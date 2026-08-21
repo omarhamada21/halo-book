@@ -357,7 +357,6 @@ function switchMode(newMode) {
   }
 }
 
-// Global Google Handler
 window.handleGoogleCredentialResponse = async function(response) {
   authMsg.className = 'msg success';
   authMsg.style.display = 'block';
@@ -493,6 +492,18 @@ forgotForm.addEventListener('submit', async (e) => {
 
     if (data.success) {
       switchMode('reset');
+      
+      const banner = document.getElementById('reset-banner-msg');
+      if (banner) {
+        if (data.delivered) {
+          banner.innerHTML = `✉️ A 6-digit verification code has been dispatched to <b>${email}</b>. Enter it below with your new password.`;
+        } else {
+          banner.innerHTML = `🔑 Verification Code: <b style="font-size:16px; letter-spacing:2px; background:#fff; padding:2px 6px; border-radius:4px; border:1px solid #BCF0DA;">${data.devCode}</b><br><small style="color:#03543F;">(Enter this code below to set your new password)</small>`;
+          const codeInput = document.getElementById('reset-code');
+          if (codeInput) codeInput.value = data.devCode;
+        }
+      }
+
       forgotSubmitBtn.disabled = false;
       forgotSubmitBtn.textContent = 'Send Reset Code';
     } else {

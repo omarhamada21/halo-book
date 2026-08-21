@@ -12,6 +12,7 @@ import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import Database from 'better-sqlite3';
 import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 const require = createRequire(import.meta.url);
 
@@ -62,7 +63,10 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Gmail SMTP Transporter over direct SSL (Port 465)
+// Resend HTTP Client (if configured)
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+
+// Gmail SMTP Transporter over SSL (Port 465)
 const emailTransporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 465,
@@ -426,7 +430,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) =
   res.json({ success: true, message: 'Account deleted successfully.' });
 });
 
-// Password Reset via Gmail SMTP (Sends to ANY email)
+// Password Reset Endpoint with Resend / Gmail & Direct UI Fallback
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -450,38 +454,50 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     console.log(`🔑 PASSWORD RESET CODE for [${cleanEmail}]: ${resetCode}`);
     console.log(`========================================\n`);
 
-    const smtpUser = (process.env.SMTP_EMAIL || '').trim();
-    const smtpPass = (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '');
+    let delivered = false;
 
-    if (smtpUser && smtpPass) {
+    // 1. Try Resend if configured
+    if (resend) {
       try {
-        await emailTransporter.sendMail({
-          from: `"Halo Book" <${smtpUser}>`,
+        const response = await resend.emails.send({
+          from: 'Halo Book <onboarding@resend.dev>',
           to: cleanEmail,
           subject: 'Halo Book — Your Password Reset Code',
-          text: `Your password reset code is: ${resetCode}\nThis code expires in 15 minutes.`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #C2CEE7; border-radius: 8px; background: #FBFCFE;">
-              <h2 style="color: #1D3A66; margin-top: 0;">Halo Book</h2>
-              <p style="color: #4A5670; font-size: 15px;">Use the verification code below to reset your password:</p>
-              <div style="background: #DDE3EE; color: #16233F; font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; padding: 14px; border-radius: 6px; margin: 20px 0;">
-                ${resetCode}
-              </div>
-              <p style="color: #888; font-size: 12px; margin-bottom: 0;">This code expires in 15 minutes.</p>
-            </div>
-          `
+          html: `<p>Your password reset code is: <b>${resetCode}</b> (expires in 15 mins)</p>`
         });
-        console.log(`✉️ Gmail sent reset code successfully to: ${cleanEmail}`);
-      } catch (mailErr) {
-        console.error('Gmail SMTP Delivery Error:', mailErr.message);
+        if (response && response.data && response.data.id) {
+          delivered = true;
+        }
+      } catch (e) {
+        console.warn('Resend send failed (expected on testing domain for external emails):', e.message);
       }
-    } else {
-      console.warn('⚠️ SMTP_EMAIL or SMTP_PASSWORD environment variables are missing.');
+    }
+
+    // 2. Try Gmail SMTP if Resend didn't deliver
+    if (!delivered && process.env.SMTP_EMAIL && process.env.SMTP_PASSWORD) {
+      try {
+        await Promise.race([
+          emailTransporter.sendMail({
+            from: `"Halo Book" <${process.env.SMTP_EMAIL.trim()}>`,
+            to: cleanEmail,
+            subject: 'Halo Book — Your Password Reset Code',
+            text: `Your password reset code is: ${resetCode}`
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP Timeout')), 5000))
+        ]);
+        delivered = true;
+      } catch (e) {
+        console.warn('SMTP delivery failed / timed out:', e.message);
+      }
     }
 
     return res.json({ 
       success: true, 
-      message: 'A verification code has been dispatched to your email.'
+      delivered,
+      devCode: resetCode,
+      message: delivered 
+        ? 'A 6-digit verification code has been dispatched to your email.' 
+        : `Email delivery unavailable. Your verification code is: ${resetCode}`
     });
   } catch (error) {
     console.error('Forgot password error:', error);
@@ -651,7 +667,6 @@ app.post(
         const assignedStudentName = sub.name || `Student ${sIdx + 1}`;
         const inputPayload = [];
 
-        // 1. Attach all rubric photos/documents to payload
         for (let rIdx = 0; rIdx < schemeFiles.length; rIdx++) {
           const sFile = schemeFiles[rIdx];
           if (isImage(sFile)) {
@@ -700,7 +715,6 @@ Respond ONLY with valid JSON matching this schema:
           promptText += `\n\nTEACHER EXTRA NOTES & CRITERIA:\n${extraNotes}`;
         }
 
-        // 2. Attach all student essay pages/photos
         for (let p = 0; p < studentFiles.length; p++) {
           const file = studentFiles[p];
           if (isImage(file)) {
