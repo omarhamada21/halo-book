@@ -11,7 +11,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import Database from 'better-sqlite3';
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 
 const require = createRequire(import.meta.url);
 
@@ -62,8 +62,22 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Resend HTTP Email Client
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+// Gmail SMTP Transporter over direct SSL (Port 465)
+const emailTransporter = nodemailer.createTransport({
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
+  auth: {
+    user: (process.env.SMTP_EMAIL || '').trim(),
+    pass: (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '')
+  },
+  tls: {
+    rejectUnauthorized: false
+  },
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000
+});
 
 // Initialize SQLite database
 const db = new Database('halobook.db');
@@ -101,7 +115,7 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY
 });
 
-// Increased limits to support multiple rubric sheets and student essays
+// Supports multiple rubric sheets and student essays
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 }
@@ -412,7 +426,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) =
   res.json({ success: true, message: 'Account deleted successfully.' });
 });
 
-// Password Reset Endpoint
+// Password Reset via Gmail SMTP (Sends to ANY email)
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -432,13 +446,20 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       expiresAt
     );
 
-    let emailSent = false;
-    if (resend) {
+    console.log(`\n========================================`);
+    console.log(`🔑 PASSWORD RESET CODE for [${cleanEmail}]: ${resetCode}`);
+    console.log(`========================================\n`);
+
+    const smtpUser = (process.env.SMTP_EMAIL || '').trim();
+    const smtpPass = (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '');
+
+    if (smtpUser && smtpPass) {
       try {
-        await resend.emails.send({
-          from: 'Halo Book <onboarding@resend.dev>',
+        await emailTransporter.sendMail({
+          from: `"Halo Book" <${smtpUser}>`,
           to: cleanEmail,
           subject: 'Halo Book — Your Password Reset Code',
+          text: `Your password reset code is: ${resetCode}\nThis code expires in 15 minutes.`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #C2CEE7; border-radius: 8px; background: #FBFCFE;">
               <h2 style="color: #1D3A66; margin-top: 0;">Halo Book</h2>
@@ -450,15 +471,16 @@ app.post('/api/auth/forgot-password', async (req, res) => {
             </div>
           `
         });
-        emailSent = true;
+        console.log(`✉️ Gmail sent reset code successfully to: ${cleanEmail}`);
       } catch (mailErr) {
-        console.error('Resend delivery error:', mailErr.message);
+        console.error('Gmail SMTP Delivery Error:', mailErr.message);
       }
+    } else {
+      console.warn('⚠️ SMTP_EMAIL or SMTP_PASSWORD environment variables are missing.');
     }
 
     return res.json({ 
       success: true, 
-      emailSent,
       message: 'A verification code has been dispatched to your email.'
     });
   } catch (error) {
@@ -568,7 +590,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route — Supports Multiple Rubric Sheets & Multiple Student Pages
+// AI Batch Marking Route
 app.post(
   '/api/mark-batch',
   authenticateToken,
@@ -605,7 +627,6 @@ app.post(
         }));
       }
 
-      // Pre-extract all scheme document text
       let allSchemeText = '';
       for (const sFile of schemeFiles) {
         if (!isImage(sFile) && !isPdf(sFile)) {
