@@ -62,7 +62,7 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Gmail Transporter (Direct Gmail App Password)
+// Gmail Transporter (Direct Gmail App Password over SSL)
 const emailTransporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -340,8 +340,8 @@ app.post('/api/auth/google', async (req, res) => {
     res.cookie('halo_token', token, { 
       httpOnly: true, 
       secure: isProduction,
-      sameSite: 'lax', 
-      path: '/', 
+      sameSite: 'lax',
+      path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000 
     });
 
@@ -418,7 +418,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) =
   res.json({ success: true, message: 'Account deleted successfully.' });
 });
 
-// Password Reset Endpoint — Non-blocking with Gmail dispatch and devCode fallback
+// Password Reset Endpoint (Email Delivery Only - No Screen Leaks)
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -440,50 +440,40 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       expiresAt
     );
 
-    console.log(`\n========================================`);
-    console.log(`🔑 PASSWORD RESET CODE for [${cleanEmail}]: ${resetCode}`);
-    console.log(`========================================\n`);
-
     const smtpUser = (process.env.SMTP_EMAIL || '').trim();
     const smtpPass = (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '');
 
-    // Background asynchronous email dispatch
-    if (smtpUser && smtpPass) {
-      (async () => {
-        try {
-          await Promise.race([
-            emailTransporter.sendMail({
-              from: `"Halo Book" <${smtpUser}>`,
-              to: cleanEmail,
-              subject: 'Halo Book — Your Password Reset Code',
-              html: `
-                <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #C2CEE7; border-radius: 8px; background: #FBFCFE;">
-                  <h2 style="color: #1D3A66; margin-top: 0;">Halo Book</h2>
-                  <p style="color: #4A5670; font-size: 15px;">Use the verification code below to reset your password:</p>
-                  <div style="background: #DDE3EE; color: #16233F; font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; padding: 14px; border-radius: 6px; margin: 20px 0;">
-                    ${resetCode}
-                  </div>
-                  <p style="color: #888; font-size: 12px; margin-bottom: 0;">This code expires in 15 minutes.</p>
-                </div>
-              `
-            }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP Timeout')), 4000))
-          ]);
-          console.log(`✉️ Email successfully dispatched to: ${cleanEmail}`);
-        } catch (mailErr) {
-          console.warn('⚠️ SMTP send notice:', mailErr.message);
-        }
-      })();
+    if (!smtpUser || !smtpPass) {
+      console.error('SMTP credentials missing in environment variables.');
+      return res.status(500).json({ error: 'Server email service is not properly configured.' });
     }
+
+    // Send reset code via Gmail
+    await emailTransporter.sendMail({
+      from: `"Halo Book" <${smtpUser}>`,
+      to: cleanEmail,
+      subject: 'Halo Book — Your Password Reset Code',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #C2CEE7; border-radius: 8px; background: #FBFCFE;">
+          <h2 style="color: #1D3A66; margin-top: 0;">Halo Book</h2>
+          <p style="color: #4A5670; font-size: 15px;">Use the verification code below to reset your password:</p>
+          <div style="background: #DDE3EE; color: #16233F; font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; padding: 14px; border-radius: 6px; margin: 20px 0;">
+            ${resetCode}
+          </div>
+          <p style="color: #888; font-size: 12px; margin-bottom: 0;">This code expires in 15 minutes.</p>
+        </div>
+      `
+    });
+
+    console.log(`✉️ Email successfully dispatched to: ${cleanEmail}`);
 
     return res.json({ 
       success: true, 
-      devCode: resetCode,
-      message: 'Verification code generated.'
+      message: 'A 6-digit verification code has been dispatched to your email.'
     });
   } catch (error) {
     console.error('Forgot password error:', error);
-    return res.status(500).json({ error: error.message || 'Failed to request reset.' });
+    return res.status(500).json({ error: 'Failed to send email. Please verify SMTP settings and App Password.' });
   }
 });
 
@@ -588,7 +578,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route — Supports Multiple Rubric Sheets & Multiple Student Pages
+// AI Batch Marking Route
 app.post(
   '/api/mark-batch',
   authenticateToken,

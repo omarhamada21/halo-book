@@ -200,7 +200,7 @@
 
   <form id="reset-form" style="display:none;">
     <div class="msg success" id="reset-banner-msg" style="display:block; margin-bottom:14px; margin-top:0;">
-      ✉️ Enter the 6-digit verification code below with your new password.
+      ✉️ A 6-digit verification code has been dispatched to your email. Enter it below with your new password.
     </div>
     <div class="form-group">
       <label for="reset-code">6-Digit Verification Code</label>
@@ -477,7 +477,7 @@ forgotForm.addEventListener('submit', async (e) => {
   forgotMsg.className = 'msg';
   forgotMsg.style.display = 'none';
   forgotSubmitBtn.disabled = true;
-  forgotSubmitBtn.textContent = 'Generating code...';
+  forgotSubmitBtn.textContent = 'Sending email...';
 
   const email = document.getElementById('forgot-email').value.trim();
   resetTargetEmail = email;
@@ -495,19 +495,17 @@ forgotForm.addEventListener('submit', async (e) => {
       
       const banner = document.getElementById('reset-banner-msg');
       if (banner) {
-        banner.innerHTML = `🔑 Verification Code: <b style="font-size:17px; letter-spacing:3px; background:#fff; padding:3px 8px; border-radius:4px; border:1px solid #BCF0DA; color:#03543F;">${data.devCode}</b><br><small style="color:#03543F; margin-top:4px; display:inline-block;">(Code has been auto-filled below. Enter your new password to finish.)</small>`;
+        banner.innerHTML = `✉️ A 6-digit verification code has been dispatched to <b>${email}</b>. Enter it below with your new password.`;
       }
       
       const codeInput = document.getElementById('reset-code');
-      if (codeInput) {
-        codeInput.value = data.devCode;
-      }
+      if (codeInput) codeInput.value = '';
 
       forgotSubmitBtn.disabled = false;
       forgotSubmitBtn.textContent = 'Send Reset Code';
     } else {
       forgotMsg.className = 'msg error';
-      forgotMsg.textContent = data.error || 'Failed to request reset.';
+      forgotMsg.textContent = data.error || 'Failed to send reset code.';
       forgotSubmitBtn.disabled = false;
       forgotSubmitBtn.textContent = 'Send Reset Code';
     }
