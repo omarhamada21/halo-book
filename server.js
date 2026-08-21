@@ -10,8 +10,8 @@ import { createRequire } from 'module';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
-import Database from 'better-sqlite3';
 import nodemailer from 'nodemailer';
+import { createClient } from '@libsql/client';
 
 const require = createRequire(import.meta.url);
 
@@ -62,7 +62,47 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Gmail Transporter (Direct Gmail App Password over SSL)
+// Initialize Turso Cloud SQLite Client (Falls back to local file if env variables missing)
+const tursoUrl = process.env.TURSO_DATABASE_URL || 'file:halobook.db';
+const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || '';
+
+const db = createClient({
+  url: tursoUrl,
+  authToken: tursoAuthToken
+});
+
+// Auto-create cloud tables
+async function initDatabase() {
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT,
+        google_id TEXT,
+        status TEXT DEFAULT 'pending',
+        role TEXT DEFAULT 'teacher',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS password_resets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        token TEXT NOT NULL,
+        expires_at DATETIME NOT NULL
+      );
+    `);
+    console.log('✅ Connected to Turso Cloud SQLite successfully.');
+  } catch (err) {
+    console.error('Database initialization error:', err.message);
+  }
+}
+initDatabase();
+
+// Direct Gmail App Password Transporter
 const emailTransporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -70,34 +110,6 @@ const emailTransporter = nodemailer.createTransport({
     pass: (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '')
   }
 });
-
-// Initialize SQLite database
-const db = new Database('halobook.db');
-db.pragma('journal_mode = WAL');
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    password TEXT,
-    google_id TEXT,
-    status TEXT DEFAULT 'pending',
-    role TEXT DEFAULT 'teacher',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS password_resets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL,
-    token TEXT NOT NULL,
-    expires_at DATETIME NOT NULL
-  );
-`);
-
-try { db.exec("ALTER TABLE users ADD COLUMN google_id TEXT"); } catch(e) {}
-try { db.exec("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'pending'"); } catch(e) {}
-try { db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'teacher'"); } catch(e) {}
 
 app.use(cors());
 app.use(express.json());
@@ -107,7 +119,7 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY
 });
 
-// Supports multiple rubric sheets and student essays
+// Multer storage for multi-rubric and multi-page essays
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 }
@@ -115,7 +127,7 @@ const upload = multer({
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function authenticateToken(req, res, next) {
+async function authenticateToken(req, res, next) {
   const token = req.cookies.halo_token || (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
 
   if (!token) {
@@ -125,33 +137,45 @@ function authenticateToken(req, res, next) {
     return res.redirect('/login.html');
   }
 
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) {
-      if (req.path.startsWith('/api/')) {
-        return res.status(403).json({ error: 'Session expired. Please login again.' });
-      }
-      return res.redirect('/login.html');
-    }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const result = await db.execute({
+      sql: 'SELECT id, name, email, status, role FROM users WHERE id = ?',
+      args: [decoded.id]
+    });
 
-    const dbUser = db.prepare('SELECT id, name, email, status, role FROM users WHERE id = ?').get(decoded.id);
+    const dbUser = result.rows[0];
     if (!dbUser) {
       res.clearCookie('halo_token');
       return res.redirect('/login.html');
     }
 
-    if (isRootUser(dbUser.email) && dbUser.role !== 'root') {
-      db.prepare("UPDATE users SET role = 'root', status = 'approved' WHERE id = ?").run(dbUser.id);
-      dbUser.role = 'root';
-      dbUser.status = 'approved';
-    } else if (isAdminEmail(dbUser.email) && dbUser.role === 'teacher') {
-      db.prepare("UPDATE users SET role = 'admin', status = 'approved' WHERE id = ?").run(dbUser.id);
-      dbUser.role = 'admin';
-      dbUser.status = 'approved';
+    const userObj = {
+      id: dbUser.id,
+      name: dbUser.name,
+      email: dbUser.email,
+      status: dbUser.status,
+      role: dbUser.role
+    };
+
+    if (isRootUser(userObj.email) && userObj.role !== 'root') {
+      await db.execute({ sql: "UPDATE users SET role = 'root', status = 'approved' WHERE id = ?", args: [userObj.id] });
+      userObj.role = 'root';
+      userObj.status = 'approved';
+    } else if (isAdminEmail(userObj.email) && userObj.role === 'teacher') {
+      await db.execute({ sql: "UPDATE users SET role = 'admin', status = 'approved' WHERE id = ?", args: [userObj.id] });
+      userObj.role = 'admin';
+      userObj.status = 'approved';
     }
 
-    req.user = dbUser;
+    req.user = userObj;
     next();
-  });
+  } catch (err) {
+    if (req.path.startsWith('/api/')) {
+      return res.status(403).json({ error: 'Session expired. Please login again.' });
+    }
+    return res.redirect('/login.html');
+  }
 }
 
 function requireApprovedUser(req, res, next) {
@@ -188,8 +212,14 @@ app.post('/api/auth/register', async (req, res) => {
       });
     }
 
-    const checkUser = db.prepare('SELECT id FROM users WHERE email = ?').get(cleanEmail);
-    if (checkUser) return res.status(400).json({ error: 'An account with this email already exists.' });
+    const checkUser = await db.execute({
+      sql: 'SELECT id FROM users WHERE email = ?',
+      args: [cleanEmail]
+    });
+
+    if (checkUser.rows.length > 0) {
+      return res.status(400).json({ error: 'An account with this email already exists.' });
+    }
 
     let initialRole = 'teacher';
     let initialStatus = 'pending';
@@ -203,11 +233,15 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const insert = db.prepare('INSERT INTO users (name, email, password, status, role) VALUES (?, ?, ?, ?, ?)');
-    const info = insert.run(name.trim(), cleanEmail, hashedPassword, initialStatus, initialRole);
+    const insert = await db.execute({
+      sql: 'INSERT INTO users (name, email, password, status, role) VALUES (?, ?, ?, ?, ?)',
+      args: [name.trim(), cleanEmail, hashedPassword, initialStatus, initialRole]
+    });
+
+    const newUserId = Number(insert.lastInsertRowid);
 
     const token = jwt.sign(
-      { id: info.lastInsertRowid, name: name.trim(), email: cleanEmail, status: initialStatus, role: initialRole },
+      { id: newUserId, name: name.trim(), email: cleanEmail, status: initialStatus, role: initialRole },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -235,24 +269,32 @@ app.post('/api/auth/login', async (req, res) => {
     if (!email || !password) return res.status(400).json({ error: 'Please provide email and password.' });
 
     const cleanEmail = email.toLowerCase().trim();
-    let user = db.prepare('SELECT * FROM users WHERE email = ?').get(cleanEmail);
+    const result = await db.execute({
+      sql: 'SELECT * FROM users WHERE email = ?',
+      args: [cleanEmail]
+    });
+
+    const user = result.rows[0];
     if (!user || !user.password) return res.status(400).json({ error: 'Invalid credentials.' });
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) return res.status(400).json({ error: 'Invalid credentials.' });
 
+    let userRole = user.role;
+    let userStatus = user.status;
+
     if (isRootUser(cleanEmail) && user.role !== 'root') {
-      db.prepare("UPDATE users SET role = 'root', status = 'approved' WHERE id = ?").run(user.id);
-      user.role = 'root';
-      user.status = 'approved';
+      await db.execute({ sql: "UPDATE users SET role = 'root', status = 'approved' WHERE id = ?", args: [user.id] });
+      userRole = 'root';
+      userStatus = 'approved';
     } else if (isAdminEmail(cleanEmail) && user.role === 'teacher') {
-      db.prepare("UPDATE users SET role = 'admin', status = 'approved' WHERE id = ?").run(user.id);
-      user.role = 'admin';
-      user.status = 'approved';
+      await db.execute({ sql: "UPDATE users SET role = 'admin', status = 'approved' WHERE id = ?", args: [user.id] });
+      userRole = 'admin';
+      userStatus = 'approved';
     }
 
     const token = jwt.sign(
-      { id: user.id, name: user.name, email: user.email, status: user.status, role: user.role },
+      { id: user.id, name: user.name, email: user.email, status: userStatus, role: userRole },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -265,7 +307,7 @@ app.post('/api/auth/login', async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000 
     });
 
-    return res.json({ success: true, user: { name: user.name, email: user.email, status: user.status, role: user.role } });
+    return res.json({ success: true, user: { name: user.name, email: user.email, status: userStatus, role: userRole } });
   } catch (error) {
     return res.status(500).json({ error: error.message || 'Server error during login.' });
   }
@@ -300,7 +342,12 @@ app.post('/api/auth/google', async (req, res) => {
     const name = payload.name || email.split('@')[0];
     const googleId = payload.sub || '';
 
-    let user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+    const existingResult = await db.execute({
+      sql: 'SELECT * FROM users WHERE email = ?',
+      args: [email]
+    });
+
+    let user = existingResult.rows[0];
 
     if (!user) {
       let initialRole = 'teacher';
@@ -314,21 +361,29 @@ app.post('/api/auth/google', async (req, res) => {
         initialStatus = 'approved';
       }
 
-      const insert = db.prepare('INSERT INTO users (name, email, password, google_id, status, role) VALUES (?, ?, ?, ?, ?, ?)');
-      const info = insert.run(name, email, 'GOOGLE_AUTH_ACCOUNT', googleId, initialStatus, initialRole);
-      user = { id: info.lastInsertRowid, name, email, status: initialStatus, role: initialRole };
+      const insert = await db.execute({
+        sql: 'INSERT INTO users (name, email, password, google_id, status, role) VALUES (?, ?, ?, ?, ?, ?)',
+        args: [name, email, 'GOOGLE_AUTH_ACCOUNT', googleId, initialStatus, initialRole]
+      });
+
+      user = { id: Number(insert.lastInsertRowid), name, email, status: initialStatus, role: initialRole };
     } else {
+      let updatedRole = user.role;
+      let updatedStatus = user.status;
+
       if (isRootUser(email) && user.role !== 'root') {
-        db.prepare("UPDATE users SET role = 'root', status = 'approved', google_id = ? WHERE id = ?").run(googleId, user.id);
-        user.role = 'root';
-        user.status = 'approved';
+        await db.execute({ sql: "UPDATE users SET role = 'root', status = 'approved', google_id = ? WHERE id = ?", args: [googleId, user.id] });
+        updatedRole = 'root';
+        updatedStatus = 'approved';
       } else if (isAdminEmail(email) && user.role === 'teacher') {
-        db.prepare("UPDATE users SET role = 'admin', status = 'approved', google_id = ? WHERE id = ?").run(googleId, user.id);
-        user.role = 'admin';
-        user.status = 'approved';
+        await db.execute({ sql: "UPDATE users SET role = 'admin', status = 'approved', google_id = ? WHERE id = ?", args: [googleId, user.id] });
+        updatedRole = 'admin';
+        updatedStatus = 'approved';
       } else if (!user.google_id && googleId) {
-        db.prepare('UPDATE users SET google_id = ? WHERE id = ?').run(googleId, user.id);
+        await db.execute({ sql: 'UPDATE users SET google_id = ? WHERE id = ?', args: [googleId, user.id] });
       }
+
+      user = { ...user, role: updatedRole, status: updatedStatus };
     }
 
     const token = jwt.sign(
@@ -356,28 +411,33 @@ app.post('/api/auth/google', async (req, res) => {
 });
 
 // Admin User Management Endpoints
-app.get('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
-  const users = db.prepare('SELECT id, name, email, status, role, created_at FROM users ORDER BY id DESC').all();
-  res.json({ success: true, users });
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const result = await db.execute('SELECT id, name, email, status, role, created_at FROM users ORDER BY id DESC');
+    res.json({ success: true, users: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch users.' });
+  }
 });
 
-app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, res) => {
+app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
   if (!['approved', 'pending', 'rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status.' });
 
-  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [id] });
+  const target = targetResult.rows[0];
   if (!target) return res.status(404).json({ error: 'User not found.' });
 
   if (target.role === 'root') {
     return res.status(403).json({ error: 'The Root User account status cannot be modified.' });
   }
 
-  db.prepare('UPDATE users SET status = ? WHERE id = ?').run(status, id);
+  await db.execute({ sql: 'UPDATE users SET status = ? WHERE id = ?', args: [status, id] });
   res.json({ success: true, message: `Account updated to ${status}.` });
 });
 
-app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, (req, res) => {
+app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
 
@@ -385,7 +445,8 @@ app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, (req, res
     return res.status(400).json({ error: 'Invalid role specified.' });
   }
 
-  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [id] });
+  const target = targetResult.rows[0];
   if (!target) return res.status(404).json({ error: 'User not found.' });
 
   if (target.role === 'root') {
@@ -396,14 +457,15 @@ app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, (req, res
     return res.status(400).json({ error: 'You cannot revoke your own admin rights.' });
   }
 
-  db.prepare("UPDATE users SET role = ?, status = 'approved' WHERE id = ?").run(role, id);
+  await db.execute({ sql: "UPDATE users SET role = ?, status = 'approved' WHERE id = ?", args: [role, id] });
   res.json({ success: true, message: `User role changed to ${role}.` });
 });
 
-app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) => {
+app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
 
-  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [id] });
+  const target = targetResult.rows[0];
   if (!target) return res.status(404).json({ error: 'User not found.' });
 
   if (target.role === 'root') {
@@ -414,18 +476,19 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) =
     return res.status(400).json({ error: 'You cannot delete your own active account.' });
   }
 
-  db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  await db.execute({ sql: 'DELETE FROM users WHERE id = ?', args: [id] });
   res.json({ success: true, message: 'Account deleted successfully.' });
 });
 
-// Password Reset Endpoint (Email Delivery Only - No Screen Leaks)
+// Password Reset Endpoint (Email Delivery Only)
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Please enter your email address.' });
 
     const cleanEmail = email.toLowerCase().trim();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(cleanEmail);
+    const userResult = await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [cleanEmail] });
+    const user = userResult.rows[0];
     if (!user) {
       return res.status(404).json({ error: 'No account found with this email address. Please register first.' });
     }
@@ -433,22 +496,20 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-    db.prepare('DELETE FROM password_resets WHERE email = ?').run(cleanEmail);
-    db.prepare('INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, ?)').run(
-      cleanEmail,
-      resetCode,
-      expiresAt
-    );
+    await db.execute({ sql: 'DELETE FROM password_resets WHERE email = ?', args: [cleanEmail] });
+    await db.execute({
+      sql: 'INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, ?)',
+      args: [cleanEmail, resetCode, expiresAt]
+    });
 
     const smtpUser = (process.env.SMTP_EMAIL || '').trim();
     const smtpPass = (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '');
 
     if (!smtpUser || !smtpPass) {
       console.error('SMTP credentials missing in environment variables.');
-      return res.status(500).json({ error: 'Server email service is not properly configured.' });
+      return res.status(500).json({ error: 'Server email service is not configured.' });
     }
 
-    // Send reset code via Gmail
     await emailTransporter.sendMail({
       from: `"Halo Book" <${smtpUser}>`,
       to: cleanEmail,
@@ -464,8 +525,6 @@ app.post('/api/auth/forgot-password', async (req, res) => {
         </div>
       `
     });
-
-    console.log(`✉️ Email successfully dispatched to: ${cleanEmail}`);
 
     return res.json({ 
       success: true, 
@@ -488,18 +547,26 @@ app.post('/api/auth/reset-password', async (req, res) => {
       });
     }
 
-    const record = db.prepare('SELECT * FROM password_resets WHERE email = ? AND token = ?').get(
-      email.toLowerCase().trim(),
-      code.trim()
-    );
+    const recordResult = await db.execute({
+      sql: 'SELECT * FROM password_resets WHERE email = ? AND token = ?',
+      args: [email.toLowerCase().trim(), code.trim()]
+    });
+
+    const record = recordResult.rows[0];
 
     if (!record || new Date(record.expires_at) < new Date()) {
       return res.status(400).json({ error: 'Invalid or expired verification code.' });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    db.prepare('UPDATE users SET password = ? WHERE email = ?').run(hashedPassword, email.toLowerCase().trim());
-    db.prepare('DELETE FROM password_resets WHERE email = ?').run(email.toLowerCase().trim());
+    await db.execute({
+      sql: 'UPDATE users SET password = ? WHERE email = ?',
+      args: [hashedPassword, email.toLowerCase().trim()]
+    });
+    await db.execute({
+      sql: 'DELETE FROM password_resets WHERE email = ?',
+      args: [email.toLowerCase().trim()]
+    });
 
     return res.json({ success: true, message: 'Password reset successfully. You can now login.' });
   } catch (error) {
@@ -578,7 +645,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route
+// AI Batch Marking Route — Multi-Rubric & Multi-Page Support
 app.post(
   '/api/mark-batch',
   authenticateToken,
