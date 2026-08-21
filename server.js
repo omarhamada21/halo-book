@@ -12,7 +12,6 @@ import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import Database from 'better-sqlite3';
 import nodemailer from 'nodemailer';
-import { Resend } from 'resend';
 
 const require = createRequire(import.meta.url);
 
@@ -63,24 +62,13 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Resend HTTP Client (if configured)
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-
-// Gmail SMTP Transporter over SSL (Port 465)
+// Gmail Transporter (Direct Gmail App Password)
 const emailTransporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
+  service: 'gmail',
   auth: {
     user: (process.env.SMTP_EMAIL || '').trim(),
     pass: (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '')
-  },
-  tls: {
-    rejectUnauthorized: false
-  },
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 15000
+  }
 });
 
 // Initialize SQLite database
@@ -352,8 +340,8 @@ app.post('/api/auth/google', async (req, res) => {
     res.cookie('halo_token', token, { 
       httpOnly: true, 
       secure: isProduction,
-      sameSite: 'lax',
-      path: '/',
+      sameSite: 'lax', 
+      path: '/', 
       maxAge: 7 * 24 * 60 * 60 * 1000 
     });
 
@@ -430,7 +418,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) =
   res.json({ success: true, message: 'Account deleted successfully.' });
 });
 
-// Password Reset Endpoint with Resend / Gmail & Direct UI Fallback
+// Password Reset Endpoint — Non-blocking with Gmail dispatch and devCode fallback
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -438,7 +426,9 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     const cleanEmail = email.toLowerCase().trim();
     const user = db.prepare('SELECT id FROM users WHERE email = ?').get(cleanEmail);
-    if (!user) return res.status(404).json({ error: 'No account found with this email address.' });
+    if (!user) {
+      return res.status(404).json({ error: 'No account found with this email address. Please register first.' });
+    }
 
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
@@ -454,50 +444,42 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     console.log(`🔑 PASSWORD RESET CODE for [${cleanEmail}]: ${resetCode}`);
     console.log(`========================================\n`);
 
-    let delivered = false;
+    const smtpUser = (process.env.SMTP_EMAIL || '').trim();
+    const smtpPass = (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '');
 
-    // 1. Try Resend if configured
-    if (resend) {
-      try {
-        const response = await resend.emails.send({
-          from: 'Halo Book <onboarding@resend.dev>',
-          to: cleanEmail,
-          subject: 'Halo Book — Your Password Reset Code',
-          html: `<p>Your password reset code is: <b>${resetCode}</b> (expires in 15 mins)</p>`
-        });
-        if (response && response.data && response.data.id) {
-          delivered = true;
+    // Background asynchronous email dispatch
+    if (smtpUser && smtpPass) {
+      (async () => {
+        try {
+          await Promise.race([
+            emailTransporter.sendMail({
+              from: `"Halo Book" <${smtpUser}>`,
+              to: cleanEmail,
+              subject: 'Halo Book — Your Password Reset Code',
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #C2CEE7; border-radius: 8px; background: #FBFCFE;">
+                  <h2 style="color: #1D3A66; margin-top: 0;">Halo Book</h2>
+                  <p style="color: #4A5670; font-size: 15px;">Use the verification code below to reset your password:</p>
+                  <div style="background: #DDE3EE; color: #16233F; font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; padding: 14px; border-radius: 6px; margin: 20px 0;">
+                    ${resetCode}
+                  </div>
+                  <p style="color: #888; font-size: 12px; margin-bottom: 0;">This code expires in 15 minutes.</p>
+                </div>
+              `
+            }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP Timeout')), 4000))
+          ]);
+          console.log(`✉️ Email successfully dispatched to: ${cleanEmail}`);
+        } catch (mailErr) {
+          console.warn('⚠️ SMTP send notice:', mailErr.message);
         }
-      } catch (e) {
-        console.warn('Resend send failed (expected on testing domain for external emails):', e.message);
-      }
-    }
-
-    // 2. Try Gmail SMTP if Resend didn't deliver
-    if (!delivered && process.env.SMTP_EMAIL && process.env.SMTP_PASSWORD) {
-      try {
-        await Promise.race([
-          emailTransporter.sendMail({
-            from: `"Halo Book" <${process.env.SMTP_EMAIL.trim()}>`,
-            to: cleanEmail,
-            subject: 'Halo Book — Your Password Reset Code',
-            text: `Your password reset code is: ${resetCode}`
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP Timeout')), 5000))
-        ]);
-        delivered = true;
-      } catch (e) {
-        console.warn('SMTP delivery failed / timed out:', e.message);
-      }
+      })();
     }
 
     return res.json({ 
       success: true, 
-      delivered,
       devCode: resetCode,
-      message: delivered 
-        ? 'A 6-digit verification code has been dispatched to your email.' 
-        : `Email delivery unavailable. Your verification code is: ${resetCode}`
+      message: 'Verification code generated.'
     });
   } catch (error) {
     console.error('Forgot password error:', error);
@@ -606,7 +588,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route
+// AI Batch Marking Route — Supports Multiple Rubric Sheets & Multiple Student Pages
 app.post(
   '/api/mark-batch',
   authenticateToken,
