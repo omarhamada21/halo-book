@@ -10,7 +10,6 @@ import { createRequire } from 'module';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
-import nodemailer from 'nodemailer';
 import { createClient } from '@libsql/client';
 
 const require = createRequire(import.meta.url);
@@ -52,7 +51,6 @@ function isAdminEmail(email) {
   return email && (isRootUser(email) || ADMIN_EMAILS.includes(email.toLowerCase().trim()));
 }
 
-// Password Strength Validator
 function isStrongPassword(password) {
   if (!password || password.length < 8) return false;
   const hasNumber = /[0-9]/.test(password);
@@ -62,7 +60,7 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Initialize Turso Cloud SQLite Client (Falls back to local file if env variables missing)
+// Turso Cloud SQLite
 const tursoUrl = process.env.TURSO_DATABASE_URL || 'file:halobook.db';
 const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || '';
 
@@ -71,7 +69,6 @@ const db = createClient({
   authToken: tursoAuthToken
 });
 
-// Auto-create cloud tables
 async function initDatabase() {
   try {
     await db.execute(`
@@ -86,30 +83,12 @@ async function initDatabase() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `);
-
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS password_resets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT NOT NULL,
-        token TEXT NOT NULL,
-        expires_at DATETIME NOT NULL
-      );
-    `);
     console.log('Connected to Turso Cloud SQLite successfully.');
   } catch (err) {
     console.error('Database initialization error:', err.message);
   }
 }
 initDatabase();
-
-// Direct Gmail App Password Transporter
-const emailTransporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: (process.env.SMTP_EMAIL || '').trim(),
-    pass: (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '')
-  }
-});
 
 app.use(cors());
 app.use(express.json());
@@ -119,7 +98,6 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY
 });
 
-// Multer storage for multi-rubric and multi-page essays
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 }
@@ -141,7 +119,7 @@ async function authenticateToken(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
     const result = await db.execute({
       sql: 'SELECT id, name, email, status, role FROM users WHERE id = ?',
-      args: [decoded.id]
+      args: [Number(decoded.id)]
     });
 
     const dbUser = result.rows[0];
@@ -151,7 +129,7 @@ async function authenticateToken(req, res, next) {
     }
 
     const userObj = {
-      id: dbUser.id,
+      id: Number(dbUser.id),
       name: dbUser.name,
       email: dbUser.email,
       status: dbUser.status,
@@ -198,7 +176,7 @@ app.get('/api/auth/config', (req, res) => {
   res.json({ googleClientId: GOOGLE_CLIENT_ID });
 });
 
-// Auth Routes
+// Registration
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -263,6 +241,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+// Login
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -277,24 +256,24 @@ app.post('/api/auth/login', async (req, res) => {
     const user = result.rows[0];
     if (!user || !user.password) return res.status(400).json({ error: 'Invalid credentials.' });
 
-    const validPassword = await bcrypt.compare(password, user.password);
+    const validPassword = await bcrypt.compare(password, String(user.password));
     if (!validPassword) return res.status(400).json({ error: 'Invalid credentials.' });
 
     let userRole = user.role;
     let userStatus = user.status;
 
     if (isRootUser(cleanEmail) && user.role !== 'root') {
-      await db.execute({ sql: "UPDATE users SET role = 'root', status = 'approved' WHERE id = ?", args: [user.id] });
+      await db.execute({ sql: "UPDATE users SET role = 'root', status = 'approved' WHERE id = ?", args: [Number(user.id)] });
       userRole = 'root';
       userStatus = 'approved';
     } else if (isAdminEmail(cleanEmail) && user.role === 'teacher') {
-      await db.execute({ sql: "UPDATE users SET role = 'admin', status = 'approved' WHERE id = ?", args: [user.id] });
+      await db.execute({ sql: "UPDATE users SET role = 'admin', status = 'approved' WHERE id = ?", args: [Number(user.id)] });
       userRole = 'admin';
       userStatus = 'approved';
     }
 
     const token = jwt.sign(
-      { id: user.id, name: user.name, email: user.email, status: userStatus, role: userRole },
+      { id: Number(user.id), name: user.name, email: user.email, status: userStatus, role: userRole },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -313,6 +292,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// Google Sign-In
 app.post('/api/auth/google', async (req, res) => {
   try {
     const { credential } = req.body;
@@ -372,22 +352,22 @@ app.post('/api/auth/google', async (req, res) => {
       let updatedStatus = user.status;
 
       if (isRootUser(email) && user.role !== 'root') {
-        await db.execute({ sql: "UPDATE users SET role = 'root', status = 'approved', google_id = ? WHERE id = ?", args: [googleId, user.id] });
+        await db.execute({ sql: "UPDATE users SET role = 'root', status = 'approved', google_id = ? WHERE id = ?", args: [googleId, Number(user.id)] });
         updatedRole = 'root';
         updatedStatus = 'approved';
       } else if (isAdminEmail(email) && user.role === 'teacher') {
-        await db.execute({ sql: "UPDATE users SET role = 'admin', status = 'approved', google_id = ? WHERE id = ?", args: [googleId, user.id] });
+        await db.execute({ sql: "UPDATE users SET role = 'admin', status = 'approved', google_id = ? WHERE id = ?", args: [googleId, Number(user.id)] });
         updatedRole = 'admin';
         updatedStatus = 'approved';
       } else if (!user.google_id && googleId) {
-        await db.execute({ sql: 'UPDATE users SET google_id = ? WHERE id = ?', args: [googleId, user.id] });
+        await db.execute({ sql: 'UPDATE users SET google_id = ? WHERE id = ?', args: [googleId, Number(user.id)] });
       }
 
-      user = { ...user, role: updatedRole, status: updatedStatus };
+      user = { ...user, id: Number(user.id), role: updatedRole, status: updatedStatus };
     }
 
     const token = jwt.sign(
-      { id: user.id, name: user.name, email: user.email, status: user.status, role: user.role },
+      { id: Number(user.id), name: user.name, email: user.email, status: user.status, role: user.role },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -395,8 +375,8 @@ app.post('/api/auth/google', async (req, res) => {
     res.cookie('halo_token', token, { 
       httpOnly: true, 
       secure: isProduction,
-      sameSite: 'lax', 
-      path: '/', 
+      sameSite: 'lax',
+      path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000 
     });
 
@@ -410,7 +390,7 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
-// Admin User Management Endpoints
+// Admin Users List
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const result = await db.execute('SELECT id, name, email, status, role, created_at FROM users ORDER BY id DESC');
@@ -420,12 +400,13 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
   }
 });
 
+// Admin User Status Toggle
 app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
   if (!['approved', 'pending', 'rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status.' });
 
-  const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [id] });
+  const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(id)] });
   const target = targetResult.rows[0];
   if (!target) return res.status(404).json({ error: 'User not found.' });
 
@@ -433,10 +414,11 @@ app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, async (
     return res.status(403).json({ error: 'The Root User account status cannot be modified.' });
   }
 
-  await db.execute({ sql: 'UPDATE users SET status = ? WHERE id = ?', args: [status, id] });
+  await db.execute({ sql: 'UPDATE users SET status = ? WHERE id = ?', args: [status, Number(id)] });
   res.json({ success: true, message: `Account updated to ${status}.` });
 });
 
+// Admin Role Toggle
 app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
@@ -445,7 +427,7 @@ app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, async (re
     return res.status(400).json({ error: 'Invalid role specified.' });
   }
 
-  const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [id] });
+  const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(id)] });
   const target = targetResult.rows[0];
   if (!target) return res.status(404).json({ error: 'User not found.' });
 
@@ -453,44 +435,47 @@ app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, async (re
     return res.status(403).json({ error: 'The Root User cannot be demoted.' });
   }
 
-  if (req.user.id === parseInt(id, 10) && role !== 'admin') {
+  if (req.user.id === Number(id) && role !== 'admin') {
     return res.status(400).json({ error: 'You cannot revoke your own admin rights.' });
   }
 
-  await db.execute({ sql: "UPDATE users SET role = ?, status = 'approved' WHERE id = ?", args: [role, id] });
+  await db.execute({ sql: "UPDATE users SET role = ?, status = 'approved' WHERE id = ?", args: [role, Number(id)] });
   res.json({ success: true, message: `User role changed to ${role}.` });
 });
 
-// Admin Manual Password Reset
+// Robust Admin Manual Password Reset
 app.post('/api/admin/users/:id/reset-password', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { newPassword } = req.body;
 
-    if (!newPassword || newPassword.length < 8) {
-      return res.status(400).json({ error: 'Temporary password must be at least 8 characters long.' });
+    if (!newPassword || newPassword.trim().length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters long.' });
     }
 
-    const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [id] });
+    const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(id)] });
     const target = targetResult.rows[0];
     if (!target) return res.status(404).json({ error: 'User not found.' });
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword.trim(), 10);
     await db.execute({
       sql: 'UPDATE users SET password = ? WHERE id = ?',
-      args: [hashedPassword, id]
+      args: [hashedPassword, Number(id)]
     });
 
-    res.json({ success: true, message: `Password for ${target.email} updated successfully.` });
+    console.log(`Admin successfully changed password for user: ${target.email}`);
+    res.json({ success: true, message: `Password for ${target.email} was successfully updated.` });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to reset user password.' });
+    console.error('Admin Password Reset Error:', err);
+    res.status(500).json({ error: err.message || 'Failed to update password.' });
   }
 });
 
+// Admin Delete User
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
 
-  const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [id] });
+  const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(id)] });
   const target = targetResult.rows[0];
   if (!target) return res.status(404).json({ error: 'User not found.' });
 
@@ -498,111 +483,12 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
     return res.status(403).json({ error: 'The Root User account cannot be deleted.' });
   }
 
-  if (req.user.id === parseInt(id, 10)) {
+  if (req.user.id === Number(id)) {
     return res.status(400).json({ error: 'You cannot delete your own active account.' });
   }
 
-  await db.execute({ sql: 'DELETE FROM users WHERE id = ?', args: [id] });
+  await db.execute({ sql: 'DELETE FROM users WHERE id = ?', args: [Number(id)] });
   res.json({ success: true, message: 'Account deleted successfully.' });
-});
-
-// Password Reset Endpoint
-app.post('/api/auth/forgot-password', async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Please enter your email address.' });
-
-    const cleanEmail = email.toLowerCase().trim();
-    const userResult = await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [cleanEmail] });
-    const user = userResult.rows[0];
-    if (!user) {
-      return res.status(404).json({ error: 'No account found with this email address. Please register first.' });
-    }
-
-    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-
-    await db.execute({ sql: 'DELETE FROM password_resets WHERE email = ?', args: [cleanEmail] });
-    await db.execute({
-      sql: 'INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, ?)',
-      args: [cleanEmail, resetCode, expiresAt]
-    });
-
-    const smtpUser = (process.env.SMTP_EMAIL || '').trim();
-    const smtpPass = (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '');
-
-    if (smtpUser && smtpPass) {
-      try {
-        await Promise.race([
-          emailTransporter.sendMail({
-            from: `"Halo Book" <${smtpUser}>`,
-            to: cleanEmail,
-            subject: 'Halo Book — Your Password Reset Code',
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #C2CEE7; border-radius: 8px; background: #FBFCFE;">
-                <h2 style="color: #1D3A66; margin-top: 0;">Halo Book</h2>
-                <p style="color: #4A5670; font-size: 15px;">Use the verification code below to reset your password:</p>
-                <div style="background: #DDE3EE; color: #16233F; font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; padding: 14px; border-radius: 6px; margin: 20px 0;">
-                  ${resetCode}
-                </div>
-                <p style="color: #888; font-size: 12px; margin-bottom: 0;">This code expires in 15 minutes.</p>
-              </div>
-            `
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP timeout')), 4000))
-        ]);
-        console.log(`Email dispatched to: ${cleanEmail}`);
-      } catch (mailErr) {
-        console.warn('SMTP send timed out or blocked by network:', mailErr.message);
-      }
-    }
-
-    return res.json({ 
-      success: true, 
-      message: 'A 6-digit verification code has been dispatched to your email.'
-    });
-  } catch (error) {
-    console.error('Forgot password error:', error);
-    return res.status(500).json({ error: 'Server error processing reset request.' });
-  }
-});
-
-app.post('/api/auth/reset-password', async (req, res) => {
-  try {
-    const { email, code, newPassword } = req.body;
-    if (!email || !code || !newPassword) return res.status(400).json({ error: 'Missing required fields.' });
-
-    if (!isStrongPassword(newPassword)) {
-      return res.status(400).json({ 
-        error: 'New password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.' 
-      });
-    }
-
-    const recordResult = await db.execute({
-      sql: 'SELECT * FROM password_resets WHERE email = ? AND token = ?',
-      args: [email.toLowerCase().trim(), code.trim()]
-    });
-
-    const record = recordResult.rows[0];
-
-    if (!record || new Date(record.expires_at) < new Date()) {
-      return res.status(400).json({ error: 'Invalid or expired verification code.' });
-    }
-
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await db.execute({
-      sql: 'UPDATE users SET password = ? WHERE email = ?',
-      args: [hashedPassword, email.toLowerCase().trim()]
-    });
-    await db.execute({
-      sql: 'DELETE FROM password_resets WHERE email = ?',
-      args: [email.toLowerCase().trim()]
-    });
-
-    return res.json({ success: true, message: 'Password reset successfully. You can now login.' });
-  } catch (error) {
-    return res.status(500).json({ error: error.message || 'Failed to reset password.' });
-  }
 });
 
 app.get('/api/auth/me', authenticateToken, (req, res) => {
@@ -614,7 +500,6 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true, message: 'Logged out successfully.' });
 });
 
-// Static files and Page Routes
 const publicDir = path.resolve(__dirname, 'public');
 app.use(express.static(publicDir));
 
@@ -676,7 +561,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route — Multi-Rubric & Multi-Page Support
+// AI Batch Marking Route
 app.post(
   '/api/mark-batch',
   authenticateToken,
@@ -869,7 +754,6 @@ Respond ONLY with valid JSON matching this schema:
   }
 );
 
-// Fallback route
 app.use((req, res) => {
   if (req.accepts('html')) {
     res.redirect('/login.html');

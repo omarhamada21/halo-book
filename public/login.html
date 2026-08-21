@@ -186,81 +186,35 @@
     <div class="msg" id="auth-msg"></div>
   </form>
 
-  <form id="forgot-form" style="display:none;">
-    <div class="form-group">
-      <label for="forgot-email">Enter your registered email address</label>
-      <input type="email" id="forgot-email" placeholder="teacher@school.com" required>
+  <div id="forgot-pane" style="display:none; text-align:center;">
+    <div style="background:var(--pen-soft); border:1px solid var(--border); border-radius:8px; padding:18px 16px; margin-bottom:18px;">
+      <div style="font-size:24px; margin-bottom:6px;">🔑</div>
+      <h3 style="margin:0 0 6px; font-size:16px; color:var(--pen);">Contact Your Administrator</h3>
+      <p style="margin:0; font-size:13px; color:var(--ink-soft); line-height:1.5;">
+        To reset or recover your account password, please contact the administrator (<b>ohamada2117@gmail.com</b>). They can generate a new temporary password for you instantly from the admin dashboard.
+      </p>
     </div>
-    <button type="submit" class="submit-btn" id="forgot-submit-btn">Send Reset Code</button>
-    <div class="msg" id="forgot-msg"></div>
-    <div style="text-align:center; margin-top:16px;">
-      <a style="font-size:12.5px; color:var(--pen); cursor:pointer;" onclick="switchMode('login')">← Back to Sign In</a>
-    </div>
-  </form>
-
-  <form id="reset-form" style="display:none;">
-    <div class="msg success" id="reset-banner-msg" style="display:block; margin-bottom:14px; margin-top:0;">
-      ✉️ A 6-digit verification code has been dispatched to your email. Enter it below with your new password.
-    </div>
-    <div class="form-group">
-      <label for="reset-code">6-Digit Verification Code</label>
-      <input type="text" id="reset-code" placeholder="123456" maxlength="6" required>
-    </div>
-    <div class="form-group">
-      <label for="reset-password">New Password</label>
-      <input type="password" id="reset-password" placeholder="••••••••" required>
-      
-      <div class="password-meter-wrap" id="reset-password-meter" style="display:block;">
-        <div class="meter-bar">
-          <div class="meter-fill" id="reset-meter-fill"></div>
-        </div>
-        <div class="meter-label">
-          <span>Strength: <b id="reset-strength-text">—</b></span>
-        </div>
-        <ul class="rules-list" id="reset-rules-list">
-          <li id="reset-rule-len"><span class="rule-icon">○</span> Min 8 chars</li>
-          <li id="reset-rule-num"><span class="rule-icon">○</span> 1+ Number</li>
-          <li id="reset-rule-upper"><span class="rule-icon">○</span> 1+ Uppercase</li>
-          <li id="reset-rule-lower"><span class="rule-icon">○</span> 1+ Lowercase</li>
-          <li id="reset-rule-spec"><span class="rule-icon">○</span> 1+ Symbol</li>
-        </ul>
-      </div>
-    </div>
-    <button type="submit" class="submit-btn" id="reset-submit-btn">Reset Password</button>
-    
-    <div class="msg" id="reset-msg"></div>
-
-    <div style="text-align:center; margin-top:16px;">
-      <a style="font-size:12.5px; color:var(--pen); cursor:pointer;" onclick="switchMode('login')">← Back to Sign In</a>
-    </div>
-  </form>
+    <a style="font-size:13px; color:var(--pen); cursor:pointer; font-weight:600;" onclick="switchMode('login')">← Back to Sign In</a>
+  </div>
 </div>
 
 <script>
 let mode = 'login';
-let resetTargetEmail = '';
 
 const authForm = document.getElementById('auth-form');
-const forgotForm = document.getElementById('forgot-form');
-const resetForm = document.getElementById('reset-form');
-
+const forgotPane = document.getElementById('forgot-pane');
 const nameGroup = document.getElementById('name-group');
 const authTitle = document.getElementById('auth-title');
 const submitBtn = document.getElementById('submit-btn');
 const authMsg = document.getElementById('auth-msg');
-const forgotMsg = document.getElementById('forgot-msg');
-const resetMsg = document.getElementById('reset-msg');
-const forgotSubmitBtn = document.getElementById('forgot-submit-btn');
-const resetSubmitBtn = document.getElementById('reset-submit-btn');
 const tabContainer = document.getElementById('tab-container');
 const forgotLinkWrap = document.getElementById('forgot-link-wrap');
 const googleSection = document.getElementById('google-section');
 
 const passwordInput = document.getElementById('password');
 const regPasswordMeter = document.getElementById('reg-password-meter');
-const resetPasswordInput = document.getElementById('reset-password');
 
-function evaluatePassword(pwd, prefix = 'rule') {
+function evaluatePassword(pwd) {
   const rules = {
     len: pwd.length >= 8,
     num: /[0-9]/.test(pwd),
@@ -269,11 +223,10 @@ function evaluatePassword(pwd, prefix = 'rule') {
     spec: /[^A-Za-z0-9]/.test(pwd)
   };
 
-  const idPrefix = prefix === 'rule' ? 'rule-' : 'reset-rule-';
   let passedCount = 0;
 
   for (const [key, passed] of Object.entries(rules)) {
-    const el = document.getElementById(`${idPrefix}${key}`);
+    const el = document.getElementById(`rule-${key}`);
     if (el) {
       if (passed) {
         el.className = 'valid';
@@ -286,8 +239,8 @@ function evaluatePassword(pwd, prefix = 'rule') {
     }
   }
 
-  const fillEl = document.getElementById(prefix === 'rule' ? 'reg-meter-fill' : 'reset-meter-fill');
-  const textEl = document.getElementById(prefix === 'rule' ? 'reg-strength-text' : 'reset-strength-text');
+  const fillEl = document.getElementById('reg-meter-fill');
+  const textEl = document.getElementById('reg-strength-text');
 
   let strengthPct = (passedCount / 5) * 100;
   fillEl.style.width = `${strengthPct}%`;
@@ -311,24 +264,17 @@ function evaluatePassword(pwd, prefix = 'rule') {
 
 passwordInput.addEventListener('input', (e) => {
   if (mode === 'register') {
-    evaluatePassword(e.target.value, 'rule');
+    evaluatePassword(e.target.value);
   }
-});
-
-resetPasswordInput.addEventListener('input', (e) => {
-  evaluatePassword(e.target.value, 'reset');
 });
 
 function switchMode(newMode) {
   mode = newMode;
-  [authMsg, forgotMsg, resetMsg].forEach(el => {
-    el.className = 'msg';
-    el.style.display = 'none';
-  });
+  authMsg.className = 'msg';
+  authMsg.style.display = 'none';
 
   authForm.style.display = (mode === 'login' || mode === 'register') ? 'block' : 'none';
-  forgotForm.style.display = (mode === 'forgot') ? 'block' : 'none';
-  resetForm.style.display = (mode === 'reset') ? 'block' : 'none';
+  forgotPane.style.display = (mode === 'forgot') ? 'block' : 'none';
   tabContainer.style.display = (mode === 'login' || mode === 'register') ? 'flex' : 'none';
 
   if (mode === 'register') {
@@ -340,7 +286,7 @@ function switchMode(newMode) {
     regPasswordMeter.style.display = 'block';
     authTitle.textContent = 'Create Teacher Account';
     submitBtn.textContent = 'Create Account';
-    evaluatePassword(passwordInput.value, 'rule');
+    evaluatePassword(passwordInput.value);
   } else if (mode === 'login') {
     document.getElementById('tab-login').classList.add('active');
     document.getElementById('tab-register').classList.remove('active');
@@ -351,9 +297,7 @@ function switchMode(newMode) {
     authTitle.textContent = 'Sign In to Dashboard';
     submitBtn.textContent = 'Sign In';
   } else if (mode === 'forgot') {
-    authTitle.textContent = 'Reset Password';
-  } else if (mode === 'reset') {
-    authTitle.textContent = 'Set New Password';
+    authTitle.textContent = 'Password Recovery';
   }
 }
 
@@ -396,13 +340,7 @@ window.onload = async () => {
     const res = await fetch('/api/auth/config');
     const { googleClientId } = await res.json();
 
-    if (!googleClientId) {
-      authMsg.className = 'msg error';
-      authMsg.textContent = '⚠️ Warning: GOOGLE_CLIENT_ID is missing in Render Environment Variables.';
-      return;
-    }
-
-    if (window.google && window.google.accounts) {
+    if (googleClientId && window.google && window.google.accounts) {
       google.accounts.id.initialize({
         client_id: googleClientId,
         callback: window.handleGoogleCredentialResponse,
@@ -438,7 +376,7 @@ authForm.addEventListener('submit', async (e) => {
   const password = document.getElementById('password').value;
   const name = document.getElementById('name').value.trim();
 
-  if (mode === 'register' && !evaluatePassword(password, 'rule')) {
+  if (mode === 'register' && !evaluatePassword(password)) {
     authMsg.className = 'msg error';
     authMsg.textContent = 'Please satisfy all 5 password security requirements.';
     return;
@@ -469,100 +407,6 @@ authForm.addEventListener('submit', async (e) => {
     authMsg.className = 'msg error';
     authMsg.textContent = 'Connection error. Please try again.';
     submitBtn.disabled = false;
-  }
-});
-
-forgotForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  forgotMsg.className = 'msg';
-  forgotMsg.style.display = 'none';
-  forgotSubmitBtn.disabled = true;
-  forgotSubmitBtn.textContent = 'Sending email...';
-
-  const email = document.getElementById('forgot-email').value.trim();
-  resetTargetEmail = email;
-
-  try {
-    const res = await fetch('/api/auth/forgot-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email })
-    });
-    const data = await res.json();
-
-    forgotSubmitBtn.disabled = false;
-    forgotSubmitBtn.textContent = 'Send Reset Code';
-
-    if (data.success) {
-      switchMode('reset');
-      
-      const banner = document.getElementById('reset-banner-msg');
-      if (banner) {
-        banner.innerHTML = `✉️ A 6-digit verification code has been dispatched to <b>${email}</b>. Enter it below with your new password.`;
-      }
-      
-      const codeInput = document.getElementById('reset-code');
-      if (codeInput) codeInput.value = '';
-    } else {
-      forgotMsg.className = 'msg error';
-      forgotMsg.textContent = data.error || 'Failed to send reset code.';
-    }
-  } catch (err) {
-    forgotSubmitBtn.disabled = false;
-    forgotSubmitBtn.textContent = 'Send Reset Code';
-    forgotMsg.className = 'msg error';
-    forgotMsg.textContent = 'Connection error. Please try again.';
-  }
-});
-
-resetForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  resetMsg.className = 'msg';
-  resetMsg.style.display = 'none';
-
-  const code = document.getElementById('reset-code').value.trim();
-  const newPassword = document.getElementById('reset-password').value;
-
-  if (!evaluatePassword(newPassword, 'reset')) {
-    resetMsg.className = 'msg error';
-    resetMsg.textContent = 'New password must satisfy all 5 security requirements.';
-    resetMsg.style.display = 'block';
-    return;
-  }
-
-  resetSubmitBtn.disabled = true;
-  resetSubmitBtn.textContent = 'Verifying code...';
-
-  try {
-    const res = await fetch('/api/auth/reset-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: resetTargetEmail, code, newPassword })
-    });
-    const data = await res.json();
-
-    if (data.success) {
-      resetMsg.className = 'msg success';
-      resetMsg.textContent = '✅ Password updated successfully! Redirecting to sign in...';
-      resetMsg.style.display = 'block';
-      setTimeout(() => {
-        switchMode('login');
-        resetSubmitBtn.disabled = false;
-        resetSubmitBtn.textContent = 'Reset Password';
-      }, 1200);
-    } else {
-      resetMsg.className = 'msg error';
-      resetMsg.textContent = data.error || 'The code is wrong or has expired. Please check your email.';
-      resetMsg.style.display = 'block';
-      resetSubmitBtn.disabled = false;
-      resetSubmitBtn.textContent = 'Reset Password';
-    }
-  } catch (err) {
-    resetMsg.className = 'msg error';
-    resetMsg.textContent = 'Connection error. Please try again.';
-    resetMsg.style.display = 'block';
-    resetSubmitBtn.disabled = false;
-    resetSubmitBtn.textContent = 'Reset Password';
   }
 });
 </script>
