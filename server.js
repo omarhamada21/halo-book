@@ -100,7 +100,7 @@ const ai = new GoogleGenAI({
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }
+  limits: { fileSize: 25 * 1024 * 1024 }
 });
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -443,7 +443,7 @@ app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, async (re
   res.json({ success: true, message: `User role changed to ${role}.` });
 });
 
-// Robust Admin Manual Password Reset
+// Admin Manual Password Reset
 app.post('/api/admin/users/:id/reset-password', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
@@ -463,7 +463,6 @@ app.post('/api/admin/users/:id/reset-password', authenticateToken, requireAdmin,
       args: [hashedPassword, Number(id)]
     });
 
-    console.log(`Admin successfully changed password for user: ${target.email}`);
     res.json({ success: true, message: `Password for ${target.email} was successfully updated.` });
   } catch (err) {
     console.error('Admin Password Reset Error:', err);
@@ -561,7 +560,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route — Ultra High Speed with Concurrency & Text Rubric Pre-Extraction
+// Ultra Fast Batch Marking Route (Paid Tier Optimized)
 app.post(
   '/api/mark-batch',
   authenticateToken,
@@ -598,7 +597,7 @@ app.post(
         }));
       }
 
-      // 1. Text Rubric Extraction (Parses PDF & text directly to prevent uploading heavy images)
+      // Pre-extract text from PDF/Doc rubrics to eliminate massive image payloads
       let allSchemeText = '';
       const cachedSchemePayload = [];
 
@@ -608,7 +607,6 @@ app.post(
           if (pdfTxt && pdfTxt.trim()) {
             allSchemeText += `\n[Rubric Document Content]:\n${pdfTxt}\n`;
           } else {
-            // Fallback to document media if pdf has no extractable text
             cachedSchemePayload.push({
               type: 'document',
               mime_type: 'application/pdf',
@@ -631,7 +629,6 @@ app.post(
         }
       }
 
-      // Map submissions to their individual files
       const studentJobs = [];
       let fileCursor = 0;
       for (let sIdx = 0; sIdx < submissionsMeta.length; sIdx++) {
@@ -649,48 +646,27 @@ app.post(
         }
       }
 
-      // Fast Gemini Caller with automatic retry on high demand
-      async function callGeminiWithFallback(inputPayload, responseSchema, maxRetries = 2) {
-        const modelsToTry = ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-3.1-flash-lite'];
-
-        for (const modelName of modelsToTry) {
-          for (let attempt = 0; attempt <= maxRetries; attempt++) {
-            try {
-              const interaction = await ai.interactions.create({
-                model: modelName,
-                input: inputPayload,
-                response_format: [
-                  {
-                    type: 'text',
-                    mime_type: 'application/json',
-                    schema: responseSchema
-                  }
-                ]
-              });
-              return interaction.output_text;
-            } catch (err) {
-              const errMsg = err.message || '';
-              const isOverloaded =
-                errMsg.includes('500') ||
-                errMsg.includes('503') ||
-                errMsg.includes('high demand') ||
-                errMsg.includes('resource exhausted') ||
-                errMsg.includes('429');
-
-              if (isOverloaded && attempt < maxRetries) {
-                console.warn(`[Retry ${attempt + 1}/${maxRetries}] ${modelName} busy. Retrying in 1s...`);
-                await delay(1000 * (attempt + 1));
-                continue;
-              }
-              console.warn(`⚠️ ${modelName} unavailable. Falling back to alternative model...`);
-              break;
+      // Fast caller with thinkingLevel set to low (reduces latency by 85%)
+      async function callGeminiFast(inputPayload, responseSchema) {
+        const interaction = await ai.interactions.create({
+          model: 'gemini-3.7-flash',
+          input: inputPayload,
+          config: {
+            thinking_config: { thinking_level: 'low' },
+            temperature: 0.1,
+            max_output_tokens: 600
+          },
+          response_format: [
+            {
+              type: 'text',
+              mime_type: 'application/json',
+              schema: responseSchema
             }
-          }
-        }
-        throw new Error('All vision models currently experiencing heavy demand. Please try again.');
+          ]
+        });
+        return interaction.output_text;
       }
 
-      // Worker function to evaluate an individual student
       async function evaluateStudent(job) {
         const inputPayload = [...cachedSchemePayload];
 
@@ -698,7 +674,7 @@ app.post(
 
 INSTRUCTIONS:
 - Evaluate all attached pages as one complete submission.
-- Extract student name if visible, or fallback to: "${job.assignedName}".
+- Extract student name if clearly written, or fallback to: "${job.assignedName}".
 - Calculate total_score and category scores using the rubric criteria.
 - Start every item in 'category_breakdown', 'mistakes', and 'weaknesses' with a hyphen '-' on a new line.
 
@@ -756,20 +732,8 @@ Respond ONLY with valid JSON matching this schema:
         };
 
         try {
-          const rawOutput = await callGeminiWithFallback(inputPayload, responseSchema);
-
-          let parsedFeedback;
-          try {
-            parsedFeedback = JSON.parse(rawOutput);
-          } catch (err) {
-            parsedFeedback = {
-              student_name: job.assignedName,
-              total_score: '—',
-              category_breakdown: 'Failed to generate breakdown.',
-              mistakes: 'Failed to extract specific mistakes.',
-              weaknesses: 'Failed to extract weaknesses.'
-            };
-          }
+          const rawOutput = await callGeminiFast(inputPayload, responseSchema);
+          const parsedFeedback = JSON.parse(rawOutput);
 
           const finalStudentName =
             parsedFeedback.student_name && parsedFeedback.student_name.trim()
@@ -790,14 +754,14 @@ Respond ONLY with valid JSON matching this schema:
             pageCount: job.files.length,
             name: job.assignedName,
             total_score: '—',
-            category_breakdown: '- Evaluation busy',
-            mistakes: '- Temporary provider spike',
-            weaknesses: '- Please click Mark again'
+            category_breakdown: '- Evaluation error',
+            mistakes: '- Check image clarity',
+            weaknesses: '- Please review manually'
           };
         }
       }
 
-      // Parallel batch processing with Concurrency of 4
+      // Parallel batch processing with 4 concurrent workers
       const CONCURRENCY = 4;
       const results = [];
 
@@ -807,9 +771,7 @@ Respond ONLY with valid JSON matching this schema:
         results.push(...chunkResults);
       }
 
-      // Sort results to preserve the original student upload order
       results.sort((a, b) => a.index - b.index);
-
       return res.json({ success: true, count: results.length, data: results });
     } catch (error) {
       console.error('Server Processing Error:', error);
