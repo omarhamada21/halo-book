@@ -31,7 +31,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 const port = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'halo-book-secret-key-2026-eduplanet';
+const JWT_SECRET = process.env.JWT_SECRET || 'mimir-marking-secret-key-2026-eduplanet';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 
@@ -61,7 +61,7 @@ function isStrongPassword(password) {
 }
 
 // Turso Cloud SQLite
-const tursoUrl = process.env.TURSO_DATABASE_URL || 'file:halobook.db';
+const tursoUrl = process.env.TURSO_DATABASE_URL || 'file:mimirmarking.db';
 const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || '';
 
 const db = createClient({
@@ -375,8 +375,8 @@ app.post('/api/auth/google', async (req, res) => {
     res.cookie('halo_token', token, { 
       httpOnly: true, 
       secure: isProduction,
-      sameSite: 'lax',
-      path: '/',
+      sameSite: 'lax', 
+      path: '/', 
       maxAge: 7 * 24 * 60 * 60 * 1000 
     });
 
@@ -561,7 +561,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route
+// AI Batch Marking Route — Using Gemini 3.7 Flash for Handwriting Vision
 app.post(
   '/api/mark-batch',
   authenticateToken,
@@ -696,7 +696,7 @@ Respond ONLY with valid JSON matching this schema:
         inputPayload.push({ type: 'text', text: promptText });
 
         const interaction = await ai.interactions.create({
-          model: 'gemini-3.1-flash-lite',
+          model: 'gemini-3.7-flash',
           input: inputPayload,
           response_format: [
             {
@@ -763,5 +763,5 @@ app.use((req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`Halo Book Server running on port ${port}`);
+  console.log(`Mimir Marking Server running on port ${port}`);
 });
