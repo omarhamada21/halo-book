@@ -560,7 +560,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// Ultra Fast Batch Marking Route (Paid Tier Optimized)
+// AI Batch Marking Route
 app.post(
   '/api/mark-batch',
   authenticateToken,
@@ -597,7 +597,7 @@ app.post(
         }));
       }
 
-      // Pre-extract text from PDF/Doc rubrics to eliminate massive image payloads
+      // Pre-extract text from PDF rubrics so we don't send heavy image payloads
       let allSchemeText = '';
       const cachedSchemePayload = [];
 
@@ -646,45 +646,62 @@ app.post(
         }
       }
 
-      // Fast caller with thinkingLevel set to low (reduces latency by 85%)
-      async function callGeminiFast(inputPayload, responseSchema) {
-        const interaction = await ai.interactions.create({
-          model: 'gemini-3.7-flash',
-          input: inputPayload,
-          config: {
-            thinking_config: { thinking_level: 'low' },
-            temperature: 0.1,
-            max_output_tokens: 600
-          },
-          response_format: [
-            {
-              type: 'text',
-              mime_type: 'application/json',
-              schema: responseSchema
-            }
-          ]
-        });
-        return interaction.output_text;
+      // Stable model caller with valid schema format
+      async function callGemini(inputPayload) {
+        const models = ['gemini-3.7-flash', 'gemini-2.5-flash'];
+        let lastErr;
+
+        for (const modelName of models) {
+          try {
+            const interaction = await ai.interactions.create({
+              model: modelName,
+              input: inputPayload,
+              response_format: [
+                {
+                  type: 'text',
+                  mime_type: 'application/json',
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      student_name: { type: 'string' },
+                      total_score: { type: 'string' },
+                      category_breakdown: { type: 'string' },
+                      mistakes: { type: 'string' },
+                      weaknesses: { type: 'string' }
+                    },
+                    required: ['student_name', 'total_score', 'category_breakdown', 'mistakes', 'weaknesses']
+                  }
+                }
+              ]
+            });
+            return interaction.output_text;
+          } catch (err) {
+            console.warn(`Attempt failed on ${modelName}:`, err.message);
+            lastErr = err;
+            await delay(1000);
+          }
+        }
+        throw lastErr;
       }
 
       async function evaluateStudent(job) {
         const inputPayload = [...cachedSchemePayload];
 
-        let promptText = `You are a strict, high-speed exam evaluator reviewing a student's test sheet / essay.
+        let promptText = `You are an expert exam grader evaluating a student handwritten essay.
 
 INSTRUCTIONS:
-- Evaluate all attached pages as one complete submission.
-- Extract student name if clearly written, or fallback to: "${job.assignedName}".
-- Calculate total_score and category scores using the rubric criteria.
-- Start every item in 'category_breakdown', 'mistakes', and 'weaknesses' with a hyphen '-' on a new line.
+- Read and evaluate all attached pages of the student submission carefully.
+- Extract the student handwritten or written name. If missing, fallback to: "${job.assignedName}".
+- Grade against the provided rubric scheme.
+- In 'category_breakdown', 'mistakes', and 'weaknesses', format EVERY point on a new line starting with a hyphen '-'.
 
-Respond ONLY with valid JSON matching this schema:
+Respond in valid JSON:
 {
   "student_name": "Student Name",
-  "total_score": "20/25",
-  "category_breakdown": "- Structure: 4/6\\n- Content: 4/6\\n- Linking Words: 4/5\\n- Vocabulary: 4/4\\n- SPaG: 4/4",
-  "mistakes": "- Line 3: spelling mistake 'freind' -> 'friend'",
-  "weaknesses": "- Use more descriptive adjectives"
+  "total_score": "18/25",
+  "category_breakdown": "- Structure: 4/6\\n- Content: 4/6\\n- Linking Words: 4/5\\n- Vocabulary: 3/4\\n- SPaG: 3/4",
+  "mistakes": "- Line 2: spelling 'freind' -> 'friend'",
+  "weaknesses": "- Practice using varied sensory details"
 }`;
 
         if (allSchemeText.trim()) {
@@ -716,23 +733,11 @@ Respond ONLY with valid JSON matching this schema:
           }
         }
 
-        promptText += `\n\nSTUDENT SUBMISSION: ${job.files.length} attached document/image(s).`;
+        promptText += `\n\nSTUDENT WORK: ${job.files.length} attached document/image page(s).`;
         inputPayload.push({ type: 'text', text: promptText });
 
-        const responseSchema = {
-          type: 'object',
-          properties: {
-            student_name: { type: 'string' },
-            total_score: { type: 'string' },
-            category_breakdown: { type: 'string' },
-            mistakes: { type: 'string' },
-            weaknesses: { type: 'string' }
-          },
-          required: ['student_name', 'total_score', 'category_breakdown', 'mistakes', 'weaknesses']
-        };
-
         try {
-          const rawOutput = await callGeminiFast(inputPayload, responseSchema);
+          const rawOutput = await callGemini(inputPayload);
           const parsedFeedback = JSON.parse(rawOutput);
 
           const finalStudentName =
@@ -748,7 +753,7 @@ Respond ONLY with valid JSON matching this schema:
             ...parsedFeedback
           };
         } catch (err) {
-          console.error(`Error evaluating ${job.assignedName}:`, err.message);
+          console.error(`Final failure evaluating ${job.assignedName}:`, err.message);
           return {
             index: job.index,
             pageCount: job.files.length,
@@ -761,8 +766,8 @@ Respond ONLY with valid JSON matching this schema:
         }
       }
 
-      // Parallel batch processing with 4 concurrent workers
-      const CONCURRENCY = 4;
+      // Process with concurrency of 2 (safe, stable, fast)
+      const CONCURRENCY = 2;
       const results = [];
 
       for (let i = 0; i < studentJobs.length; i += CONCURRENCY) {
