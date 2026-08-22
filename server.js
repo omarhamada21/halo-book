@@ -561,7 +561,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route — Parallel Concurrency with Automatic Fallback Handling
+// AI Batch Marking Route — Ultra High Speed with Concurrency & Text Rubric Pre-Extraction
 app.post(
   '/api/mark-batch',
   authenticateToken,
@@ -598,21 +598,24 @@ app.post(
         }));
       }
 
-      // Pre-extract text from textual scheme files
+      // 1. Text Rubric Extraction (Parses PDF & text directly to prevent uploading heavy images)
       let allSchemeText = '';
-      for (const sFile of schemeFiles) {
-        if (!isImage(sFile) && !isPdf(sFile)) {
-          const txt = await extractText(sFile);
-          if (txt.trim()) {
-            allSchemeText += `\n[Rubric File: ${sFile.originalname}]\n${txt}\n`;
-          }
-        }
-      }
-
-      // Pre-encode scheme media once so we don't repeat for each student
       const cachedSchemePayload = [];
+
       for (const sFile of schemeFiles) {
-        if (isImage(sFile)) {
+        if (isPdf(sFile)) {
+          const pdfTxt = await extractText(sFile);
+          if (pdfTxt && pdfTxt.trim()) {
+            allSchemeText += `\n[Rubric Document Content]:\n${pdfTxt}\n`;
+          } else {
+            // Fallback to document media if pdf has no extractable text
+            cachedSchemePayload.push({
+              type: 'document',
+              mime_type: 'application/pdf',
+              data: sFile.buffer.toString('base64')
+            });
+          }
+        } else if (isImage(sFile)) {
           let mimeType = sFile.mimetype || 'image/png';
           if (!mimeType.startsWith('image/')) mimeType = 'image/png';
           cachedSchemePayload.push({
@@ -620,12 +623,11 @@ app.post(
             mime_type: mimeType,
             data: sFile.buffer.toString('base64')
           });
-        } else if (isPdf(sFile)) {
-          cachedSchemePayload.push({
-            type: 'document',
-            mime_type: 'application/pdf',
-            data: sFile.buffer.toString('base64')
-          });
+        } else {
+          const txt = await extractText(sFile);
+          if (txt.trim()) {
+            allSchemeText += `\n[Rubric File: ${sFile.originalname}]\n${txt}\n`;
+          }
         }
       }
 
@@ -647,7 +649,7 @@ app.post(
         }
       }
 
-      // Model calling helper with auto-retry and failover on Google capacity spikes
+      // Fast Gemini Caller with automatic retry on high demand
       async function callGeminiWithFallback(inputPayload, responseSchema, maxRetries = 2) {
         const modelsToTry = ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-3.1-flash-lite'];
 
@@ -676,8 +678,8 @@ app.post(
                 errMsg.includes('429');
 
               if (isOverloaded && attempt < maxRetries) {
-                console.warn(`[Retry ${attempt + 1}/${maxRetries}] ${modelName} busy. Retrying in 1.5s...`);
-                await delay(1500 * (attempt + 1));
+                console.warn(`[Retry ${attempt + 1}/${maxRetries}] ${modelName} busy. Retrying in 1s...`);
+                await delay(1000 * (attempt + 1));
                 continue;
               }
               console.warn(`⚠️ ${modelName} unavailable. Falling back to alternative model...`);
@@ -692,33 +694,28 @@ app.post(
       async function evaluateStudent(job) {
         const inputPayload = [...cachedSchemePayload];
 
-        let promptText = `You are a strict, high-precision exam evaluator reviewing a student's test sheet / essay.
+        let promptText = `You are a strict, high-speed exam evaluator reviewing a student's test sheet / essay.
 
-IMPORTANT MULTI-PAGE & RUBRIC INSTRUCTIONS:
-- The marking scheme / rubric is provided across attached files/images and extra criteria notes. Read all rubric pages completely.
-- This student submission consists of ${job.files.length} page(s)/image(s). Evaluate ALL attached pages as a single unified exam work.
-- Extract the student's handwritten or printed name from the header/page. If none is clearly written, fallback to: "${job.assignedName}".
-
-CRITICAL FORMATTING RULES:
-- EVERY item in 'category_breakdown', 'mistakes', and 'weaknesses' MUST be on a NEW LINE starting with a hyphen '-'. Do NOT group multiple items into a single paragraph!
-- Calculate scores category by category across all submitted pages (e.g. - Section 1: 6/10\\n- Section 2: 9/10).
-- Compute total_score as the sum of all sections across all pages (e.g. 31/40).
-- Use simple, student-friendly English. Be direct and concise.
+INSTRUCTIONS:
+- Evaluate all attached pages as one complete submission.
+- Extract student name if visible, or fallback to: "${job.assignedName}".
+- Calculate total_score and category scores using the rubric criteria.
+- Start every item in 'category_breakdown', 'mistakes', and 'weaknesses' with a hyphen '-' on a new line.
 
 Respond ONLY with valid JSON matching this schema:
 {
-  "student_name": "Extracted student name",
-  "total_score": "31/40",
-  "category_breakdown": "- Section 1 (Choose the correct answer): 6/10\\n- Section 2 (Complete the sentences): 9/10\\n- Section 3 (Find mistake): 9/10\\n- Section 4 (Sentence Fragments): 7/10",
-  "mistakes": "- Section 1, Item 1: Selected 'c' instead of 'b'\\n- Section 1, Item 3: Selected 'a' instead of 'b'\\n- Section 2, Item 8: Wrote 'hunted' instead of 'born'",
-  "weaknesses": "- Practice identifying sentence fragments\\n- Review vocabulary on animal habitats\\n- Practice past tense verb rules"
+  "student_name": "Student Name",
+  "total_score": "20/25",
+  "category_breakdown": "- Structure: 4/6\\n- Content: 4/6\\n- Linking Words: 4/5\\n- Vocabulary: 4/4\\n- SPaG: 4/4",
+  "mistakes": "- Line 3: spelling mistake 'freind' -> 'friend'",
+  "weaknesses": "- Use more descriptive adjectives"
 }`;
 
         if (allSchemeText.trim()) {
-          promptText += `\n\nMARKING SCHEME FILE CONTENT:\n${allSchemeText}`;
+          promptText += `\n\nMARKING SCHEME CRITERIA:\n${allSchemeText}`;
         }
         if (extraNotes.trim()) {
-          promptText += `\n\nTEACHER EXTRA NOTES & CRITERIA:\n${extraNotes}`;
+          promptText += `\n\nTEACHER NOTES:\n${extraNotes}`;
         }
 
         for (let p = 0; p < job.files.length; p++) {
@@ -743,7 +740,7 @@ Respond ONLY with valid JSON matching this schema:
           }
         }
 
-        promptText += `\n\nSTUDENT ESSAY: Attached above are ${job.files.length} file(s)/page(s) representing this student's full submission.`;
+        promptText += `\n\nSTUDENT SUBMISSION: ${job.files.length} attached document/image(s).`;
         inputPayload.push({ type: 'text', text: promptText });
 
         const responseSchema = {
@@ -768,7 +765,7 @@ Respond ONLY with valid JSON matching this schema:
             parsedFeedback = {
               student_name: job.assignedName,
               total_score: '—',
-              category_breakdown: 'Failed to generate category breakdown.',
+              category_breakdown: 'Failed to generate breakdown.',
               mistakes: 'Failed to extract specific mistakes.',
               weaknesses: 'Failed to extract weaknesses.'
             };
@@ -800,8 +797,8 @@ Respond ONLY with valid JSON matching this schema:
         }
       }
 
-      // Parallel batch processing with concurrency of 3
-      const CONCURRENCY = 3;
+      // Parallel batch processing with Concurrency of 4
+      const CONCURRENCY = 4;
       const results = [];
 
       for (let i = 0; i < studentJobs.length; i += CONCURRENCY) {
