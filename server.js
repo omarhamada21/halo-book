@@ -561,7 +561,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route — Using Gemini 3.7 Flash for Handwriting Vision
+// AI Batch Marking Route — Parallel Concurrency with Automatic Fallback Handling
 app.post(
   '/api/mark-batch',
   authenticateToken,
@@ -598,6 +598,7 @@ app.post(
         }));
       }
 
+      // Pre-extract text from textual scheme files
       let allSchemeText = '';
       for (const sFile of schemeFiles) {
         if (!isImage(sFile) && !isPdf(sFile)) {
@@ -608,51 +609,101 @@ app.post(
         }
       }
 
-      const results = [];
-      let fileCursor = 0;
+      // Pre-encode scheme media once so we don't repeat for each student
+      const cachedSchemePayload = [];
+      for (const sFile of schemeFiles) {
+        if (isImage(sFile)) {
+          let mimeType = sFile.mimetype || 'image/png';
+          if (!mimeType.startsWith('image/')) mimeType = 'image/png';
+          cachedSchemePayload.push({
+            type: 'image',
+            mime_type: mimeType,
+            data: sFile.buffer.toString('base64')
+          });
+        } else if (isPdf(sFile)) {
+          cachedSchemePayload.push({
+            type: 'document',
+            mime_type: 'application/pdf',
+            data: sFile.buffer.toString('base64')
+          });
+        }
+      }
 
+      // Map submissions to their individual files
+      const studentJobs = [];
+      let fileCursor = 0;
       for (let sIdx = 0; sIdx < submissionsMeta.length; sIdx++) {
         const sub = submissionsMeta[sIdx];
         const pageCount = sub.fileCount || 1;
         const studentFiles = allUploadedFiles.slice(fileCursor, fileCursor + pageCount);
         fileCursor += pageCount;
 
-        if (studentFiles.length === 0) continue;
+        if (studentFiles.length > 0) {
+          studentJobs.push({
+            index: sIdx,
+            assignedName: sub.name || `Student ${sIdx + 1}`,
+            files: studentFiles
+          });
+        }
+      }
 
-        const assignedStudentName = sub.name || `Student ${sIdx + 1}`;
-        const inputPayload = [];
+      // Model calling helper with auto-retry and failover on Google capacity spikes
+      async function callGeminiWithFallback(inputPayload, responseSchema, maxRetries = 2) {
+        const modelsToTry = ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-3.1-flash-lite'];
 
-        for (let rIdx = 0; rIdx < schemeFiles.length; rIdx++) {
-          const sFile = schemeFiles[rIdx];
-          if (isImage(sFile)) {
-            let mimeType = sFile.mimetype || 'image/png';
-            if (!mimeType.startsWith('image/')) mimeType = 'image/png';
-            inputPayload.push({
-              type: 'image',
-              mime_type: mimeType,
-              data: sFile.buffer.toString('base64')
-            });
-          } else if (isPdf(sFile)) {
-            inputPayload.push({
-              type: 'document',
-              mime_type: 'application/pdf',
-              data: sFile.buffer.toString('base64')
-            });
+        for (const modelName of modelsToTry) {
+          for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+              const interaction = await ai.interactions.create({
+                model: modelName,
+                input: inputPayload,
+                response_format: [
+                  {
+                    type: 'text',
+                    mime_type: 'application/json',
+                    schema: responseSchema
+                  }
+                ]
+              });
+              return interaction.output_text;
+            } catch (err) {
+              const errMsg = err.message || '';
+              const isOverloaded =
+                errMsg.includes('500') ||
+                errMsg.includes('503') ||
+                errMsg.includes('high demand') ||
+                errMsg.includes('resource exhausted') ||
+                errMsg.includes('429');
+
+              if (isOverloaded && attempt < maxRetries) {
+                console.warn(`[Retry ${attempt + 1}/${maxRetries}] ${modelName} busy. Retrying in 1.5s...`);
+                await delay(1500 * (attempt + 1));
+                continue;
+              }
+              console.warn(`⚠️ ${modelName} unavailable. Falling back to alternative model...`);
+              break;
+            }
           }
         }
+        throw new Error('All vision models currently experiencing heavy demand. Please try again.');
+      }
+
+      // Worker function to evaluate an individual student
+      async function evaluateStudent(job) {
+        const inputPayload = [...cachedSchemePayload];
 
         let promptText = `You are a strict, high-precision exam evaluator reviewing a student's test sheet / essay.
 
 IMPORTANT MULTI-PAGE & RUBRIC INSTRUCTIONS:
-- The marking scheme / rubric is provided across ${schemeFiles.length} file(s)/image(s) and any extra criteria notes attached. Read all rubric pages completely.
-- This student submission consists of ${studentFiles.length} page(s)/image(s). Evaluate ALL attached pages as a single unified exam work.
-- Extract the student's handwritten or printed name from the header/page. If none is clearly written, fallback to: "${assignedStudentName}".
+- The marking scheme / rubric is provided across attached files/images and extra criteria notes. Read all rubric pages completely.
+- This student submission consists of ${job.files.length} page(s)/image(s). Evaluate ALL attached pages as a single unified exam work.
+- Extract the student's handwritten or printed name from the header/page. If none is clearly written, fallback to: "${job.assignedName}".
 
 CRITICAL FORMATTING RULES:
 - EVERY item in 'category_breakdown', 'mistakes', and 'weaknesses' MUST be on a NEW LINE starting with a hyphen '-'. Do NOT group multiple items into a single paragraph!
 - Calculate scores category by category across all submitted pages (e.g. - Section 1: 6/10\\n- Section 2: 9/10).
 - Compute total_score as the sum of all sections across all pages (e.g. 31/40).
-- Use simple, student-friendly English. Be direct and avoid polite filler.
+- Use simple, student-friendly English. Be direct and concise.
 
 Respond ONLY with valid JSON matching this schema:
 {
@@ -670,8 +721,8 @@ Respond ONLY with valid JSON matching this schema:
           promptText += `\n\nTEACHER EXTRA NOTES & CRITERIA:\n${extraNotes}`;
         }
 
-        for (let p = 0; p < studentFiles.length; p++) {
-          const file = studentFiles[p];
+        for (let p = 0; p < job.files.length; p++) {
+          const file = job.files[p];
           if (isImage(file)) {
             let mimeType = file.mimetype || 'image/png';
             if (!mimeType.startsWith('image/')) mimeType = 'image/png';
@@ -692,59 +743,75 @@ Respond ONLY with valid JSON matching this schema:
           }
         }
 
-        promptText += `\n\nSTUDENT ESSAY: Attached above are ${studentFiles.length} file(s)/page(s) representing this student's full submission.`;
+        promptText += `\n\nSTUDENT ESSAY: Attached above are ${job.files.length} file(s)/page(s) representing this student's full submission.`;
         inputPayload.push({ type: 'text', text: promptText });
 
-        const interaction = await ai.interactions.create({
-          model: 'gemini-3.7-flash',
-          input: inputPayload,
-          response_format: [
-            {
-              type: 'text',
-              mime_type: 'application/json',
-              schema: {
-                type: 'object',
-                properties: {
-                  student_name: { type: 'string' },
-                  total_score: { type: 'string' },
-                  category_breakdown: { type: 'string' },
-                  mistakes: { type: 'string' },
-                  weaknesses: { type: 'string' }
-                },
-                required: ['student_name', 'total_score', 'category_breakdown', 'mistakes', 'weaknesses']
-              }
-            }
-          ]
-        });
+        const responseSchema = {
+          type: 'object',
+          properties: {
+            student_name: { type: 'string' },
+            total_score: { type: 'string' },
+            category_breakdown: { type: 'string' },
+            mistakes: { type: 'string' },
+            weaknesses: { type: 'string' }
+          },
+          required: ['student_name', 'total_score', 'category_breakdown', 'mistakes', 'weaknesses']
+        };
 
-        let parsedFeedback;
         try {
-          parsedFeedback = JSON.parse(interaction.output_text);
+          const rawOutput = await callGeminiWithFallback(inputPayload, responseSchema);
+
+          let parsedFeedback;
+          try {
+            parsedFeedback = JSON.parse(rawOutput);
+          } catch (err) {
+            parsedFeedback = {
+              student_name: job.assignedName,
+              total_score: '—',
+              category_breakdown: 'Failed to generate category breakdown.',
+              mistakes: 'Failed to extract specific mistakes.',
+              weaknesses: 'Failed to extract weaknesses.'
+            };
+          }
+
+          const finalStudentName =
+            parsedFeedback.student_name && parsedFeedback.student_name.trim()
+              ? parsedFeedback.student_name.trim()
+              : job.assignedName;
+
+          return {
+            index: job.index,
+            pageCount: job.files.length,
+            name: finalStudentName,
+            score: parsedFeedback.total_score,
+            ...parsedFeedback
+          };
         } catch (err) {
-          parsedFeedback = {
-            student_name: assignedStudentName,
+          console.error(`Error evaluating ${job.assignedName}:`, err.message);
+          return {
+            index: job.index,
+            pageCount: job.files.length,
+            name: job.assignedName,
             total_score: '—',
-            category_breakdown: 'Failed to generate category breakdown.',
-            mistakes: 'Failed to extract specific mistakes.',
-            weaknesses: 'Failed to extract weaknesses.'
+            category_breakdown: '- Evaluation busy',
+            mistakes: '- Temporary provider spike',
+            weaknesses: '- Please click Mark again'
           };
         }
-
-        const finalStudentName = (parsedFeedback.student_name && parsedFeedback.student_name.trim()) 
-          ? parsedFeedback.student_name.trim() 
-          : assignedStudentName;
-
-        results.push({
-          pageCount: studentFiles.length,
-          name: finalStudentName,
-          score: parsedFeedback.total_score,
-          ...parsedFeedback
-        });
-
-        if (sIdx < submissionsMeta.length - 1) {
-          await delay(2000);
-        }
       }
+
+      // Parallel batch processing with concurrency of 3
+      const CONCURRENCY = 3;
+      const results = [];
+
+      for (let i = 0; i < studentJobs.length; i += CONCURRENCY) {
+        const chunk = studentJobs.slice(i, i + CONCURRENCY);
+        const chunkResults = await Promise.all(chunk.map((job) => evaluateStudent(job)));
+        results.push(...chunkResults);
+      }
+
+      // Sort results to preserve the original student upload order
+      results.sort((a, b) => a.index - b.index);
 
       return res.json({ success: true, count: results.length, data: results });
     } catch (error) {
