@@ -560,7 +560,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route
+// AI Batch Marking Route — Stable & Fast
 app.post(
   '/api/mark-batch',
   authenticateToken,
@@ -597,7 +597,7 @@ app.post(
         }));
       }
 
-      // Pre-extract text from PDF rubrics so we don't send heavy image payloads
+      // Pre-extract text from PDF rubrics so we avoid sending huge base64 images
       let allSchemeText = '';
       const cachedSchemePayload = [];
 
@@ -646,7 +646,7 @@ app.post(
         }
       }
 
-      // Stable model caller with valid schema format
+      // Model caller with failover
       async function callGemini(inputPayload) {
         const models = ['gemini-3.7-flash', 'gemini-2.5-flash'];
         let lastErr;
@@ -766,7 +766,7 @@ Respond in valid JSON:
         }
       }
 
-      // Process with concurrency of 2 (safe, stable, fast)
+      // Concurrency of 2 for high stability and rate-limit compliance
       const CONCURRENCY = 2;
       const results = [];
 
