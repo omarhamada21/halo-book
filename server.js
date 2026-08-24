@@ -560,7 +560,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route — Stable & Fast with Active Gemini 3.7 & 3.6 Models
+// AI Batch Marking Route — Powered by gemini-3.6-flash as Primary
 app.post(
   '/api/mark-batch',
   authenticateToken,
@@ -646,39 +646,47 @@ app.post(
         }
       }
 
-      // Active model caller with failover between 3.7-flash and 3.6-flash
+      // Main Model: gemini-3.6-flash (Fast, reliable, and high availability)
       async function callGemini(inputPayload) {
-        const models = ['gemini-3.7-flash', 'gemini-3.6-flash'];
+        const models = ['gemini-3.6-flash', 'gemini-3.7-flash'];
         let lastErr;
 
         for (const modelName of models) {
-          try {
-            const interaction = await ai.interactions.create({
-              model: modelName,
-              input: inputPayload,
-              response_format: [
-                {
-                  type: 'text',
-                  mime_type: 'application/json',
-                  schema: {
-                    type: 'object',
-                    properties: {
-                      student_name: { type: 'string' },
-                      total_score: { type: 'string' },
-                      category_breakdown: { type: 'string' },
-                      mistakes: { type: 'string' },
-                      weaknesses: { type: 'string' }
-                    },
-                    required: ['student_name', 'total_score', 'category_breakdown', 'mistakes', 'weaknesses']
+          for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+              const interaction = await ai.interactions.create({
+                model: modelName,
+                input: inputPayload,
+                response_format: [
+                  {
+                    type: 'text',
+                    mime_type: 'application/json',
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        student_name: { type: 'string' },
+                        total_score: { type: 'string' },
+                        category_breakdown: { type: 'string' },
+                        mistakes: { type: 'string' },
+                        weaknesses: { type: 'string' }
+                      },
+                      required: ['student_name', 'total_score', 'category_breakdown', 'mistakes', 'weaknesses']
+                    }
                   }
-                }
-              ]
-            });
-            return interaction.output_text;
-          } catch (err) {
-            console.warn(`Attempt failed on ${modelName}:`, err.message);
-            lastErr = err;
-            await delay(1000);
+                ]
+              });
+              return interaction.output_text;
+            } catch (err) {
+              const errMsg = err.message || '';
+              console.warn(`[${modelName} attempt ${attempt + 1}] ${errMsg}`);
+              lastErr = err;
+              
+              if (errMsg.includes('500') || errMsg.includes('503') || errMsg.includes('high demand')) {
+                await delay(800 * (attempt + 1));
+                continue;
+              }
+              break;
+            }
           }
         }
         throw lastErr;
@@ -766,7 +774,7 @@ Respond in valid JSON:
         }
       }
 
-      // Concurrency of 2 for high stability and rate-limit compliance
+      // Concurrency of 2 for optimal throughput and stability
       const CONCURRENCY = 2;
       const results = [];
 
