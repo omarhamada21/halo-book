@@ -560,7 +560,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route — Powered by gemini-3.6-flash as Primary
+// AI Batch Marking Route — Powered by gemini-3.6-flash
 app.post(
   '/api/mark-batch',
   authenticateToken,
@@ -646,7 +646,7 @@ app.post(
         }
       }
 
-      // Main Model: gemini-3.6-flash (Fast, reliable, and high availability)
+      // Model caller with failover
       async function callGemini(inputPayload) {
         const models = ['gemini-3.6-flash', 'gemini-3.7-flash'];
         let lastErr;
@@ -695,28 +695,36 @@ app.post(
       async function evaluateStudent(job) {
         const inputPayload = [...cachedSchemePayload];
 
-        let promptText = `You are an expert exam grader evaluating a student handwritten essay.
+        let promptText = `You are a meticulous exam evaluator reviewing a student's handwritten writing assessment / essay.
 
-INSTRUCTIONS:
-- Read and evaluate all attached pages of the student submission carefully.
-- Extract the student handwritten or written name. If missing, fallback to: "${job.assignedName}".
-- Grade against the provided rubric scheme.
-- In 'category_breakdown', 'mistakes', and 'weaknesses', format EVERY point on a new line starting with a hyphen '-'.
+INSTRUCTIONS FOR EXTRACTING 'mistakes':
+List all specific, granular mistakes found in the student's handwritten work line-by-line or paragraph-by-paragraph. Follow these exact patterns:
+- Prefix each bullet with either the location (e.g. Paragraph 1:, Line 2:) OR the error type (e.g. Spelling:, Subject-Verb Agreement:, Punctuation & Capitalization:, Run-on Sentence:).
+- Always quote the student's exact phrase in single quotes and indicate the correction clearly using '->' or 'should be'.
+- Examples of the exact required style:
+  - Paragraph 1: 'the Lalaland it is' -> Capitalize 'The', and avoid pronoun repetition ('The Lalaland is' or 'Lalaland is')
+  - Paragraph 1 & 2: spelling 'cenima' -> 'cinema'
+  - Line 3: Subject-verb agreement error ('Some of my friends was' -> 'Some of my friends were')
+  - Spelling: 'freinds' should be spelled 'friends' (repeated throughout).
+  - Subject-Verb Agreement: 'bus's wheels was not working' should be 'bus wheels were not working'.
+  - Grammar/Syntax: 'Me and my freinds were going' should be 'My friends and I were going'.
+  - Punctuation & Capitalization: Unnecessary capital letters mid-sentence (e.g., 'At the end', 'Play ground').
+- EVERY single mistake MUST be on a NEW LINE starting with a hyphen '-'.
 
-Respond in valid JSON:
+Respond ONLY with valid JSON matching this schema:
 {
   "student_name": "Student Name",
-  "total_score": "18/25",
-  "category_breakdown": "- Structure: 4/6\\n- Content: 4/6\\n- Linking Words: 4/5\\n- Vocabulary: 3/4\\n- SPaG: 3/4",
-  "mistakes": "- Line 2: spelling 'freind' -> 'friend'",
-  "weaknesses": "- Practice using varied sensory details"
+  "total_score": "12/25",
+  "category_breakdown": "- Structure: 3/6\\n- Content: 3/6\\n- Linking Words: 2/5\\n- Vocabulary: 2/4\\n- SPaG: 2/4",
+  "mistakes": "- Spelling: 'freinds' should be spelled 'friends' (repeated throughout).\\n- Line 1: 'was going' should be 'were going'\\n- Paragraph 2: spelling 'cenima' -> 'cinema'",
+  "weaknesses": "- Practice identifying sentence fragments\\n- Review past tense verb rules"
 }`;
 
         if (allSchemeText.trim()) {
           promptText += `\n\nMARKING SCHEME CRITERIA:\n${allSchemeText}`;
         }
         if (extraNotes.trim()) {
-          promptText += `\n\nTEACHER NOTES:\n${extraNotes}`;
+          promptText += `\n\nTEACHER NOTES & GUIDELINES:\n${extraNotes}`;
         }
 
         for (let p = 0; p < job.files.length; p++) {
@@ -741,7 +749,7 @@ Respond in valid JSON:
           }
         }
 
-        promptText += `\n\nSTUDENT WORK: ${job.files.length} attached document/image page(s).`;
+        promptText += `\n\nSTUDENT SUBMISSION: Attached above are ${job.files.length} document/image page(s) for this student.`;
         inputPayload.push({ type: 'text', text: promptText });
 
         try {
@@ -761,7 +769,7 @@ Respond in valid JSON:
             ...parsedFeedback
           };
         } catch (err) {
-          console.error(`Final failure evaluating ${job.assignedName}:`, err.message);
+          console.error(`Evaluation failure for ${job.assignedName}:`, err.message);
           return {
             index: job.index,
             pageCount: job.files.length,
@@ -774,7 +782,7 @@ Respond in valid JSON:
         }
       }
 
-      // Concurrency of 2 for optimal throughput and stability
+      // Concurrency of 2
       const CONCURRENCY = 2;
       const results = [];
 
