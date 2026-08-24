@@ -560,7 +560,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Batch Marking Route — Stable & Fast
+// AI Batch Marking Route — Stable & Fast with Active Gemini 3.7 & 3.6 Models
 app.post(
   '/api/mark-batch',
   authenticateToken,
@@ -646,9 +646,9 @@ app.post(
         }
       }
 
-      // Model caller with failover
+      // Active model caller with failover between 3.7-flash and 3.6-flash
       async function callGemini(inputPayload) {
-        const models = ['gemini-3.7-flash', 'gemini-2.5-flash'];
+        const models = ['gemini-3.7-flash', 'gemini-3.6-flash'];
         let lastErr;
 
         for (const modelName of models) {
