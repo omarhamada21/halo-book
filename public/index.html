@@ -220,7 +220,7 @@
         <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Assignment Name / Test Title</label>
         <input type="text" id="portal-title" placeholder="e.g. Year 7 Narrative Essay - Term 1" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 14px;" />
         
-        <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Submission Deadline (Optional — Auto-purges 2 days after)</label>
+        <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Submission Deadline (Optional — Only future dates allowed)</label>
         <input type="datetime-local" id="portal-deadline" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 14px;" />
       </div>
 
@@ -356,7 +356,7 @@
   <div style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:400px; width:100%; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18);">
     <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; color:var(--pen); letter-spacing:0.08em; margin-bottom:4px;">Assignment Settings</div>
     <h3 style="margin:0 0 10px; font-size:18px; font-family:'Source Serif 4',serif; color:#16233F;">Edit Assignment Deadline</h3>
-    <p style="margin:0 0 16px; font-size:13px; color:var(--ink-soft); line-height: 1.4;">Extend or adjust the submission deadline. Extending the deadline automatically re-opens student submissions.</p>
+    <p style="margin:0 0 16px; font-size:13px; color:var(--ink-soft); line-height: 1.4;">Extend or adjust the submission deadline. Only future dates can be selected.</p>
     
     <div style="margin-bottom:18px;">
       <label style="display:block; font-size:12.5px; font-weight:600; margin-bottom:6px;">New Deadline Date & Time</label>
@@ -479,6 +479,17 @@ function showConfirmModal(message) {
   });
 }
 
+function updateInputMinDateTime() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const minStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  
+  const creationInput = document.getElementById('portal-deadline');
+  const editInput = document.getElementById('edit-deadline-input');
+  if (creationInput) creationInput.min = minStr;
+  if (editInput) editInput.min = minStr;
+}
+
 function formatDeadlineString(deadline) {
   if (!deadline) return 'No Deadline';
   try {
@@ -510,6 +521,7 @@ fetch('/api/auth/me')
         document.getElementById('pending-banner').style.display = 'block';
         document.getElementById('mark-btn').disabled = true;
       }
+      updateInputMinDateTime();
       loadTeacherAssignments();
     } else {
       window.location.replace('/login.html');
@@ -811,12 +823,18 @@ async function loadTeacherAssignments() {
     if (d.success && d.assignments) {
       allAssignmentsMap = {};
       const select = document.getElementById('past-assignments-select');
+      
       select.innerHTML = '<option value="">-- Select an assignment to view live marks --</option>' +
         d.assignments.map(a => {
           allAssignmentsMap[a.code] = a;
           const deadlineText = formatDeadlineString(a.deadline);
           return `<option value="${a.code}">${escapeHtml(a.title)} (${a.submission_count} submissions) — ${deadlineText}</option>`;
         }).join('');
+
+      // Preserve currently selected assignment in dropdown
+      if (activeCode && allAssignmentsMap[activeCode]) {
+        select.value = activeCode;
+      }
     }
   } catch (e) {
     console.error('Failed to load past assignments:', e);
@@ -852,6 +870,14 @@ async function createAssignmentLink() {
   if (!title) {
     alert('Please provide an assignment title.');
     return;
+  }
+
+  if (deadline) {
+    const ddlTime = new Date(deadline).getTime();
+    if (!isNaN(ddlTime) && ddlTime < Date.now()) {
+      alert('The deadline cannot be set to a past date or time. Please select a future date.');
+      return;
+    }
   }
 
   const formData = new FormData();
@@ -935,13 +961,14 @@ function printReport(type) {
 // ==================== DEADLINE EDITING LOGIC ====================
 function openDeadlineEditModal() {
   if (!activeCode) return;
+  updateInputMinDateTime();
+
   const assignment = allAssignmentsMap[activeCode];
   const input = document.getElementById('edit-deadline-input');
 
   if (assignment && assignment.deadline) {
     try {
       const d = new Date(assignment.deadline);
-      // Format to datetime-local input value (YYYY-MM-DDTHH:mm)
       const pad = (n) => String(n).padStart(2, '0');
       input.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     } catch (e) {
@@ -962,6 +989,14 @@ async function saveAssignmentDeadline() {
   if (!activeCode) return;
   const newDeadline = document.getElementById('edit-deadline-input').value;
   const btn = document.getElementById('save-deadline-btn');
+
+  if (newDeadline) {
+    const ddlTime = new Date(newDeadline).getTime();
+    if (!isNaN(ddlTime) && ddlTime < Date.now()) {
+      alert('The deadline cannot be set to a past date or time. Please choose a future date.');
+      return;
+    }
+  }
 
   btn.disabled = true;
   btn.textContent = 'Saving...';
@@ -986,7 +1021,7 @@ async function saveAssignmentDeadline() {
       document.getElementById('portal-print-report-sub').textContent = `${formatted} | Generated by Mimir Marking`;
       
       closeDeadlineEditModal();
-      loadTeacherAssignments();
+      await loadTeacherAssignments();
       showToast('Deadline updated successfully!');
     } else {
       alert(d.error || 'Failed to update deadline.');
