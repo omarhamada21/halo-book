@@ -112,6 +112,19 @@
   let selectedFiles = [];
   let isLocked = false;
 
+  // Formatter for Egyptian Time Zone (Africa/Cairo) + 12-Hour AM/PM
+  function formatCairoDateTime(dateObj) {
+    return dateObj.toLocaleString('en-US', {
+      timeZone: 'Africa/Cairo',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  }
+
   if (!code) {
     document.getElementById('assign-title').textContent = 'Invalid Assignment Link';
     document.getElementById('student-form').style.display = 'none';
@@ -133,16 +146,16 @@
           const dlBox = document.getElementById('assign-deadline');
           dlBox.style.display = 'block';
 
-          // Live Javascript Time Comparison
+          const formattedCairo = formatCairoDateTime(dl);
           const isPassed = Date.now() > dl.getTime() || d.assignment.isPastDeadline;
 
           if (isPassed) {
             isLocked = true;
             dlBox.className = 'deadline-box deadline-expired';
-            dlBox.innerHTML = `⛔ <b>Submissions Closed:</b> The deadline passed on ${dl.toLocaleString()}. New work is no longer accepted.`;
+            dlBox.innerHTML = `⛔ <b>Submissions Closed:</b> The deadline passed on ${formattedCairo} (Cairo Time). New work is no longer accepted.`;
             document.getElementById('student-form').style.display = 'none';
           } else {
-            dlBox.textContent = `⏳ Submission Deadline: ${dl.toLocaleString()}`;
+            dlBox.textContent = `⏳ Submission Deadline: ${formattedCairo} (Cairo Time)`;
           }
         }
       })
