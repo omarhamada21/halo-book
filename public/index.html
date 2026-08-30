@@ -116,8 +116,10 @@
   .line-item { padding: 6px 10px; font-size: 13.5px; line-height: 1.5; outline: none; flex: 1; word-break: break-word; }
   .line-delete-btn { border: none; background: transparent; color: var(--ink-soft); font-size: 14px; cursor: pointer; padding: 6px 10px; }
   .line-delete-btn:hover { color: #DC2626; }
-  .editable-field { outline: none; padding: 4px 6px; border-radius: 4px; }
-  .editable-field:focus { background: #fff; box-shadow: inset 0 0 0 1px var(--pen); }
+  
+  .editable-field { outline: none; padding: 2px 4px; border-radius: 4px; border: 1px dashed transparent; }
+  .editable-field:hover { border-color: var(--pen); background: rgba(29, 58, 102, 0.05); }
+  .editable-field:focus { background: #fff; border-color: var(--pen); box-shadow: inset 0 0 0 1px var(--pen); }
 
   .fb-section{margin-bottom:14px;}
   .fb-label{font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;color:var(--pen);margin-bottom:6px;font-weight:600;display:flex;justify-content:space-between; align-items:center;}
@@ -156,7 +158,6 @@
 
   footer { margin-top: 40px; text-align: center; font-size: 12px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; border-top: 1px solid var(--border); padding-top: 20px; }
 
-  /* Precise @media print rules without blanket parent hiding */
   @media print {
     body { background: #fff !important; color: #000 !important; }
     .top-nav, .pending-banner, .admin-modal, header, .mode-switch,
@@ -175,7 +176,6 @@
     .line-item { border: none !important; padding: 2px 0 !important; background: transparent !important; }
     .results { display: none !important; }
 
-    /* Conditional Feedback-Only Print View */
     body.print-feedback-only .col-score-breakdown,
     body.print-feedback-only .summary-score-tag {
       display: none !important;
@@ -636,14 +636,17 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
 
   dataList.forEach((r, idx) => {
     const displayName = r.name || r.student_name || 'Student';
+    const totalScoreVal = r.total_score || '—';
 
-    // Summary Table Row (Visible on Screen and in Print Mode)
+    // Summary Table Row (Student Name & Total Marks are now individually editable)
     const tr = document.createElement('tr');
     tr.id = `${modePrefix}-summary-tr-${idx}`;
     tr.innerHTML = `
       <td class="summary-col-name">
         <b contenteditable="true" class="editable-field" data-idx="${idx}" data-field="name" data-mode="${modePrefix}">${displayName}</b><br>
-        <small class="summary-score-tag" style="color:var(--pen); font-family:'IBM Plex Mono',monospace;">Total: <span id="${modePrefix}-summary-total-${idx}">${r.total_score || '—'}</span> (${r.pageCount || 1} page${r.pageCount > 1 ? 's' : ''})</small>
+        <small class="summary-score-tag" style="color:var(--pen); font-family:'IBM Plex Mono',monospace;">
+          Total: <span contenteditable="true" class="editable-field" id="${modePrefix}-summary-total-${idx}" data-idx="${idx}" data-field="total_score" data-mode="${modePrefix}">${totalScoreVal}</span> (${r.pageCount || 1} page${r.pageCount > 1 ? 's' : ''})
+        </small>
       </td>
       <td class="col-score-breakdown">
         <div class="line-list" id="${modePrefix}-summary-bd-container-${idx}">${renderLineList(r.category_breakdown, idx, 'category_breakdown', modePrefix)}</div>
@@ -661,9 +664,9 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
     card.className = 'result-card';
     card.innerHTML = `
       <div class="result-head" data-idx="${idx}" data-mode="${modePrefix}">
-        <div class="badge card-score-badge" id="${modePrefix}-badge-${idx}">${(r.total_score || '—').split('/')[0]}</div>
+        <div class="badge card-score-badge" id="${modePrefix}-badge-${idx}">${totalScoreVal.split('/')[0]}</div>
         <div class="result-name" id="${modePrefix}-card-name-${idx}">${displayName} <span style="font-size:12px; font-weight:normal; color:var(--ink-soft);">(${r.pageCount || 1} page${r.pageCount > 1 ? 's' : ''})</span></div>
-        <div class="result-score card-score-text" id="${modePrefix}-card-score-${idx}">${r.total_score || ''}</div>
+        <div class="result-score card-score-text" id="${modePrefix}-card-score-${idx}">${totalScoreVal}</div>
       </div>
       <div class="result-body" id="${modePrefix}-body-${idx}">
         <div class="result-body-inner">
@@ -677,7 +680,7 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
 
           <div class="fb-section fb-score-section">
             <div class="fb-label">Total Score</div>
-            <b id="${modePrefix}-total-score-val-${idx}">${r.total_score || '—'}</b>
+            <b id="${modePrefix}-total-score-val-${idx}">${totalScoreVal}</b>
           </div>
 
           <div class="fb-section">
@@ -716,11 +719,23 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
       const field = e.target.dataset.field;
       const newValue = e.target.innerText.trim();
       const dataset = modePrefix === 'portal' ? portalSubmissions : manualResults;
-      if (dataset[idx] && field === 'name') {
-        dataset[idx].name = newValue;
-        dataset[idx].student_name = newValue;
-        const cardName = document.getElementById(`${modePrefix}-card-name-${idx}`);
-        if (cardName) cardName.innerHTML = `${newValue} <span style="font-size:12px; font-weight:normal; color:var(--ink-soft);">(${dataset[idx].pageCount || 1} page${dataset[idx].pageCount > 1 ? 's' : ''})</span>`;
+
+      if (dataset[idx]) {
+        if (field === 'name') {
+          dataset[idx].name = newValue;
+          dataset[idx].student_name = newValue;
+          const cardName = document.getElementById(`${modePrefix}-card-name-${idx}`);
+          if (cardName) cardName.innerHTML = `${newValue} <span style="font-size:12px; font-weight:normal; color:var(--ink-soft);">(${dataset[idx].pageCount || 1} page${dataset[idx].pageCount > 1 ? 's' : ''})</span>`;
+        } else if (field === 'total_score') {
+          dataset[idx].total_score = newValue;
+          const cardScore = document.getElementById(`${modePrefix}-card-score-${idx}`);
+          const totalScoreValEl = document.getElementById(`${modePrefix}-total-score-val-${idx}`);
+          const badge = document.getElementById(`${modePrefix}-badge-${idx}`);
+
+          if (cardScore) cardScore.innerText = newValue;
+          if (totalScoreValEl) totalScoreValEl.innerText = newValue;
+          if (badge) badge.innerText = newValue.split('/')[0] || newValue;
+        }
       }
     });
   });
