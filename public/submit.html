@@ -29,6 +29,11 @@
     background: var(--pen-soft); border: 1px solid var(--border); border-radius: 8px;
     padding: 10px 14px; font-size: 13px; color: var(--pen); margin-bottom: 20px; font-weight: 500;
   }
+
+  .deadline-expired {
+    background: #FEE2E2 !important; border-color: #FCA5A5 !important;
+    color: #991B1B !important; font-weight: 600 !important;
+  }
   
   .form-group { margin-bottom: 18px; }
   label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
@@ -80,7 +85,7 @@
 
       <div class="form-group">
         <label>Your Work Photos / Pages (You can upload multiple)</label>
-        <div class="dropzone" onclick="document.getElementById('pages-input').click()">
+        <div class="dropzone" id="dropzone-box" onclick="document.getElementById('pages-input').click()">
           <div style="font-size: 26px; margin-bottom: 6px;">📷</div>
           <b>Tap to take photo or select pages</b>
           <div style="font-size: 12px; color: var(--ink-soft); margin-top: 4px;">Supports camera photos, PNG, JPG, or PDF</div>
@@ -105,6 +110,7 @@
   const urlParams = new URLSearchParams(window.location.search);
   const code = urlParams.get('code');
   let selectedFiles = [];
+  let isLocked = false;
 
   if (!code) {
     document.getElementById('assign-title').textContent = 'Invalid Assignment Link';
@@ -126,13 +132,17 @@
           const dl = new Date(d.assignment.deadline);
           const dlBox = document.getElementById('assign-deadline');
           dlBox.style.display = 'block';
-          dlBox.textContent = `⏳ Submission Deadline: ${dl.toLocaleString()}`;
 
-          if (d.assignment.isPastDeadline) {
-            dlBox.style.background = '#FEE2E2';
-            dlBox.style.color = '#991B1B';
-            dlBox.textContent = `⛔ Deadline passed on ${dl.toLocaleString()}. Submissions are closed.`;
+          // Live Javascript Time Comparison
+          const isPassed = Date.now() > dl.getTime() || d.assignment.isPastDeadline;
+
+          if (isPassed) {
+            isLocked = true;
+            dlBox.className = 'deadline-box deadline-expired';
+            dlBox.innerHTML = `⛔ <b>Submissions Closed:</b> The deadline passed on ${dl.toLocaleString()}. New work is no longer accepted.`;
             document.getElementById('student-form').style.display = 'none';
+          } else {
+            dlBox.textContent = `⏳ Submission Deadline: ${dl.toLocaleString()}`;
           }
         }
       })
@@ -142,6 +152,7 @@
   }
 
   function handleFilesSelected(e) {
+    if (isLocked) return;
     for (const f of e.target.files) {
       selectedFiles.push(f);
     }
@@ -166,6 +177,11 @@
 
   async function handleStudentSubmit(e) {
     e.preventDefault();
+    if (isLocked) {
+      alert('Submission deadline has passed.');
+      return;
+    }
+
     const name = document.getElementById('student-name').value.trim();
     const btn = document.getElementById('submit-btn');
 
@@ -198,6 +214,9 @@
         alert(d.error || 'Submission failed.');
         btn.disabled = false;
         btn.textContent = '🚀 Submit Work to Teacher';
+        if (res.status === 403) {
+          window.location.reload();
+        }
       }
     } catch (err) {
       alert('Connection error. Please retry.');

@@ -61,7 +61,7 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Database Configuration (Turso Cloud SQLite / Local Fallback)
+// Database Configuration
 const tursoUrl = process.env.TURSO_DATABASE_URL || 'file:mimirmarking.db';
 const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || '';
 
@@ -72,7 +72,6 @@ const db = createClient({
 
 async function initDatabase() {
   try {
-    // 1. Users Table
     await db.execute(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,14 +85,13 @@ async function initDatabase() {
       );
     `);
 
-    // 2. Assignments Table
     await db.execute(`
       CREATE TABLE IF NOT EXISTS assignments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         code TEXT UNIQUE NOT NULL,
         teacher_id INTEGER NOT NULL,
         title TEXT NOT NULL,
-        deadline DATETIME,
+        deadline TEXT,
         scheme_text TEXT,
         scheme_files_json TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -101,7 +99,6 @@ async function initDatabase() {
       );
     `);
 
-    // 3. Submissions Table
     await db.execute(`
       CREATE TABLE IF NOT EXISTS submissions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,7 +114,7 @@ async function initDatabase() {
       );
     `);
 
-    console.log('Connected to Turso Cloud SQLite successfully.');
+    console.log('Connected to Database successfully.');
     cleanExpiredAssignments();
   } catch (err) {
     console.error('Database initialization error:', err.message);
@@ -128,24 +125,19 @@ initDatabase();
 // Auto-delete records 2 days after assignment deadline
 async function cleanExpiredAssignments() {
   try {
-    await db.execute(`
-      DELETE FROM submissions 
-      WHERE assignment_id IN (
-        SELECT id FROM assignments 
-        WHERE deadline IS NOT NULL 
-        AND datetime(deadline, '+2 days') < datetime('now')
-      );
-    `);
+    const assignmentsRes = await db.execute('SELECT id, deadline FROM assignments WHERE deadline IS NOT NULL');
+    const now = Date.now();
+    const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
 
-    const deleteAssignResult = await db.execute(`
-      DELETE FROM assignments 
-      WHERE deadline IS NOT NULL 
-      AND datetime(deadline, '+2 days') < datetime('now');
-    `);
-
-    const deletedCount = deleteAssignResult.rowsAffected || 0;
-    if (deletedCount > 0) {
-      console.log(`[Auto-Cleanup] Purged ${deletedCount} expired assignment(s) and submissions.`);
+    for (const row of assignmentsRes.rows) {
+      if (row.deadline) {
+        const ddlTime = new Date(row.deadline).getTime();
+        if (!isNaN(ddlTime) && now > (ddlTime + TWO_DAYS_MS)) {
+          await db.execute({ sql: 'DELETE FROM submissions WHERE assignment_id = ?', args: [row.id] });
+          await db.execute({ sql: 'DELETE FROM assignments WHERE id = ?', args: [row.id] });
+          console.log(`[Auto-Cleanup] Purged expired assignment ID ${row.id} (> 2 days past deadline).`);
+        }
+      }
     }
   } catch (err) {
     console.error('[Auto-Cleanup Notice]:', err.message);
@@ -356,7 +348,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Google Sign-In Route
+// Google Auth
 app.post('/api/auth/google', async (req, res) => {
   try {
     const { credential } = req.body;
@@ -454,7 +446,7 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
-// Admin User Routes
+// Admin User Management Routes
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const result = await db.execute('SELECT id, name, email, status, role, created_at FROM users ORDER BY id DESC');
@@ -519,7 +511,6 @@ app.post('/api/admin/users/:id/reset-password', authenticateToken, requireAdmin,
 
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
-
   const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(id)] });
   const target = targetResult.rows[0];
   if (!target) return res.status(404).json({ error: 'User not found.' });
@@ -628,7 +619,7 @@ async function callGemini(inputPayload) {
   throw lastErr;
 }
 
-// 1. Teacher creates an assignment
+// 1. Teacher creates an assignment (Normalized ISO Deadline)
 app.post(
   '/api/assignments/create',
   authenticateToken,
@@ -674,7 +665,13 @@ app.post(
       }
 
       const code = crypto.randomBytes(4).toString('hex');
-      const deadlineVal = deadline && deadline.trim() ? deadline.trim() : null;
+      let deadlineIso = null;
+      if (deadline && deadline.trim()) {
+        const parsedDdl = new Date(deadline.trim());
+        if (!isNaN(parsedDdl.getTime())) {
+          deadlineIso = parsedDdl.toISOString();
+        }
+      }
 
       await db.execute({
         sql: `INSERT INTO assignments (code, teacher_id, title, deadline, scheme_text, scheme_files_json) 
@@ -683,7 +680,7 @@ app.post(
           code,
           req.user.id,
           title.trim(),
-          deadlineVal,
+          deadlineIso,
           extractedSchemeText,
           JSON.stringify(cachedSchemePayload)
         ]
@@ -701,7 +698,7 @@ app.post(
   }
 );
 
-// 2. Teacher fetches list of assignments
+// 2. Fetch Assignments
 app.get('/api/assignments', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const result = await db.execute({
@@ -716,7 +713,7 @@ app.get('/api/assignments', authenticateToken, requireApprovedUser, async (req, 
   }
 });
 
-// 3. Teacher fetches live submissions table
+// 3. Fetch live submissions
 app.get('/api/assignments/:code/submissions', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
@@ -745,26 +742,7 @@ app.get('/api/assignments/:code/submissions', authenticateToken, requireApproved
   }
 });
 
-// 4. Update Submission Inline (Teacher Edit Persistence)
-app.post('/api/submissions/:id/update', authenticateToken, requireApprovedUser, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, total_score, category_breakdown, mistakes, weaknesses } = req.body;
-
-    await db.execute({
-      sql: `UPDATE submissions 
-            SET student_name = ?, total_score = ?, category_breakdown = ?, mistakes = ?, weaknesses = ? 
-            WHERE id = ?`,
-      args: [name, total_score, category_breakdown, mistakes, weaknesses, Number(id)]
-    });
-
-    res.json({ success: true, message: 'Submission updated successfully.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update submission.' });
-  }
-});
-
-// 5. Public route for students to inspect the assignment form
+// 4. Public route to check assignment details (Accurate UTC Deadline check)
 app.get('/api/public/assignment/:code', async (req, res) => {
   try {
     const { code } = req.params;
@@ -780,7 +758,10 @@ app.get('/api/public/assignment/:code', async (req, res) => {
 
     let isPastDeadline = false;
     if (assignment.deadline) {
-      isPastDeadline = new Date() > new Date(assignment.deadline);
+      const ddlTime = new Date(assignment.deadline).getTime();
+      if (!isNaN(ddlTime)) {
+        isPastDeadline = Date.now() > ddlTime;
+      }
     }
 
     res.json({
@@ -798,7 +779,7 @@ app.get('/api/public/assignment/:code', async (req, res) => {
   }
 });
 
-// 6. Public route for students to upload work (Locks to Submitted Name)
+// 5. Public student work submission (Strict Server-Side Deadline Enforcement)
 app.post(
   '/api/public/submit/:code',
   upload.fields([{ name: 'pages', maxCount: 20 }]),
@@ -815,8 +796,12 @@ app.post(
       const assignment = assignResult.rows[0];
       if (!assignment) return res.status(404).json({ error: 'Assignment not found.' });
 
-      if (assignment.deadline && new Date() > new Date(assignment.deadline)) {
-        return res.status(400).json({ error: 'Submission deadline has passed.' });
+      // Immediate Server-Side Deadline Gate
+      if (assignment.deadline) {
+        const ddlTime = new Date(assignment.deadline).getTime();
+        if (!isNaN(ddlTime) && Date.now() > ddlTime) {
+          return res.status(403).json({ error: 'Submission deadline has passed. Work is no longer accepted.' });
+        }
       }
 
       const files = (req.files && req.files['pages']) || [];
@@ -917,7 +902,7 @@ Respond ONLY with valid JSON:
   }
 );
 
-// 7. Manual Batch Upload (Extracts Name from Header or File Name)
+// 6. Manual Direct Batch Marking
 app.post(
   '/api/mark-batch',
   authenticateToken,
