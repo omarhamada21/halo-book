@@ -147,7 +147,7 @@ async function cleanExpiredAssignments() {
   }
 }
 
-// Check every hour
+// Hourly check
 setInterval(cleanExpiredAssignments, 60 * 60 * 1000);
 
 app.use(cors());
