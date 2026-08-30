@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Login — Mimir Marking</title>
+<title>Login — MIMIR MARKING</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -324,7 +324,7 @@ window.handleGoogleCredentialResponse = async function(response) {
     if (data.success) {
       authMsg.className = 'msg success';
       authMsg.textContent = 'Google sign-in successful! Redirecting...';
-      window.location.replace('/');
+      window.location.replace('/index.html');
     } else {
       authMsg.className = 'msg error';
       authMsg.textContent = data.error || 'Google Sign-In failed on server.';
@@ -397,7 +397,7 @@ authForm.addEventListener('submit', async (e) => {
     if (data.success) {
       authMsg.className = 'msg success';
       authMsg.textContent = mode === 'register' ? 'Account created! Redirecting...' : 'Success! Logging in...';
-      setTimeout(() => { window.location.replace('/'); }, 800);
+      setTimeout(() => { window.location.replace('/index.html'); }, 800);
     } else {
       authMsg.className = 'msg error';
       authMsg.textContent = data.error || 'Authentication failed.';
