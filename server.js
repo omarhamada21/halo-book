@@ -61,7 +61,7 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Turso Cloud / Local SQLite
+// Database Configuration (Turso Cloud SQLite / Local Fallback)
 const tursoUrl = process.env.TURSO_DATABASE_URL || 'file:mimirmarking.db';
 const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || '';
 
@@ -305,7 +305,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// Login
+// Manual Login
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -356,6 +356,104 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// Google Sign-In Route
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { credential } = req.body;
+    if (!credential) return res.status(400).json({ error: 'Missing Google credential token.' });
+
+    let payload;
+    try {
+      const base64Url = credential.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        Buffer.from(base64, 'base64')
+          .toString('utf-8')
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      payload = JSON.parse(jsonPayload);
+    } catch (parseErr) {
+      return res.status(400).json({ error: 'Malformed Google credential token.' });
+    }
+
+    if (!payload || !payload.email) {
+      return res.status(400).json({ error: 'Google token did not contain a valid email address.' });
+    }
+
+    const email = payload.email.toLowerCase().trim();
+    const name = payload.name || email.split('@')[0];
+    const googleId = payload.sub || '';
+
+    const existingResult = await db.execute({
+      sql: 'SELECT * FROM users WHERE email = ?',
+      args: [email]
+    });
+
+    let user = existingResult.rows[0];
+
+    if (!user) {
+      let initialRole = 'teacher';
+      let initialStatus = 'pending';
+
+      if (isRootUser(email)) {
+        initialRole = 'root';
+        initialStatus = 'approved';
+      } else if (isAdminEmail(email)) {
+        initialRole = 'admin';
+        initialStatus = 'approved';
+      }
+
+      const insert = await db.execute({
+        sql: 'INSERT INTO users (name, email, password, google_id, status, role) VALUES (?, ?, ?, ?, ?, ?)',
+        args: [name, email, 'GOOGLE_AUTH_ACCOUNT', googleId, initialStatus, initialRole]
+      });
+
+      user = { id: Number(insert.lastInsertRowid), name, email, status: initialStatus, role: initialRole };
+    } else {
+      let updatedRole = user.role;
+      let updatedStatus = user.status;
+
+      if (isRootUser(email) && user.role !== 'root') {
+        await db.execute({ sql: "UPDATE users SET role = 'root', status = 'approved', google_id = ? WHERE id = ?", args: [googleId, Number(user.id)] });
+        updatedRole = 'root';
+        updatedStatus = 'approved';
+      } else if (isAdminEmail(email) && user.role === 'teacher') {
+        await db.execute({ sql: "UPDATE users SET role = 'admin', status = 'approved', google_id = ? WHERE id = ?", args: [googleId, Number(user.id)] });
+        updatedRole = 'admin';
+        updatedStatus = 'approved';
+      } else if (!user.google_id && googleId) {
+        await db.execute({ sql: 'UPDATE users SET google_id = ? WHERE id = ?', args: [googleId, Number(user.id)] });
+      }
+
+      user = { ...user, id: Number(user.id), role: updatedRole, status: updatedStatus };
+    }
+
+    const token = jwt.sign(
+      { id: Number(user.id), name: user.name, email: user.email, status: user.status, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.cookie('halo_token', token, { 
+      httpOnly: true, 
+      secure: isProduction,
+      sameSite: 'lax', 
+      path: '/', 
+      maxAge: 7 * 24 * 60 * 60 * 1000 
+    });
+
+    return res.json({ 
+      success: true, 
+      user: { name: user.name, email: user.email, status: user.status, role: user.role } 
+    });
+  } catch (error) {
+    console.error('Google Auth Route Error:', error);
+    return res.status(500).json({ error: error.message || 'Google sign-in processing failed.' });
+  }
+});
+
 // Admin User Routes
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -375,9 +473,7 @@ app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, async (
   const target = targetResult.rows[0];
   if (!target) return res.status(404).json({ error: 'User not found.' });
 
-  if (target.role === 'root') {
-    return res.status(403).json({ error: 'The Root User account status cannot be modified.' });
-  }
+  if (target.role === 'root') return res.status(403).json({ error: 'The Root User account status cannot be modified.' });
 
   await db.execute({ sql: 'UPDATE users SET status = ? WHERE id = ?', args: [status, Number(id)] });
   res.json({ success: true, message: `Account updated to ${status}.` });
@@ -386,7 +482,6 @@ app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, async (
 app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
-
   if (!['admin', 'teacher'].includes(role)) return res.status(400).json({ error: 'Invalid role specified.' });
 
   const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(id)] });
@@ -793,7 +888,6 @@ Respond ONLY with valid JSON:
         console.warn('AI evaluation warning:', aiErr.message);
       }
 
-      // Prioritize explicit input name submitted by the student
       const finalName = studentNameInput || parsedFeedback.student_name || 'Student';
 
       await db.execute({

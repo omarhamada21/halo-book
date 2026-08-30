@@ -451,7 +451,7 @@ function showConfirmModal(message) {
   });
 }
 
-// Authentication
+// Authentication Check
 fetch('/api/auth/me')
   .then(res => res.json())
   .then(data => {
@@ -637,7 +637,7 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
   dataList.forEach((r, idx) => {
     const displayName = r.name || r.student_name || 'Student';
 
-    // Summary Table Row (Print + Screen)
+    // Summary Table Row
     const tr = document.createElement('tr');
     tr.id = `${modePrefix}-summary-tr-${idx}`;
     tr.innerHTML = `
