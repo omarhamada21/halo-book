@@ -61,7 +61,7 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Database Configuration
+// Database Configuration (Turso Cloud SQLite / Local Fallback)
 const tursoUrl = process.env.TURSO_DATABASE_URL || 'file:mimirmarking.db';
 const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || '';
 
@@ -72,6 +72,7 @@ const db = createClient({
 
 async function initDatabase() {
   try {
+    // 1. Users Table
     await db.execute(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,6 +86,7 @@ async function initDatabase() {
       );
     `);
 
+    // 2. Assignments Table
     await db.execute(`
       CREATE TABLE IF NOT EXISTS assignments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,6 +101,7 @@ async function initDatabase() {
       );
     `);
 
+    // 3. Submissions Table
     await db.execute(`
       CREATE TABLE IF NOT EXISTS submissions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,6 +147,7 @@ async function cleanExpiredAssignments() {
   }
 }
 
+// Check every hour
 setInterval(cleanExpiredAssignments, 60 * 60 * 1000);
 
 app.use(cors());
@@ -713,7 +717,7 @@ app.get('/api/assignments', authenticateToken, requireApprovedUser, async (req, 
   }
 });
 
-// 3. Fetch live submissions
+// 3. Fetch live submissions for an assignment
 app.get('/api/assignments/:code/submissions', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
@@ -742,7 +746,64 @@ app.get('/api/assignments/:code/submissions', authenticateToken, requireApproved
   }
 });
 
-// 4. Public route to check assignment details (Accurate UTC Deadline check)
+// 4. Update Assignment Deadline Endpoint (Teacher Control)
+app.post('/api/assignments/:code/update-deadline', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { deadline } = req.body;
+
+    const assignResult = await db.execute({
+      sql: 'SELECT id FROM assignments WHERE code = ? AND teacher_id = ?',
+      args: [code, req.user.id]
+    });
+
+    const assignment = assignResult.rows[0];
+    if (!assignment) return res.status(404).json({ error: 'Assignment not found or unauthorized.' });
+
+    let deadlineIso = null;
+    if (deadline && deadline.trim()) {
+      const parsed = new Date(deadline.trim());
+      if (!isNaN(parsed.getTime())) {
+        deadlineIso = parsed.toISOString();
+      }
+    }
+
+    await db.execute({
+      sql: 'UPDATE assignments SET deadline = ? WHERE id = ?',
+      args: [deadlineIso, assignment.id]
+    });
+
+    res.json({
+      success: true,
+      message: 'Deadline updated successfully.',
+      deadline: deadlineIso
+    });
+  } catch (err) {
+    console.error('Update Deadline Error:', err);
+    res.status(500).json({ error: 'Failed to update deadline.' });
+  }
+});
+
+// 5. Update Submission Inline (Teacher Edit Persistence)
+app.post('/api/submissions/:id/update', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, total_score, category_breakdown, mistakes, weaknesses } = req.body;
+
+    await db.execute({
+      sql: `UPDATE submissions 
+            SET student_name = ?, total_score = ?, category_breakdown = ?, mistakes = ?, weaknesses = ? 
+            WHERE id = ?`,
+      args: [name, total_score, category_breakdown, mistakes, weaknesses, Number(id)]
+    });
+
+    res.json({ success: true, message: 'Submission updated successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update submission.' });
+  }
+});
+
+// 6. Public route to check assignment details (UTC Normalized)
 app.get('/api/public/assignment/:code', async (req, res) => {
   try {
     const { code } = req.params;
@@ -779,7 +840,7 @@ app.get('/api/public/assignment/:code', async (req, res) => {
   }
 });
 
-// 5. Public student work submission (Strict Server-Side Deadline Enforcement)
+// 7. Public student work submission (Strict Server-Side Deadline Gate)
 app.post(
   '/api/public/submit/:code',
   upload.fields([{ name: 'pages', maxCount: 20 }]),
@@ -796,7 +857,7 @@ app.post(
       const assignment = assignResult.rows[0];
       if (!assignment) return res.status(404).json({ error: 'Assignment not found.' });
 
-      // Immediate Server-Side Deadline Gate
+      // Immediate Server-Side Deadline Verification
       if (assignment.deadline) {
         const ddlTime = new Date(assignment.deadline).getTime();
         if (!isNaN(ddlTime) && Date.now() > ddlTime) {
@@ -902,7 +963,7 @@ Respond ONLY with valid JSON:
   }
 );
 
-// 6. Manual Direct Batch Marking
+// 8. Manual Direct Batch Marking (Header extraction & batch grading)
 app.post(
   '/api/mark-batch',
   authenticateToken,
