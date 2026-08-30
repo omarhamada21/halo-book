@@ -68,6 +68,18 @@
   .file-chip { background:var(--pen-soft); border:1px solid var(--border); border-radius:6px; padding:5px 10px; font-size:12.5px; font-family:'IBM Plex Mono',monospace; display:flex; align-items:center; gap:8px; color:var(--pen); }
   .file-chip-remove { cursor:pointer; color:#DC2626; border:none; background:none; font-weight:bold; font-size:14px; padding:0 2px; }
 
+  /* 12-Hour Date Time Picker Layout */
+  .picker-12h-wrap {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .picker-12h-wrap select, .picker-12h-wrap input[type="date"] {
+    padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px;
+    font-family: 'Inter', sans-serif; font-size: 13.5px; background: #fff; outline: none;
+  }
+  .picker-12h-wrap select:focus, .picker-12h-wrap input[type="date"]:focus {
+    border-color: var(--pen); box-shadow: 0 0 0 2px var(--pen-soft);
+  }
+
   .student-list{margin-left:38px; display:flex; flex-direction:column; gap:12px; margin-top:16px;}
   .student-card{ border:1px solid var(--border); border-radius:8px; padding:14px; background:var(--card); display:flex; flex-direction:column; gap:10px; }
   .student-card-head{ display:flex; align-items:center; gap:10px; }
@@ -220,8 +232,24 @@
         <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Assignment Name / Test Title</label>
         <input type="text" id="portal-title" placeholder="e.g. Year 7 Narrative Essay - Term 1" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 14px;" />
         
-        <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Submission Deadline (Cairo Time — Only future dates allowed)</label>
-        <input type="datetime-local" id="portal-deadline" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 14px;" />
+        <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Submission Deadline (12-Hour AM/PM — Cairo Time)</label>
+        <div class="picker-12h-wrap">
+          <input type="date" id="portal-date" style="flex: 2; min-width: 140px;" />
+          <select id="portal-hour" style="flex: 1;">
+            <option value="12">12</option><option value="01">01</option><option value="02">02</option>
+            <option value="03">03</option><option value="04">04</option><option value="05">05</option>
+            <option value="06">06</option><option value="07">07</option><option value="08">08</option>
+            <option value="09">09</option><option value="10">10</option><option value="11" selected>11</option>
+          </select>
+          <select id="portal-minute" style="flex: 1;">
+            <option value="00">00</option><option value="15">15</option><option value="30">30</option>
+            <option value="45">45</option><option value="59" selected>59</option>
+          </select>
+          <select id="portal-ampm" style="flex: 1;">
+            <option value="AM">AM</option>
+            <option value="PM" selected>PM</option>
+          </select>
+        </div>
       </div>
 
       <div class="dropzone" id="portal-scheme-dz" onclick="document.getElementById('portal-scheme-file').click()">
@@ -353,16 +381,32 @@
 </div>
 
 <div id="deadline-edit-modal" style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.55); backdrop-filter:blur(4px); z-index:10002; align-items:center; justify-content:center; padding:16px;">
-  <div style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:400px; width:100%; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18);">
+  <div style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:420px; width:100%; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18);">
     <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; color:var(--pen); letter-spacing:0.08em; margin-bottom:4px;">Assignment Settings</div>
     <h3 style="margin:0 0 10px; font-size:18px; font-family:'Source Serif 4',serif; color:#16233F;">Edit Assignment Deadline</h3>
-    <p style="margin:0 0 16px; font-size:13px; color:var(--ink-soft); line-height: 1.4;">Extend or adjust the submission deadline (Cairo Time). Only future dates can be selected.</p>
+    <p style="margin:0 0 16px; font-size:13px; color:var(--ink-soft); line-height: 1.4;">Select a new date and 12-hour AM/PM time (Cairo Time).</p>
     
     <div style="margin-bottom:18px;">
       <label style="display:block; font-size:12.5px; font-weight:600; margin-bottom:6px;">New Deadline Date & Time</label>
-      <input type="datetime-local" id="edit-deadline-input" style="width:100%; padding:9px 12px; border:1px solid var(--border); border-radius:6px; font-family:'Inter',sans-serif; font-size:14px; background:#fff; outline:none;">
+      <div class="picker-12h-wrap">
+        <input type="date" id="edit-date" style="flex: 2; min-width: 140px;" />
+        <select id="edit-hour" style="flex: 1;">
+          <option value="12">12</option><option value="01">01</option><option value="02">02</option>
+          <option value="03">03</option><option value="04">04</option><option value="05">05</option>
+          <option value="06">06</option><option value="07">07</option><option value="08">08</option>
+          <option value="09">09</option><option value="10">10</option><option value="11" selected>11</option>
+        </select>
+        <select id="edit-minute" style="flex: 1;">
+          <option value="00">00</option><option value="15">15</option><option value="30">30</option>
+          <option value="45">45</option><option value="59" selected>59</option>
+        </select>
+        <select id="edit-ampm" style="flex: 1;">
+          <option value="AM">AM</option>
+          <option value="PM" selected>PM</option>
+        </select>
+      </div>
       <div style="margin-top:6px;">
-        <button type="button" onclick="document.getElementById('edit-deadline-input').value = '';" style="background:none; border:none; color:#DC2626; font-size:11.5px; font-weight:500; cursor:pointer; padding:0;">Remove deadline (Open indefinitely)</button>
+        <button type="button" onclick="clearEditDeadlineInputs()" style="background:none; border:none; color:#DC2626; font-size:11.5px; font-weight:500; cursor:pointer; padding:0;">Remove deadline (Open indefinitely)</button>
       </div>
     </div>
 
@@ -479,25 +523,38 @@ function showConfirmModal(message) {
   });
 }
 
-function updateInputMinDateTime() {
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  const minStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
-  
-  const creationInput = document.getElementById('portal-deadline');
-  const editInput = document.getElementById('edit-deadline-input');
-  if (creationInput) creationInput.min = minStr;
-  if (editInput) editInput.min = minStr;
+function setMinDateOnly() {
+  const today = new Date().toISOString().split('T')[0];
+  const creationDate = document.getElementById('portal-date');
+  const editDate = document.getElementById('edit-date');
+  if (creationDate) creationDate.min = today;
+  if (editDate) editDate.min = today;
 }
 
-// Explicit Egyptian Time Zone (Africa/Cairo) 12-Hour AM/PM Formatter
-function formatDeadlineString(deadline) {
-  if (!deadline) return 'No Deadline';
+// Convert 12-Hour inputs to ISO String
+function getIsoFrom12h(dateId, hourId, minId, ampmId) {
+  const dateVal = document.getElementById(dateId).value;
+  if (!dateVal) return null;
+
+  let hour = parseInt(document.getElementById(hourId).value, 10);
+  const min = document.getElementById(minId).value;
+  const ampm = document.getElementById(ampmId).value;
+
+  if (ampm === 'PM' && hour < 12) hour += 12;
+  if (ampm === 'AM' && hour === 12) hour = 0;
+
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${dateVal}T${pad(hour)}:${min}:00+03:00`; // Cairo UTC+3
+}
+
+// Format ISO string to 12-Hour AM/PM in Cairo Time
+function formatDeadlineString(isoStr) {
+  if (!isoStr) return 'No Deadline';
   try {
-    const d = new Date(deadline);
+    const d = new Date(isoStr);
     if (isNaN(d.getTime())) return 'No Deadline';
     
-    const formatter = new Intl.DateTimeFormat('en-US', {
+    return 'Due: ' + new Intl.DateTimeFormat('en-US', {
       timeZone: 'Africa/Cairo',
       month: 'short',
       day: 'numeric',
@@ -505,11 +562,9 @@ function formatDeadlineString(deadline) {
       hour: 'numeric',
       minute: '2-digit',
       hour12: true
-    });
-
-    return 'Due: ' + formatter.format(d);
+    }).format(d);
   } catch (e) {
-    return 'Due: ' + deadline;
+    return 'Due: ' + isoStr;
   }
 }
 
@@ -533,7 +588,7 @@ fetch('/api/auth/me')
         document.getElementById('pending-banner').style.display = 'block';
         document.getElementById('mark-btn').disabled = true;
       }
-      updateInputMinDateTime();
+      setMinDateOnly();
       loadTeacherAssignments();
     } else {
       window.location.replace('/login.html');
@@ -874,7 +929,7 @@ function loadSelectedAssignment(selectedCode) {
 
 async function createAssignmentLink() {
   const title = document.getElementById('portal-title').value.trim();
-  const deadline = document.getElementById('portal-deadline').value;
+  const deadlineIso = getIsoFrom12h('portal-date', 'portal-hour', 'portal-minute', 'portal-ampm');
   const schemeText = document.getElementById('portal-scheme-text').value.trim();
 
   if (!title) {
@@ -882,17 +937,17 @@ async function createAssignmentLink() {
     return;
   }
 
-  if (deadline) {
-    const ddlTime = new Date(deadline).getTime();
+  if (deadlineIso) {
+    const ddlTime = new Date(deadlineIso).getTime();
     if (!isNaN(ddlTime) && ddlTime < Date.now()) {
-      alert('The deadline cannot be set to a past date or time. Please select a future date.');
+      alert('The deadline cannot be set to a past date or time. Please select a future date/time.');
       return;
     }
   }
 
   const formData = new FormData();
   formData.append('title', title);
-  if (deadline) formData.append('deadline', deadline);
+  if (deadlineIso) formData.append('deadline', deadlineIso);
   if (schemeText) formData.append('schemeText', schemeText);
   for (const f of portalSchemeFiles) formData.append('scheme', f);
 
@@ -901,12 +956,12 @@ async function createAssignmentLink() {
 
   if (d.success) {
     activeCode = d.code;
-    const deadlineText = formatDeadlineString(deadline);
+    const deadlineText = formatDeadlineString(deadlineIso);
 
     allAssignmentsMap[d.code] = {
       code: d.code,
       title: title,
-      deadline: deadline,
+      deadline: deadlineIso,
       submission_count: 0
     };
 
@@ -971,24 +1026,45 @@ function printReport(type) {
 // ==================== DEADLINE EDITING LOGIC ====================
 function openDeadlineEditModal() {
   if (!activeCode) return;
-  updateInputMinDateTime();
+  setMinDateOnly();
 
   const assignment = allAssignmentsMap[activeCode];
-  const input = document.getElementById('edit-deadline-input');
-
   if (assignment && assignment.deadline) {
     try {
       const d = new Date(assignment.deadline);
       const pad = (n) => String(n).padStart(2, '0');
-      input.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      
+      // Convert to Cairo Time parts
+      const cairoStr = d.toLocaleString('en-US', { timeZone: 'Africa/Cairo', hour12: false });
+      const [datePart, timePart] = cairoStr.split(', ');
+      const [m, day, y] = datePart.split('/');
+      const [h24, min] = timePart.split(':');
+
+      document.getElementById('edit-date').value = `${y}-${pad(m)}-${pad(day)}`;
+
+      let hourNum = parseInt(h24, 10);
+      const ampm = hourNum >= 12 ? 'PM' : 'AM';
+      if (hourNum > 12) hourNum -= 12;
+      if (hourNum === 0) hourNum = 12;
+
+      document.getElementById('edit-hour').value = pad(hourNum);
+      document.getElementById('edit-minute').value = min;
+      document.getElementById('edit-ampm').value = ampm;
     } catch (e) {
-      input.value = '';
+      clearEditDeadlineInputs();
     }
   } else {
-    input.value = '';
+    clearEditDeadlineInputs();
   }
 
   document.getElementById('deadline-edit-modal').style.display = 'flex';
+}
+
+function clearEditDeadlineInputs() {
+  document.getElementById('edit-date').value = '';
+  document.getElementById('edit-hour').value = '11';
+  document.getElementById('edit-minute').value = '59';
+  document.getElementById('edit-ampm').value = 'PM';
 }
 
 function closeDeadlineEditModal() {
@@ -997,13 +1073,13 @@ function closeDeadlineEditModal() {
 
 async function saveAssignmentDeadline() {
   if (!activeCode) return;
-  const newDeadline = document.getElementById('edit-deadline-input').value;
+  const newDeadlineIso = getIsoFrom12h('edit-date', 'edit-hour', 'edit-minute', 'edit-ampm');
   const btn = document.getElementById('save-deadline-btn');
 
-  if (newDeadline) {
-    const ddlTime = new Date(newDeadline).getTime();
+  if (newDeadlineIso) {
+    const ddlTime = new Date(newDeadlineIso).getTime();
     if (!isNaN(ddlTime) && ddlTime < Date.now()) {
-      alert('The deadline cannot be set to a past date or time. Please choose a future date.');
+      alert('The deadline cannot be set to a past date or time. Please choose a future date/time.');
       return;
     }
   }
@@ -1015,7 +1091,7 @@ async function saveAssignmentDeadline() {
     const res = await fetch(`/api/assignments/${activeCode}/update-deadline`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deadline: newDeadline })
+      body: JSON.stringify({ deadline: newDeadlineIso })
     });
     const d = await res.json();
 
