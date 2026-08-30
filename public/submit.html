@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Student Assignment Submission — Mimir Marking</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #16233F; --ink-soft: #4A5670; --paper: #E3E9F6;
+    --paper-line: #CBD6ED; --card: #FBFCFE; --pen: #1D3A66;
+    --pen-soft: #DDE3EE; --border: #C2CEE7;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: 'Inter', sans-serif; padding: 20px; }
+  .wrap { max-width: 540px; margin: 30px auto; }
+  
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 28px; box-shadow: 0 4px 14px rgba(0,0,0,0.06);
+  }
+  
+  .tag { font-family: 'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase; color: var(--pen); letter-spacing: 0.08em; font-weight: 600; margin-bottom: 6px; }
+  h1 { font-family: 'Source Serif 4', serif; font-size: 24px; margin: 0 0 6px; }
+  .teacher-sub { font-size: 13.5px; color: var(--ink-soft); margin-bottom: 20px; }
+  
+  .deadline-box {
+    background: var(--pen-soft); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; font-size: 13px; color: var(--pen); margin-bottom: 20px; font-weight: 500;
+  }
+  
+  .form-group { margin-bottom: 18px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  input[type="text"] {
+    width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 14px; background: #fff; outline: none; font-family: 'Inter', sans-serif;
+  }
+  input[type="text"]:focus { border-color: var(--pen); }
+  
+  .dropzone {
+    border: 2px dashed var(--border); border-radius: 10px; padding: 26px 16px;
+    text-align: center; cursor: pointer; background: #fff; transition: all 0.2s;
+  }
+  .dropzone:hover { border-color: var(--pen); background: var(--pen-soft); }
+  
+  .page-preview { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .page-chip {
+    background: var(--pen-soft); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 12px; font-size: 12.5px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .page-remove { color: #DC2626; border: none; background: none; font-weight: bold; cursor: pointer; font-size: 16px; }
+  
+  .btn-submit {
+    width: 100%; background: var(--ink); color: #fff; border: none; border-radius: 8px;
+    padding: 14px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 10px; transition: opacity 0.2s;
+  }
+  .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+  
+  .success-banner {
+    display: none; text-align: center; padding: 30px 10px;
+  }
+  .success-banner h2 { color: #059669; font-family: 'Source Serif 4', serif; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="card" id="submission-form-card">
+    <div class="tag">Mimir Marking — Student Portal</div>
+    <h1 id="assign-title">Loading Assignment...</h1>
+    <div class="teacher-sub" id="assign-teacher"></div>
+    <div class="deadline-box" id="assign-deadline" style="display: none;"></div>
+
+    <form id="student-form" onsubmit="handleStudentSubmit(event)">
+      <div class="form-group">
+        <label>Your Full Name</label>
+        <input type="text" id="student-name" required placeholder="e.g. Fares Ahmed" />
+      </div>
+
+      <div class="form-group">
+        <label>Your Work Photos / Pages (You can upload multiple)</label>
+        <div class="dropzone" onclick="document.getElementById('pages-input').click()">
+          <div style="font-size: 26px; margin-bottom: 6px;">📷</div>
+          <b>Tap to take photo or select pages</b>
+          <div style="font-size: 12px; color: var(--ink-soft); margin-top: 4px;">Supports camera photos, PNG, JPG, or PDF</div>
+        </div>
+        <input type="file" id="pages-input" accept="image/*,.pdf" multiple style="display: none;" onchange="handleFilesSelected(event)" />
+        <div class="page-preview" id="page-preview-list"></div>
+      </div>
+
+      <button type="submit" class="btn-submit" id="submit-btn">🚀 Submit Work to Teacher</button>
+    </form>
+  </div>
+
+  <div class="card success-banner" id="success-screen">
+    <h2>✓ Work Submitted Successfully!</h2>
+    <p style="color: var(--ink-soft); line-height: 1.5; font-size: 14px;">
+      Thank you, <b id="submitted-name"></b>. Your work has been sent to your teacher and evaluated.
+    </p>
+  </div>
+</div>
+
+<script>
+  const urlParams = new URLSearchParams(window.location.search);
+  const code = urlParams.get('code');
+  let selectedFiles = [];
+
+  if (!code) {
+    document.getElementById('assign-title').textContent = 'Invalid Assignment Link';
+    document.getElementById('student-form').style.display = 'none';
+  } else {
+    fetch(`/api/public/assignment/${code}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!d.success) {
+          document.getElementById('assign-title').textContent = d.error || 'Assignment Expired';
+          document.getElementById('student-form').style.display = 'none';
+          return;
+        }
+
+        document.getElementById('assign-title').textContent = d.assignment.title;
+        document.getElementById('assign-teacher').textContent = `Teacher: ${d.assignment.teacherName}`;
+
+        if (d.assignment.deadline) {
+          const dl = new Date(d.assignment.deadline);
+          const dlBox = document.getElementById('assign-deadline');
+          dlBox.style.display = 'block';
+          dlBox.textContent = `⏳ Submission Deadline: ${dl.toLocaleString()}`;
+
+          if (d.assignment.isPastDeadline) {
+            dlBox.style.background = '#FEE2E2';
+            dlBox.style.color = '#991B1B';
+            dlBox.textContent = `⛔ Deadline passed on ${dl.toLocaleString()}. Submissions are closed.`;
+            document.getElementById('student-form').style.display = 'none';
+          }
+        }
+      })
+      .catch(() => {
+        document.getElementById('assign-title').textContent = 'Error connecting to server';
+      });
+  }
+
+  function handleFilesSelected(e) {
+    for (const f of e.target.files) {
+      selectedFiles.push(f);
+    }
+    renderPages();
+    e.target.value = '';
+  }
+
+  function renderPages() {
+    const list = document.getElementById('page-preview-list');
+    list.innerHTML = selectedFiles.map((f, i) => `
+      <div class="page-chip">
+        <span>📄 Page ${i + 1}: ${escapeHtml(f.name)} (${(f.size / 1024).toFixed(1)} KB)</span>
+        <button type="button" class="page-remove" onclick="removePage(${i})">&times;</button>
+      </div>
+    `).join('');
+  }
+
+  function removePage(i) {
+    selectedFiles.splice(i, 1);
+    renderPages();
+  }
+
+  async function handleStudentSubmit(e) {
+    e.preventDefault();
+    const name = document.getElementById('student-name').value.trim();
+    const btn = document.getElementById('submit-btn');
+
+    if (!selectedFiles.length) {
+      alert('Please take or upload at least one photo of your work.');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Uploading and processing...';
+
+    const formData = new FormData();
+    formData.append('studentName', name);
+    for (const f of selectedFiles) {
+      formData.append('pages', f);
+    }
+
+    try {
+      const res = await fetch(`/api/public/submit/${code}`, {
+        method: 'POST',
+        body: formData
+      });
+      const d = await res.json();
+
+      if (d.success) {
+        document.getElementById('submission-form-card').style.display = 'none';
+        document.getElementById('submitted-name').textContent = d.studentName || name;
+        document.getElementById('success-screen').style.display = 'block';
+      } else {
+        alert(d.error || 'Submission failed.');
+        btn.disabled = false;
+        btn.textContent = '🚀 Submit Work to Teacher';
+      }
+    } catch (err) {
+      alert('Connection error. Please retry.');
+      btn.disabled = false;
+      btn.textContent = '🚀 Submit Work to Teacher';
+    }
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+</script>
+</body>
+</html>
