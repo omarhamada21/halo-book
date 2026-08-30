@@ -90,6 +90,7 @@
   button.ghost-feedback{ border-color:#86EFAC; color:#065F46; background:#F0FDF4; }
   button.ghost-feedback:hover{ border-color:#059669; color:#064E3B; background:#DCFCE7; }
 
+  /* Live Link Container */
   .link-box {
     margin-left: 38px; margin-top: 16px; background: #F0FDF4; border: 1px solid #86EFAC;
     border-radius: 8px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -160,7 +161,7 @@
   /* Print Layout Rules */
   @media print {
     body { background: #fff !important; color: #000 !important; }
-    .top-nav, .pending-banner, .admin-modal, header, .mode-switch, .step:nth-child(1), .step:nth-child(2), .step-head, .step-desc, button, .toolbar, .dropzone, textarea, .progress-wrap, .empty, .student-list, .student-count, .edit-hint, #custom-modal-overlay, #custom-toast, .no-print, .section-add-btn, .table-add-btn, .line-delete-btn, .badge-grid, #admin-reset-modal { display: none !important; }
+    .top-nav, .pending-banner, .admin-modal, header, .mode-switch, .step:nth-child(1), .step:nth-child(2), .step-head, .step-desc, button, .toolbar, .dropzone, textarea, .progress-wrap, .empty, .student-list, .student-count, .edit-hint, #custom-modal-overlay, #custom-toast, .no-print, .section-add-btn, .table-add-btn, .line-delete-btn, .badge-grid, #admin-reset-modal, .link-box { display: none !important; }
     .wrap { max-width: 100% !important; padding: 0 !important; }
     .step { border: none !important; padding: 0 !important; background: transparent !important; margin-bottom: 0 !important; }
     .print-summary { display: block !important; page-break-after: always; padding-top: 20px; }
@@ -172,6 +173,7 @@
     .result-card { border: 1px solid #ccc !important; margin-bottom: 16px !important; page-break-inside: avoid; }
     .result-body { max-height: none !important; border-top: 1px solid #eee !important; display: block !important; }
 
+    /* Feedback-Only Print Mode */
     body.print-feedback-only .col-score-breakdown,
     body.print-feedback-only .summary-score-tag,
     body.print-feedback-only .card-score-badge,
@@ -240,9 +242,9 @@
       </div>
 
       <div style="margin-left: 38px; margin-top: 24px; border-top: 1px solid var(--paper-line); padding-top: 16px;">
-        <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">📂 Or View Past Assignment Submissions:</label>
+        <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">📂 Or View Past Assignment Submissions & Link:</label>
         <select id="past-assignments-select" onchange="loadSelectedAssignment(this.value)" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: #fff;">
-          <option value="">-- Select an assignment to view live marks --</option>
+          <option value="">-- Select an assignment to view live marks & link --</option>
         </select>
       </div>
     </div>
@@ -757,7 +759,7 @@ async function loadTeacherAssignments() {
     const d = await res.json();
     if (d.success && d.assignments) {
       const select = document.getElementById('past-assignments-select');
-      select.innerHTML = '<option value="">-- Select an assignment to view live marks --</option>' +
+      select.innerHTML = '<option value="">-- Select an assignment to view live marks & link --</option>' +
         d.assignments.map(a => `
           <option value="${a.code}">${escapeHtml(a.title)} (${a.submission_count} submissions) - Code: ${a.code}</option>
         `).join('');
@@ -767,12 +769,22 @@ async function loadTeacherAssignments() {
   }
 }
 
+// Updated loadSelectedAssignment: Displays Live Marks + Link & Copy Button
 function loadSelectedAssignment(selectedCode) {
   if (!selectedCode) return;
   activeCode = selectedCode;
-  const title = document.getElementById('past-assignments-select').selectedOptions[0].text;
+
+  const select = document.getElementById('past-assignments-select');
+  const title = select.selectedOptions[0].text;
+
   document.getElementById('live-portal-title').textContent = `Live Submissions: ${title}`;
   document.getElementById('portal-results-card').style.display = 'block';
+
+  // Populate and show the link box with copy button
+  const fullUrl = `${window.location.origin}/submit.html?code=${selectedCode}`;
+  document.getElementById('generated-link-url').textContent = fullUrl;
+  document.getElementById('generated-link-box').style.display = 'flex';
+
   startLivePolling();
 }
 
