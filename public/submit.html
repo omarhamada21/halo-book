@@ -66,6 +66,13 @@
     display: none; text-align: center; padding: 30px 10px;
   }
   .success-banner h2 { color: #059669; font-family: 'Source Serif 4', serif; margin-bottom: 8px; }
+
+  .error-banner {
+    display: none; text-align: center; padding: 24px 14px;
+    background: #FEF2F2; border: 1px solid #F87171; border-radius: 10px; margin-top: 16px;
+  }
+  .error-banner h3 { margin: 0 0 6px; color: #991B1B; font-size: 16px; }
+  .error-banner p { margin: 0; color: #7F1D1D; font-size: 13.5px; line-height: 1.4; }
 </style>
 </head>
 <body>
@@ -81,6 +88,7 @@
       <div class="form-group">
         <label>Your Full Name</label>
         <input type="text" id="student-name" required placeholder="e.g. Fares Ahmed" />
+        <small style="color:var(--ink-soft); font-size:11.5px; margin-top:4px; display:block;">⚠️ Notice: Only one submission is permitted per student name.</small>
       </div>
 
       <div class="form-group">
@@ -96,6 +104,11 @@
 
       <button type="submit" class="btn-submit" id="submit-btn">🚀 Submit Work to Teacher</button>
     </form>
+
+    <div class="error-banner" id="error-box">
+      <h3 id="error-title">Submission Blocked</h3>
+      <p id="error-desc"></p>
+    </div>
   </div>
 
   <div class="card success-banner" id="success-screen">
@@ -112,7 +125,6 @@
   let selectedFiles = [];
   let isLocked = false;
 
-  // Formatter for Egyptian Time Zone (Africa/Cairo) + 12-Hour AM/PM
   function formatCairoDateTime(dateObj) {
     return dateObj.toLocaleString('en-US', {
       timeZone: 'Africa/Cairo',
@@ -197,6 +209,9 @@
 
     const name = document.getElementById('student-name').value.trim();
     const btn = document.getElementById('submit-btn');
+    const errBox = document.getElementById('error-box');
+    const errDesc = document.getElementById('error-desc');
+    errBox.style.display = 'none';
 
     if (!selectedFiles.length) {
       alert('Please take or upload at least one photo of your work.');
@@ -224,11 +239,19 @@
         document.getElementById('submitted-name').textContent = d.studentName || name;
         document.getElementById('success-screen').style.display = 'block';
       } else {
-        alert(d.error || 'Submission failed.');
         btn.disabled = false;
         btn.textContent = '🚀 Submit Work to Teacher';
-        if (res.status === 403) {
-          window.location.reload();
+        
+        // Handle Single Submission Duplicate Error (409)
+        if (res.status === 409) {
+          errDesc.textContent = d.error;
+          errBox.style.display = 'block';
+          alert(d.error);
+        } else {
+          alert(d.error || 'Submission failed.');
+          if (res.status === 403) {
+            window.location.reload();
+          }
         }
       }
     } catch (err) {

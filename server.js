@@ -61,7 +61,7 @@ function isStrongPassword(password) {
   return hasNumber && hasUpper && hasLower && hasSpecial;
 }
 
-// Database Configuration (Turso Cloud SQLite / Local Fallback)
+// Database Configuration
 const tursoUrl = process.env.TURSO_DATABASE_URL || 'file:mimirmarking.db';
 const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || '';
 
@@ -72,7 +72,6 @@ const db = createClient({
 
 async function initDatabase() {
   try {
-    // 1. Users Table
     await db.execute(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,7 +85,6 @@ async function initDatabase() {
       );
     `);
 
-    // 2. Assignments Table
     await db.execute(`
       CREATE TABLE IF NOT EXISTS assignments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,7 +99,6 @@ async function initDatabase() {
       );
     `);
 
-    // 3. Submissions Table
     await db.execute(`
       CREATE TABLE IF NOT EXISTS submissions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -147,7 +144,6 @@ async function cleanExpiredAssignments() {
   }
 }
 
-// Hourly check
 setInterval(cleanExpiredAssignments, 60 * 60 * 1000);
 
 app.use(cors());
@@ -623,7 +619,7 @@ async function callGemini(inputPayload) {
   throw lastErr;
 }
 
-// 1. Teacher creates an assignment (Normalized ISO Deadline)
+// 1. Teacher creates an assignment
 app.post(
   '/api/assignments/create',
   authenticateToken,
@@ -669,13 +665,7 @@ app.post(
       }
 
       const code = crypto.randomBytes(4).toString('hex');
-      let deadlineIso = null;
-      if (deadline && deadline.trim()) {
-        const parsedDdl = new Date(deadline.trim());
-        if (!isNaN(parsedDdl.getTime())) {
-          deadlineIso = parsedDdl.toISOString();
-        }
-      }
+      let deadlineVal = deadline && deadline.trim() ? deadline.trim() : null;
 
       await db.execute({
         sql: `INSERT INTO assignments (code, teacher_id, title, deadline, scheme_text, scheme_files_json) 
@@ -684,7 +674,7 @@ app.post(
           code,
           req.user.id,
           title.trim(),
-          deadlineIso,
+          deadlineVal,
           extractedSchemeText,
           JSON.stringify(cachedSchemePayload)
         ]
@@ -746,7 +736,7 @@ app.get('/api/assignments/:code/submissions', authenticateToken, requireApproved
   }
 });
 
-// 4. Update Assignment Deadline Endpoint (Teacher Control)
+// 4. Update Assignment Deadline
 app.post('/api/assignments/:code/update-deadline', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
@@ -760,23 +750,17 @@ app.post('/api/assignments/:code/update-deadline', authenticateToken, requireApp
     const assignment = assignResult.rows[0];
     if (!assignment) return res.status(404).json({ error: 'Assignment not found or unauthorized.' });
 
-    let deadlineIso = null;
-    if (deadline && deadline.trim()) {
-      const parsed = new Date(deadline.trim());
-      if (!isNaN(parsed.getTime())) {
-        deadlineIso = parsed.toISOString();
-      }
-    }
+    const deadlineVal = deadline && deadline.trim() ? deadline.trim() : null;
 
     await db.execute({
       sql: 'UPDATE assignments SET deadline = ? WHERE id = ?',
-      args: [deadlineIso, assignment.id]
+      args: [deadlineVal, assignment.id]
     });
 
     res.json({
       success: true,
       message: 'Deadline updated successfully.',
-      deadline: deadlineIso
+      deadline: deadlineVal
     });
   } catch (err) {
     console.error('Update Deadline Error:', err);
@@ -803,7 +787,7 @@ app.post('/api/submissions/:id/update', authenticateToken, requireApprovedUser, 
   }
 });
 
-// 6. Public route to check assignment details (UTC Normalized)
+// 6. Public route to inspect assignment details
 app.get('/api/public/assignment/:code', async (req, res) => {
   try {
     const { code } = req.params;
@@ -840,7 +824,7 @@ app.get('/api/public/assignment/:code', async (req, res) => {
   }
 });
 
-// 7. Public student work submission (Strict Server-Side Deadline Gate)
+// 7. Public student work submission (Enforces Single Submission & Deadline Guard)
 app.post(
   '/api/public/submit/:code',
   upload.fields([{ name: 'pages', maxCount: 20 }]),
@@ -848,6 +832,10 @@ app.post(
     try {
       const { code } = req.params;
       const studentNameInput = (req.body.studentName || '').trim();
+
+      if (!studentNameInput) {
+        return res.status(400).json({ error: 'Please provide your full name before submitting.' });
+      }
 
       const assignResult = await db.execute({
         sql: 'SELECT * FROM assignments WHERE code = ?',
@@ -857,12 +845,24 @@ app.post(
       const assignment = assignResult.rows[0];
       if (!assignment) return res.status(404).json({ error: 'Assignment not found.' });
 
-      // Immediate Server-Side Deadline Verification
+      // 1. Strict Server-Side Deadline Gate
       if (assignment.deadline) {
         const ddlTime = new Date(assignment.deadline).getTime();
         if (!isNaN(ddlTime) && Date.now() > ddlTime) {
           return res.status(403).json({ error: 'Submission deadline has passed. Work is no longer accepted.' });
         }
+      }
+
+      // 2. Strict Single Submission Verification (Prevent duplicates)
+      const duplicateCheck = await db.execute({
+        sql: 'SELECT id FROM submissions WHERE assignment_id = ? AND LOWER(TRIM(student_name)) = LOWER(TRIM(?))',
+        args: [assignment.id, studentNameInput]
+      });
+
+      if (duplicateCheck.rows.length > 0) {
+        return res.status(409).json({ 
+          error: `A submission under the name "${studentNameInput}" has already been received for this assignment. Only one submission is permitted per student.` 
+        });
       }
 
       const files = (req.files && req.files['pages']) || [];
@@ -876,14 +876,14 @@ app.post(
       let promptText = `You are a meticulous exam evaluator reviewing a student's handwritten writing assessment / essay.
 
 INSTRUCTIONS:
-- The verified student name submitted is: "${studentNameInput || 'Student'}". Always use this name in 'student_name'.
+- The verified student name submitted is: "${studentNameInput}". Always use this name in 'student_name'.
 - Grade against the provided marking scheme criteria.
 - In 'category_breakdown', 'mistakes', and 'weaknesses', list EVERY bullet on a new line starting with a hyphen '-'.
 - Format mistakes line-by-line with quoted snippets and clear corrections (e.g. Paragraph 1: 'word' -> 'correction').
 
 Respond ONLY with valid JSON:
 {
-  "student_name": "${studentNameInput || 'Student'}",
+  "student_name": "${studentNameInput}",
   "total_score": "12/25",
   "category_breakdown": "- Structure: 3/6\\n- Content: 3/6\\n- Linking Words: 2/5\\n- Vocabulary: 2/4\\n- SPaG: 2/4",
   "mistakes": "- Spelling: 'freinds' should be spelled 'friends'.\\n- Line 1: 'was going' should be 'were going'",
@@ -920,7 +920,7 @@ Respond ONLY with valid JSON:
       inputPayload.push({ type: 'text', text: promptText });
 
       let parsedFeedback = {
-        student_name: studentNameInput || 'Student',
+        student_name: studentNameInput,
         total_score: '—',
         category_breakdown: '- Evaluated',
         mistakes: '- No major mistakes noted.',
@@ -963,7 +963,7 @@ Respond ONLY with valid JSON:
   }
 );
 
-// 8. Manual Direct Batch Marking (Header extraction & batch grading)
+// 8. Manual Direct Batch Marking
 app.post(
   '/api/mark-batch',
   authenticateToken,
