@@ -68,7 +68,7 @@
   .success-banner h2 { color: #059669; font-family: 'Source Serif 4', serif; margin-bottom: 8px; }
 
   .error-banner {
-    display: none; text-align: center; padding: 24px 14px;
+    display: none; text-align: center; padding: 20px 16px;
     background: #FEF2F2; border: 1px solid #F87171; border-radius: 10px; margin-top: 16px;
   }
   .error-banner h3 { margin: 0 0 6px; color: #991B1B; font-size: 16px; }
@@ -88,7 +88,7 @@
       <div class="form-group">
         <label>Your Full Name</label>
         <input type="text" id="student-name" required placeholder="e.g. Fares Ahmed" />
-        <small style="color:var(--ink-soft); font-size:11.5px; margin-top:4px; display:block;">⚠️ Notice: Only one submission is permitted per student name.</small>
+        <small style="color:var(--ink-soft); font-size:11.5px; margin-top:4px; display:block;">🔒 Protected: Only 1 submission allowed from this device.</small>
       </div>
 
       <div class="form-group">
@@ -125,6 +125,32 @@
   let selectedFiles = [];
   let isLocked = false;
 
+  // Persistent Device ID Fingerprint
+  function getOrCreateDeviceId() {
+    let deviceId = localStorage.getItem('mimir_device_token');
+    if (!deviceId) {
+      deviceId = 'dev_' + crypto.randomUUID();
+      localStorage.setItem('mimir_device_token', deviceId);
+    }
+    return deviceId;
+  }
+
+  const clientDeviceId = getOrCreateDeviceId();
+
+  // Check if this device already completed this specific assignment
+  function checkLocalDeviceHistory(assignmentCode) {
+    const history = JSON.parse(localStorage.getItem('mimir_submitted_codes') || '[]');
+    return history.includes(assignmentCode);
+  }
+
+  function markDeviceAsSubmitted(assignmentCode) {
+    const history = JSON.parse(localStorage.getItem('mimir_submitted_codes') || '[]');
+    if (!history.includes(assignmentCode)) {
+      history.push(assignmentCode);
+      localStorage.setItem('mimir_submitted_codes', JSON.stringify(history));
+    }
+  }
+
   function formatCairoDateTime(dateObj) {
     return dateObj.toLocaleString('en-US', {
       timeZone: 'Africa/Cairo',
@@ -141,6 +167,16 @@
     document.getElementById('assign-title').textContent = 'Invalid Assignment Link';
     document.getElementById('student-form').style.display = 'none';
   } else {
+    // Check local submission lock first
+    if (checkLocalDeviceHistory(code)) {
+      isLocked = true;
+      document.getElementById('student-form').style.display = 'none';
+      const errBox = document.getElementById('error-box');
+      errBox.style.display = 'block';
+      document.getElementById('error-title').textContent = 'Submission Already Recorded';
+      document.getElementById('error-desc').textContent = 'This device has already submitted work for this assignment. Only one submission is permitted per device.';
+    }
+
     fetch(`/api/public/assignment/${code}`)
       .then(r => r.json())
       .then(d => {
@@ -203,7 +239,7 @@
   async function handleStudentSubmit(e) {
     e.preventDefault();
     if (isLocked) {
-      alert('Submission deadline has passed.');
+      alert('This device is locked from submitting again for this assignment.');
       return;
     }
 
@@ -223,6 +259,7 @@
 
     const formData = new FormData();
     formData.append('studentName', name);
+    formData.append('deviceId', clientDeviceId);
     for (const f of selectedFiles) {
       formData.append('pages', f);
     }
@@ -235,6 +272,7 @@
       const d = await res.json();
 
       if (d.success) {
+        markDeviceAsSubmitted(code);
         document.getElementById('submission-form-card').style.display = 'none';
         document.getElementById('submitted-name').textContent = d.studentName || name;
         document.getElementById('success-screen').style.display = 'block';
@@ -242,11 +280,13 @@
         btn.disabled = false;
         btn.textContent = '🚀 Submit Work to Teacher';
         
-        // Handle Single Submission Duplicate Error (409)
+        // Duplicate Device Lockout
         if (res.status === 409) {
+          markDeviceAsSubmitted(code);
+          document.getElementById('student-form').style.display = 'none';
+          document.getElementById('error-title').textContent = 'Device Already Submitted';
           errDesc.textContent = d.error;
           errBox.style.display = 'block';
-          alert(d.error);
         } else {
           alert(d.error || 'Submission failed.');
           if (res.status === 403) {

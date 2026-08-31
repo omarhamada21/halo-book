@@ -104,6 +104,7 @@ async function initDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         assignment_id INTEGER NOT NULL,
         student_name TEXT NOT NULL,
+        device_id TEXT,
         page_count INTEGER DEFAULT 1,
         total_score TEXT,
         category_breakdown TEXT,
@@ -113,6 +114,13 @@ async function initDatabase() {
         FOREIGN KEY (assignment_id) REFERENCES assignments(id)
       );
     `);
+
+    // Ensure device_id column exists if table was created previously
+    try {
+      await db.execute(`ALTER TABLE submissions ADD COLUMN device_id TEXT;`);
+    } catch (e) {
+      // Column already exists
+    }
 
     console.log('Connected to Database successfully.');
     cleanExpiredAssignments();
@@ -824,7 +832,7 @@ app.get('/api/public/assignment/:code', async (req, res) => {
   }
 });
 
-// 7. Public student work submission (Enforces Single Submission & Deadline Guard)
+// 7. Public student work submission (Enforces Single Submission BY DEVICE ID)
 app.post(
   '/api/public/submit/:code',
   upload.fields([{ name: 'pages', maxCount: 20 }]),
@@ -832,6 +840,7 @@ app.post(
     try {
       const { code } = req.params;
       const studentNameInput = (req.body.studentName || '').trim();
+      const deviceIdInput = (req.body.deviceId || '').trim();
 
       if (!studentNameInput) {
         return res.status(400).json({ error: 'Please provide your full name before submitting.' });
@@ -853,16 +862,18 @@ app.post(
         }
       }
 
-      // 2. Strict Single Submission Verification (Prevent duplicates)
-      const duplicateCheck = await db.execute({
-        sql: 'SELECT id FROM submissions WHERE assignment_id = ? AND LOWER(TRIM(student_name)) = LOWER(TRIM(?))',
-        args: [assignment.id, studentNameInput]
-      });
-
-      if (duplicateCheck.rows.length > 0) {
-        return res.status(409).json({ 
-          error: `A submission under the name "${studentNameInput}" has already been received for this assignment. Only one submission is permitted per student.` 
+      // 2. Strict Single Submission Verification by Device ID
+      if (deviceIdInput) {
+        const deviceCheck = await db.execute({
+          sql: 'SELECT id, student_name FROM submissions WHERE assignment_id = ? AND device_id = ?',
+          args: [assignment.id, deviceIdInput]
         });
+
+        if (deviceCheck.rows.length > 0) {
+          return res.status(409).json({ 
+            error: 'This device has already submitted work for this assignment. Only one submission is permitted per device.' 
+          });
+        }
       }
 
       const files = (req.files && req.files['pages']) || [];
@@ -938,11 +949,12 @@ Respond ONLY with valid JSON:
 
       await db.execute({
         sql: `INSERT INTO submissions 
-              (assignment_id, student_name, page_count, total_score, category_breakdown, mistakes, weaknesses)
-              VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              (assignment_id, student_name, device_id, page_count, total_score, category_breakdown, mistakes, weaknesses)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           assignment.id,
           finalName,
+          deviceIdInput || null,
           files.length,
           parsedFeedback.total_score || '—',
           parsedFeedback.category_breakdown || '—',
