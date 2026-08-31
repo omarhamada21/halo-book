@@ -104,6 +104,7 @@ async function initDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         assignment_id INTEGER NOT NULL,
         student_name TEXT NOT NULL,
+        teacher_name TEXT,
         device_id TEXT,
         page_count INTEGER DEFAULT 1,
         total_score TEXT,
@@ -115,8 +116,13 @@ async function initDatabase() {
       );
     `);
 
+    // Auto-migration checks for existing databases
     try {
       await db.execute(`ALTER TABLE submissions ADD COLUMN device_id TEXT;`);
+    } catch (e) {}
+
+    try {
+      await db.execute(`ALTER TABLE submissions ADD COLUMN teacher_name TEXT;`);
     } catch (e) {}
 
     console.log('Connected to Database successfully.');
@@ -725,7 +731,7 @@ app.get('/api/assignments/:code/submissions', authenticateToken, requireApproved
     if (!assignment) return res.status(404).json({ error: 'Assignment not found.' });
 
     const subsResult = await db.execute({
-      sql: `SELECT id, student_name as name, student_name, page_count as pageCount, total_score, 
+      sql: `SELECT id, student_name as name, student_name, teacher_name, page_count as pageCount, total_score, 
             category_breakdown, mistakes, weaknesses, created_at 
             FROM submissions WHERE assignment_id = ? ORDER BY id ASC`,
       args: [assignment.id]
@@ -778,7 +784,6 @@ app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, asy
   try {
     const { code } = req.params;
 
-    // Check if the assignment belongs to the teacher (or user is admin/root)
     const assignResult = await db.execute({
       sql: 'SELECT id, title FROM assignments WHERE code = ?' + (['root', 'admin'].includes(req.user.role) ? '' : ' AND teacher_id = ?'),
       args: ['root', 'admin'].includes(req.user.role) ? [code] : [code, req.user.id]
@@ -787,13 +792,11 @@ app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, asy
     const assignment = assignResult.rows[0];
     if (!assignment) return res.status(404).json({ error: 'Assignment not found or unauthorized.' });
 
-    // Cascade 1: Delete all student submissions belonging to this assignment
     await db.execute({
       sql: 'DELETE FROM submissions WHERE assignment_id = ?',
       args: [assignment.id]
     });
 
-    // Cascade 2: Delete the assignment itself
     await db.execute({
       sql: 'DELETE FROM assignments WHERE id = ?',
       args: [assignment.id]
@@ -865,7 +868,7 @@ app.get('/api/public/assignment/:code', async (req, res) => {
   }
 });
 
-// 8. Public student work submission (Enforces Single Submission BY DEVICE ID)
+// 8. Public student work submission (Includes Teacher Name & Device Lockout)
 app.post(
   '/api/public/submit/:code',
   upload.fields([{ name: 'pages', maxCount: 20 }]),
@@ -879,8 +882,12 @@ app.post(
         return res.status(400).json({ error: 'Please provide your full name before submitting.' });
       }
 
+      // Fetch assignment and associated teacher name
       const assignResult = await db.execute({
-        sql: 'SELECT * FROM assignments WHERE code = ?',
+        sql: `SELECT a.*, u.name as teacher_name 
+              FROM assignments a 
+              JOIN users u ON a.teacher_id = u.id 
+              WHERE a.code = ?`,
         args: [code]
       });
 
@@ -979,14 +986,16 @@ Respond ONLY with valid JSON:
       }
 
       const finalName = studentNameInput || parsedFeedback.student_name || 'Student';
+      const teacherName = assignment.teacher_name || 'Teacher';
 
       await db.execute({
         sql: `INSERT INTO submissions 
-              (assignment_id, student_name, device_id, page_count, total_score, category_breakdown, mistakes, weaknesses)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              (assignment_id, student_name, teacher_name, device_id, page_count, total_score, category_breakdown, mistakes, weaknesses)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           assignment.id,
           finalName,
+          teacherName,
           deviceIdInput || null,
           files.length,
           parsedFeedback.total_score || '—',
