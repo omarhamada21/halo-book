@@ -115,12 +115,9 @@ async function initDatabase() {
       );
     `);
 
-    // Ensure device_id column exists if table was created previously
     try {
       await db.execute(`ALTER TABLE submissions ADD COLUMN device_id TEXT;`);
-    } catch (e) {
-      // Column already exists
-    }
+    } catch (e) {}
 
     console.log('Connected to Database successfully.');
     cleanExpiredAssignments();
@@ -776,7 +773,43 @@ app.post('/api/assignments/:code/update-deadline', authenticateToken, requireApp
   }
 });
 
-// 5. Update Submission Inline (Teacher Edit Persistence)
+// 5. Delete Assignment & Cascade Delete All Submissions
+app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const { code } = req.params;
+
+    // Check if the assignment belongs to the teacher (or user is admin/root)
+    const assignResult = await db.execute({
+      sql: 'SELECT id, title FROM assignments WHERE code = ?' + (['root', 'admin'].includes(req.user.role) ? '' : ' AND teacher_id = ?'),
+      args: ['root', 'admin'].includes(req.user.role) ? [code] : [code, req.user.id]
+    });
+
+    const assignment = assignResult.rows[0];
+    if (!assignment) return res.status(404).json({ error: 'Assignment not found or unauthorized.' });
+
+    // Cascade 1: Delete all student submissions belonging to this assignment
+    await db.execute({
+      sql: 'DELETE FROM submissions WHERE assignment_id = ?',
+      args: [assignment.id]
+    });
+
+    // Cascade 2: Delete the assignment itself
+    await db.execute({
+      sql: 'DELETE FROM assignments WHERE id = ?',
+      args: [assignment.id]
+    });
+
+    res.json({
+      success: true,
+      message: `Assignment "${assignment.title}" and all associated submissions were permanently deleted.`
+    });
+  } catch (err) {
+    console.error('Delete Assignment Error:', err);
+    res.status(500).json({ error: 'Failed to delete assignment.' });
+  }
+});
+
+// 6. Update Submission Inline (Teacher Edit Persistence)
 app.post('/api/submissions/:id/update', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { id } = req.params;
@@ -795,7 +828,7 @@ app.post('/api/submissions/:id/update', authenticateToken, requireApprovedUser, 
   }
 });
 
-// 6. Public route to inspect assignment details
+// 7. Public route to inspect assignment details
 app.get('/api/public/assignment/:code', async (req, res) => {
   try {
     const { code } = req.params;
@@ -832,7 +865,7 @@ app.get('/api/public/assignment/:code', async (req, res) => {
   }
 });
 
-// 7. Public student work submission (Enforces Single Submission BY DEVICE ID)
+// 8. Public student work submission (Enforces Single Submission BY DEVICE ID)
 app.post(
   '/api/public/submit/:code',
   upload.fields([{ name: 'pages', maxCount: 20 }]),
@@ -975,7 +1008,7 @@ Respond ONLY with valid JSON:
   }
 );
 
-// 8. Manual Direct Batch Marking
+// 9. Manual Direct Batch Marking
 app.post(
   '/api/mark-batch',
   authenticateToken,
