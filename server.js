@@ -287,7 +287,7 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// Tri-gram Intra-Class Similarity Computation
+// Tri-gram Similarity Check
 function calculateTextSimilarity(text1, text2) {
   if (!text1 || !text2) return { score: 0, sharedPhrases: [] };
   
@@ -322,31 +322,60 @@ function calculateTextSimilarity(text1, text2) {
   return { score, sharedPhrases: shared };
 }
 
-// Unified Gemini Flash Evaluator
-async function callGemini(contentsPayload) {
-  const models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+// Model Caller via Interactions API
+async function callGemini(inputPayload) {
+  const models = ['gemini-3.6-flash', 'gemini-3.7-flash'];
   let lastErr;
 
   for (const modelName of models) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const response = await ai.models.generateContent({
+        const interaction = await ai.interactions.create({
           model: modelName,
-          contents: contentsPayload,
-          config: {
-            responseMimeType: 'application/json'
-          }
+          input: inputPayload,
+          response_format: [
+            {
+              type: 'text',
+              mime_type: 'application/json',
+              schema: {
+                type: 'object',
+                properties: {
+                  student_name: { type: 'string' },
+                  extracted_essay: { type: 'string' },
+                  total_score: { type: 'string' },
+                  category_breakdown: { type: 'string' },
+                  mistakes: { type: 'string' },
+                  weaknesses: { type: 'string' },
+                  ai_probability_score: { type: 'integer' },
+                  ai_detection_notes: { type: 'string' },
+                  web_similarity_score: { type: 'integer' }
+                },
+                required: [
+                  'student_name',
+                  'extracted_essay',
+                  'total_score',
+                  'category_breakdown',
+                  'mistakes',
+                  'weaknesses',
+                  'ai_probability_score',
+                  'ai_detection_notes',
+                  'web_similarity_score'
+                ]
+              }
+            }
+          ]
         });
-
-        if (response && response.text) {
-          const rawText = response.text.trim();
-          const cleanJson = rawText.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
-          return cleanJson;
-        }
+        return interaction.output_text;
       } catch (err) {
+        const errMsg = err.message || '';
+        console.warn(`[${modelName} attempt ${attempt + 1}] Notice: ${errMsg}`);
         lastErr = err;
-        console.warn(`[${modelName} Attempt ${attempt + 1}] Notice:`, err.message);
-        await delay(600 * (attempt + 1));
+        
+        if (errMsg.includes('500') || errMsg.includes('503') || errMsg.includes('high demand')) {
+          await delay(800 * (attempt + 1));
+          continue;
+        }
+        break;
       }
     }
   }
@@ -519,7 +548,7 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
-// ----------------- ASSIGNMENT & EVALUATIONS -----------------
+// ----------------- ASSIGNMENTS & EVALUATIONS -----------------
 app.post(
   '/api/assignments/create',
   authenticateToken,
@@ -541,20 +570,18 @@ app.post(
             extractedSchemeText += `\n[Rubric Document Content]:\n${pdfTxt}\n`;
           } else {
             cachedSchemePayload.push({
-              inlineData: {
-                mimeType: 'application/pdf',
-                data: sFile.buffer.toString('base64')
-              }
+              type: 'document',
+              mime_type: 'application/pdf',
+              data: sFile.buffer.toString('base64')
             });
           }
         } else if (isImage(sFile)) {
           let mimeType = sFile.mimetype || 'image/png';
           if (!mimeType.startsWith('image/')) mimeType = 'image/png';
           cachedSchemePayload.push({
-            inlineData: {
-              mimeType: mimeType,
-              data: sFile.buffer.toString('base64')
-            }
+            type: 'image',
+            mime_type: mimeType,
+            data: sFile.buffer.toString('base64')
           });
         } else {
           const txt = await extractText(sFile);
@@ -606,6 +633,7 @@ app.get('/api/assignments', authenticateToken, requireApprovedUser, async (req, 
   }
 });
 
+// Teacher Submissions Fetch
 app.get('/api/assignments/:code/submissions', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
@@ -796,35 +824,24 @@ app.post(
       }
 
       const cachedSchemePayload = JSON.parse(assignment.scheme_files_json || '[]');
-      const contents = [...cachedSchemePayload];
+      const inputPayload = [...cachedSchemePayload];
 
-      let promptText = `You are a professional teacher evaluating this student writing assessment.
-Carefully examine the handwriting or typed text in the submitted student work against the marking scheme criteria.
+      let promptText = `You are a professional teacher evaluating a student writing assessment.
+Examine the handwriting/typed text in the student's pages against the marking scheme criteria.
 
 INSTRUCTIONS:
 1. Extract and transcribe the student's entire essay text verbatim into "extracted_essay".
 2. Grade strictly according to the marking scheme rubric provided.
 3. In "total_score", provide the total marks (e.g., "16/25").
-4. In "category_breakdown", list each individual marking category on a new line starting with a hyphen (e.g., "- Structure & Narrative Flow: 4/6\\n- Content & Descriptive Details: 4/6\\n- SPaG: 3/4").
-5. In "mistakes", list line-by-line errors starting with hyphens, with quoted excerpts and corrections (e.g., "- Paragraph 1: 'freinds' -> 'friends'").
+4. In "category_breakdown", list each individual marking category on a new line starting with a hyphen (e.g., "- Structure: 4/6\\n- Content: 4/6\\n- SPaG: 3/4").
+5. In "mistakes", list line-by-line errors starting with hyphens with quoted excerpts and corrections.
 6. In "weaknesses", suggest actionable revision points starting with hyphens.
 7. Perform an integrity check:
    - "ai_probability_score": integer (0 to 100) rating likelihood of AI generation.
    - "ai_detection_notes": brief summary of language patterns.
    - "web_similarity_score": integer (0 to 100) estimating similarity to known web articles or Wikipedia.
 
-Respond ONLY with valid JSON in this exact structure:
-{
-  "student_name": "${studentNameInput}",
-  "extracted_essay": "Transcribed text...",
-  "total_score": "16/25",
-  "category_breakdown": "- Structure: 4/6\\n- Content: 4/6\\n- SPaG: 3/4",
-  "mistakes": "- Line 1: 'was' -> 'were'",
-  "weaknesses": "- Use more varied transitions",
-  "ai_probability_score": 0,
-  "ai_detection_notes": "Consistent with natural student handwriting.",
-  "web_similarity_score": 0
-}`;
+Respond ONLY with valid JSON matching the schema.`;
 
       if (assignment.scheme_text && assignment.scheme_text.trim()) {
         promptText += `\n\nMARKING SCHEME CRITERIA:\n${assignment.scheme_text}`;
@@ -835,18 +852,16 @@ Respond ONLY with valid JSON in this exact structure:
         if (isImage(file)) {
           let mimeType = file.mimetype || 'image/png';
           if (!mimeType.startsWith('image/')) mimeType = 'image/png';
-          contents.push({
-            inlineData: {
-              mimeType: mimeType,
-              data: file.buffer.toString('base64')
-            }
+          inputPayload.push({
+            type: 'image',
+            mime_type: mimeType,
+            data: file.buffer.toString('base64')
           });
         } else if (isPdf(file)) {
-          contents.push({
-            inlineData: {
-              mimeType: 'application/pdf',
-              data: file.buffer.toString('base64')
-            }
+          inputPayload.push({
+            type: 'document',
+            mime_type: 'application/pdf',
+            data: file.buffer.toString('base64')
           });
         } else {
           const essayText = await extractText(file);
@@ -855,14 +870,14 @@ Respond ONLY with valid JSON in this exact structure:
       }
 
       promptText += `\n\nSTUDENT WORK: ${files.length} attached document/image page(s).`;
-      contents.push(promptText);
+      inputPayload.push({ type: 'text', text: promptText });
 
       let parsedFeedback = null;
       try {
-        const rawOutput = await callGemini(contents);
+        const rawOutput = await callGemini(inputPayload);
         parsedFeedback = JSON.parse(rawOutput);
       } catch (aiErr) {
-        console.error('Gemini evaluation pipeline error:', aiErr);
+        console.error('Gemini evaluation error:', aiErr);
       }
 
       if (!parsedFeedback) {
@@ -982,20 +997,18 @@ app.post(
             allSchemeText += `\n[Rubric Document Content]:\n${pdfTxt}\n`;
           } else {
             cachedSchemePayload.push({
-              inlineData: {
-                mimeType: 'application/pdf',
-                data: sFile.buffer.toString('base64')
-              }
+              type: 'document',
+              mime_type: 'application/pdf',
+              data: sFile.buffer.toString('base64')
             });
           }
         } else if (isImage(sFile)) {
           let mimeType = sFile.mimetype || 'image/png';
           if (!mimeType.startsWith('image/')) mimeType = 'image/png';
           cachedSchemePayload.push({
-            inlineData: {
-              mimeType: mimeType,
-              data: sFile.buffer.toString('base64')
-            }
+            type: 'image',
+            mime_type: mimeType,
+            data: sFile.buffer.toString('base64')
           });
         } else {
           const txt = await extractText(sFile);
@@ -1023,7 +1036,7 @@ app.post(
       }
 
       async function evaluateStudent(job) {
-        const contents = [...cachedSchemePayload];
+        const inputPayload = [...cachedSchemePayload];
 
         let promptText = `You are a professional exam evaluator reviewing a student's writing assessment.
 Extract the student's handwritten name from the header if visible, or fallback to: "${job.assignedName}".
@@ -1033,18 +1046,7 @@ Rate 'ai_probability_score' (0-100) and 'web_similarity_score' (0-100).
 
 In 'category_breakdown', 'mistakes', and 'weaknesses', list EVERY bullet on a new line starting with a hyphen '-'.
 Format mistakes line-by-line with exact quoted snippets (e.g. Paragraph 1: 'word' -> 'correction').
-Respond ONLY with valid JSON matching this schema:
-{
-  "student_name": "${job.assignedName}",
-  "extracted_essay": "text...",
-  "total_score": "16/25",
-  "category_breakdown": "- Structure: 4/6\\n- Content: 4/6\\n- SPaG: 3/4",
-  "mistakes": "- Paragraph 1: 'was' -> 'were'",
-  "weaknesses": "- Add more transition markers",
-  "ai_probability_score": 0,
-  "ai_detection_notes": "Natural cadence",
-  "web_similarity_score": 0
-}`;
+Respond ONLY with valid JSON matching the schema.`;
 
         if (allSchemeText.trim()) promptText += `\n\nMARKING SCHEME CRITERIA:\n${allSchemeText}`;
         if (extraNotes.trim()) promptText += `\n\nTEACHER NOTES & GUIDELINES:\n${extraNotes}`;
@@ -1054,18 +1056,16 @@ Respond ONLY with valid JSON matching this schema:
           if (isImage(file)) {
             let mimeType = file.mimetype || 'image/png';
             if (!mimeType.startsWith('image/')) mimeType = 'image/png';
-            contents.push({
-              inlineData: {
-                mimeType: mimeType,
-                data: file.buffer.toString('base64')
-              }
+            inputPayload.push({
+              type: 'image',
+              mime_type: mimeType,
+              data: file.buffer.toString('base64')
             });
           } else if (isPdf(file)) {
-            contents.push({
-              inlineData: {
-                mimeType: 'application/pdf',
-                data: file.buffer.toString('base64')
-              }
+            inputPayload.push({
+              type: 'document',
+              mime_type: 'application/pdf',
+              data: file.buffer.toString('base64')
             });
           } else {
             const essayText = await extractText(file);
@@ -1074,10 +1074,10 @@ Respond ONLY with valid JSON matching this schema:
         }
 
         promptText += `\n\nSTUDENT WORK: ${job.files.length} attached document/image page(s).`;
-        contents.push(promptText);
+        inputPayload.push({ type: 'text', text: promptText });
 
         try {
-          const rawOutput = await callGemini(contents);
+          const rawOutput = await callGemini(inputPayload);
           const parsedFeedback = JSON.parse(rawOutput);
 
           const finalStudentName =
