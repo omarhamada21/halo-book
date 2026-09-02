@@ -106,24 +106,39 @@ async function initDatabase() {
         student_name TEXT NOT NULL,
         teacher_name TEXT,
         device_id TEXT,
+        essay_text TEXT,
         page_count INTEGER DEFAULT 1,
         total_score TEXT,
         category_breakdown TEXT,
         mistakes TEXT,
         weaknesses TEXT,
+        similarity_score INTEGER DEFAULT 0,
+        similarity_details TEXT,
+        ai_score INTEGER DEFAULT 0,
+        ai_details TEXT,
+        web_score INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (assignment_id) REFERENCES assignments(id)
       );
     `);
 
-    // Auto-migration checks for existing databases
-    try {
-      await db.execute(`ALTER TABLE submissions ADD COLUMN device_id TEXT;`);
-    } catch (e) {}
+    // Schema Migrations for existing deployments
+    const migrationColumns = [
+      'ALTER TABLE submissions ADD COLUMN teacher_name TEXT;',
+      'ALTER TABLE submissions ADD COLUMN device_id TEXT;',
+      'ALTER TABLE submissions ADD COLUMN essay_text TEXT;',
+      'ALTER TABLE submissions ADD COLUMN similarity_score INTEGER DEFAULT 0;',
+      'ALTER TABLE submissions ADD COLUMN similarity_details TEXT;',
+      'ALTER TABLE submissions ADD COLUMN ai_score INTEGER DEFAULT 0;',
+      'ALTER TABLE submissions ADD COLUMN ai_details TEXT;',
+      'ALTER TABLE submissions ADD COLUMN web_score INTEGER DEFAULT 0;'
+    ];
 
-    try {
-      await db.execute(`ALTER TABLE submissions ADD COLUMN teacher_name TEXT;`);
-    } catch (e) {}
+    for (const sql of migrationColumns) {
+      try {
+        await db.execute(sql);
+      } catch (e) {}
+    }
 
     console.log('Connected to Database successfully.');
     cleanExpiredAssignments();
@@ -584,9 +599,44 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// AI Model Caller
+// Intra-Class Tri-gram Similarity Check
+function calculateTextSimilarity(text1, text2) {
+  if (!text1 || !text2) return { score: 0, sharedPhrases: [] };
+  
+  const clean1 = text1.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+  const clean2 = text2.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+
+  if (clean1.length < 5 || clean2.length < 5) return { score: 0, sharedPhrases: [] };
+
+  const getTrigrams = (words) => {
+    const set = new Set();
+    for (let i = 0; i < words.length - 2; i++) {
+      set.add(`${words[i]} ${words[i+1]} ${words[i+2]}`);
+    }
+    return set;
+  };
+
+  const set1 = getTrigrams(clean1);
+  const set2 = getTrigrams(clean2);
+
+  let matches = 0;
+  const shared = [];
+  for (const tri of set1) {
+    if (set2.has(tri)) {
+      matches++;
+      if (shared.length < 3) shared.push(tri);
+    }
+  }
+
+  const denominator = Math.min(set1.size, set2.size);
+  const score = denominator > 0 ? Math.min(100, Math.round((matches / denominator) * 100)) : 0;
+
+  return { score, sharedPhrases: shared };
+}
+
+// AI Model Caller with Structured Output & Integrity Parsing
 async function callGemini(inputPayload) {
-  const models = ['gemini-3.6-flash', 'gemini-3.7-flash'];
+  const models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
   let lastErr;
 
   for (const modelName of models) {
@@ -603,27 +653,34 @@ async function callGemini(inputPayload) {
                 type: 'object',
                 properties: {
                   student_name: { type: 'string' },
+                  extracted_essay: { type: 'string', description: 'Full transcribed student text' },
                   total_score: { type: 'string' },
                   category_breakdown: { type: 'string' },
                   mistakes: { type: 'string' },
-                  weaknesses: { type: 'string' }
+                  weaknesses: { type: 'string' },
+                  ai_probability_score: { type: 'integer', description: '0 to 100 AI generation likelihood' },
+                  ai_detection_notes: { type: 'string', description: 'Cadence and markers breakdown' },
+                  web_similarity_score: { type: 'integer', description: '0 to 100 web/Wikipedia copy indicator' }
                 },
-                required: ['student_name', 'total_score', 'category_breakdown', 'mistakes', 'weaknesses']
+                required: [
+                  'student_name',
+                  'extracted_essay',
+                  'total_score',
+                  'category_breakdown',
+                  'mistakes',
+                  'weaknesses',
+                  'ai_probability_score',
+                  'ai_detection_notes',
+                  'web_similarity_score'
+                ]
               }
             }
           ]
         });
         return interaction.output_text;
       } catch (err) {
-        const errMsg = err.message || '';
-        console.warn(`[${modelName} attempt ${attempt + 1}] ${errMsg}`);
         lastErr = err;
-        
-        if (errMsg.includes('500') || errMsg.includes('503') || errMsg.includes('high demand')) {
-          await delay(800 * (attempt + 1));
-          continue;
-        }
-        break;
+        await delay(800 * (attempt + 1));
       }
     }
   }
@@ -718,7 +775,7 @@ app.get('/api/assignments', authenticateToken, requireApprovedUser, async (req, 
   }
 });
 
-// 3. Fetch live submissions for an assignment
+// 3. Fetch live submissions for an assignment (Teacher view with integrity data)
 app.get('/api/assignments/:code/submissions', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
@@ -732,7 +789,7 @@ app.get('/api/assignments/:code/submissions', authenticateToken, requireApproved
 
     const subsResult = await db.execute({
       sql: `SELECT id, student_name as name, student_name, teacher_name, page_count as pageCount, total_score, 
-            category_breakdown, mistakes, weaknesses, created_at 
+            category_breakdown, mistakes, weaknesses, similarity_score, similarity_details, ai_score, ai_details, web_score, created_at 
             FROM submissions WHERE assignment_id = ? ORDER BY id ASC`,
       args: [assignment.id]
     });
@@ -868,7 +925,7 @@ app.get('/api/public/assignment/:code', async (req, res) => {
   }
 });
 
-// 8. Public student work submission (Includes Teacher Name & Device Lockout)
+// 8. Public student work submission (Calculates Integrity, hides scores from student)
 app.post(
   '/api/public/submit/:code',
   upload.fields([{ name: 'pages', maxCount: 20 }]),
@@ -882,7 +939,6 @@ app.post(
         return res.status(400).json({ error: 'Please provide your full name before submitting.' });
       }
 
-      // Fetch assignment and associated teacher name
       const assignResult = await db.execute({
         sql: `SELECT a.*, u.name as teacher_name 
               FROM assignments a 
@@ -925,21 +981,16 @@ app.post(
       const inputPayload = [...cachedSchemePayload];
 
       let promptText = `You are a meticulous exam evaluator reviewing a student's handwritten writing assessment / essay.
+Grade against the provided marking scheme criteria.
+Perform an academic integrity inspection:
+1. Transcribe the entire student essay accurately into 'extracted_essay'.
+2. In 'ai_probability_score', rate from 0 to 100 the likelihood that the essay was generated by ChatGPT/Claude/Gemini based on robotic cadence, burstiness, and uncharacteristic vocabulary.
+3. In 'ai_detection_notes', summarize specific observations about phrasing or indicators (or 'Natural handwritten student cadence').
+4. In 'web_similarity_score', provide estimated score (0 to 100) if content appears to match publicly known web essays or Wikipedia.
 
-INSTRUCTIONS:
-- The verified student name submitted is: "${studentNameInput}". Always use this name in 'student_name'.
-- Grade against the provided marking scheme criteria.
-- In 'category_breakdown', 'mistakes', and 'weaknesses', list EVERY bullet on a new line starting with a hyphen '-'.
-- Format mistakes line-by-line with quoted snippets and clear corrections (e.g. Paragraph 1: 'word' -> 'correction').
-
-Respond ONLY with valid JSON:
-{
-  "student_name": "${studentNameInput}",
-  "total_score": "12/25",
-  "category_breakdown": "- Structure: 3/6\\n- Content: 3/6\\n- Linking Words: 2/5\\n- Vocabulary: 2/4\\n- SPaG: 2/4",
-  "mistakes": "- Spelling: 'freinds' should be spelled 'friends'.\\n- Line 1: 'was going' should be 'were going'",
-  "weaknesses": "- Practice paragraph structure\\n- Review past tense rules"
-}`;
+In 'category_breakdown', 'mistakes', and 'weaknesses', list EVERY bullet on a new line starting with a hyphen '-'.
+Format mistakes line-by-line with quoted snippets and clear corrections (e.g. Paragraph 1: 'word' -> 'correction').
+Respond ONLY with valid JSON matching the schema.`;
 
       if (assignment.scheme_text && assignment.scheme_text.trim()) {
         promptText += `\n\nMARKING SCHEME CRITERIA:\n${assignment.scheme_text}`;
@@ -972,10 +1023,14 @@ Respond ONLY with valid JSON:
 
       let parsedFeedback = {
         student_name: studentNameInput,
+        extracted_essay: '',
         total_score: '—',
         category_breakdown: '- Evaluated',
         mistakes: '- No major mistakes noted.',
-        weaknesses: '- Well done'
+        weaknesses: '- Well done',
+        ai_probability_score: 0,
+        ai_detection_notes: 'Standard cadence',
+        web_similarity_score: 0
       };
 
       try {
@@ -985,26 +1040,52 @@ Respond ONLY with valid JSON:
         console.warn('AI evaluation warning:', aiErr.message);
       }
 
+      // Check Intra-Class Peer Plagiarism against classmates
+      let highestSimilarity = 0;
+      let similarityDetails = 'No peer matches found.';
+
+      const existingSubs = await db.execute({
+        sql: 'SELECT student_name, essay_text FROM submissions WHERE assignment_id = ? AND essay_text IS NOT NULL',
+        args: [assignment.id]
+      });
+
+      for (const row of existingSubs.rows) {
+        if (row.essay_text) {
+          const comp = calculateTextSimilarity(parsedFeedback.extracted_essay, row.essay_text);
+          if (comp.score > highestSimilarity) {
+            highestSimilarity = comp.score;
+            similarityDetails = `${comp.score}% match with ${row.student_name}: "${comp.sharedPhrases.join('", "')}"`;
+          }
+        }
+      }
+
       const finalName = studentNameInput || parsedFeedback.student_name || 'Student';
       const teacherName = assignment.teacher_name || 'Teacher';
 
       await db.execute({
         sql: `INSERT INTO submissions 
-              (assignment_id, student_name, teacher_name, device_id, page_count, total_score, category_breakdown, mistakes, weaknesses)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              (assignment_id, student_name, teacher_name, device_id, essay_text, page_count, total_score, category_breakdown, mistakes, weaknesses, similarity_score, similarity_details, ai_score, ai_details, web_score)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           assignment.id,
           finalName,
           teacherName,
           deviceIdInput || null,
+          parsedFeedback.extracted_essay || '',
           files.length,
           parsedFeedback.total_score || '—',
           parsedFeedback.category_breakdown || '—',
           parsedFeedback.mistakes || '—',
-          parsedFeedback.weaknesses || '—'
+          parsedFeedback.weaknesses || '—',
+          highestSimilarity,
+          similarityDetails,
+          parsedFeedback.ai_probability_score || 0,
+          parsedFeedback.ai_detection_notes || 'Clean',
+          parsedFeedback.web_similarity_score || 0
         ]
       });
 
+      // Returns ONLY confirmation to student; scores and integrity remain hidden
       return res.json({
         success: true,
         message: 'Your work has been received and evaluated successfully!',
@@ -1106,28 +1187,17 @@ app.post(
         const inputPayload = [...cachedSchemePayload];
 
         let promptText = `You are a meticulous exam evaluator reviewing a student's handwritten writing assessment / essay.
+Identify and extract the student's handwritten name from the top header of the paper. If unreadable or missing, fallback to: "${job.assignedName}".
+Grade strictly against the marking scheme criteria.
+Transcribe the essay into 'extracted_essay'.
+Rate 'ai_probability_score' (0-100) and 'web_similarity_score' (0-100).
 
-INSTRUCTIONS:
-- Identify and extract the student's handwritten name from the top header of the paper. If unreadable or missing, fallback to: "${job.assignedName}".
-- Grade strictly against the marking scheme criteria.
-- In 'category_breakdown', 'mistakes', and 'weaknesses', list EVERY bullet on a new line starting with a hyphen '-'.
-- Format mistakes line-by-line with exact quoted snippets (e.g. Paragraph 1: 'word' -> 'correction').
+In 'category_breakdown', 'mistakes', and 'weaknesses', list EVERY bullet on a new line starting with a hyphen '-'.
+Format mistakes line-by-line with exact quoted snippets (e.g. Paragraph 1: 'word' -> 'correction').
+Respond ONLY with valid JSON matching the schema.`;
 
-Respond ONLY with valid JSON:
-{
-  "student_name": "Extracted Student Name",
-  "total_score": "12/25",
-  "category_breakdown": "- Structure: 3/6\\n- Content: 3/6\\n- Linking Words: 2/5\\n- Vocabulary: 2/4\\n- SPaG: 2/4",
-  "mistakes": "- Spelling: 'freinds' should be spelled 'friends'.\\n- Line 1: 'was going' should be 'were going'",
-  "weaknesses": "- Practice paragraph structure\\n- Review past tense rules"
-}`;
-
-        if (allSchemeText.trim()) {
-          promptText += `\n\nMARKING SCHEME CRITERIA:\n${allSchemeText}`;
-        }
-        if (extraNotes.trim()) {
-          promptText += `\n\nTEACHER NOTES & GUIDELINES:\n${extraNotes}`;
-        }
+        if (allSchemeText.trim()) promptText += `\n\nMARKING SCHEME CRITERIA:\n${allSchemeText}`;
+        if (extraNotes.trim()) promptText += `\n\nTEACHER NOTES & GUIDELINES:\n${extraNotes}`;
 
         for (let p = 0; p < job.files.length; p++) {
           const file = job.files[p];
@@ -1168,7 +1238,15 @@ Respond ONLY with valid JSON:
             pageCount: job.files.length,
             name: finalStudentName,
             score: parsedFeedback.total_score,
-            ...parsedFeedback
+            total_score: parsedFeedback.total_score,
+            category_breakdown: parsedFeedback.category_breakdown,
+            mistakes: parsedFeedback.mistakes,
+            weaknesses: parsedFeedback.weaknesses,
+            ai_score: parsedFeedback.ai_probability_score || 0,
+            ai_details: parsedFeedback.ai_detection_notes || '',
+            web_score: parsedFeedback.web_similarity_score || 0,
+            similarity_score: 0,
+            similarity_details: 'Batch evaluation mode'
           };
         } catch (err) {
           console.error(`Evaluation failure for ${job.assignedName}:`, err.message);
@@ -1179,7 +1257,12 @@ Respond ONLY with valid JSON:
             total_score: '—',
             category_breakdown: '- Evaluation error',
             mistakes: '- Check image clarity',
-            weaknesses: '- Please review manually'
+            weaknesses: '- Please review manually',
+            ai_score: 0,
+            ai_details: '',
+            web_score: 0,
+            similarity_score: 0,
+            similarity_details: ''
           };
         }
       }

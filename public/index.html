@@ -68,7 +68,6 @@
   .file-chip { background:var(--pen-soft); border:1px solid var(--border); border-radius:6px; padding:5px 10px; font-size:12.5px; font-family:'IBM Plex Mono',monospace; display:flex; align-items:center; gap:8px; color:var(--pen); }
   .file-chip-remove { cursor:pointer; color:#DC2626; border:none; background:none; font-weight:bold; font-size:14px; padding:0 2px; }
 
-  /* 12-Hour Date Time Picker Layout */
   .picker-12h-wrap {
     display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px;
   }
@@ -103,7 +102,6 @@
   button.ghost-danger{ border-color:#FCA5A5; color:#DC2626; background:#FEF2F2; }
   button.ghost-danger:hover{ border-color:#DC2626; color:#991B1B; background:#FEE2E2; }
 
-  /* Live Link Banner */
   .link-box {
     margin-top: 14px; margin-bottom: 20px; background: #F0FDF4; border: 1px solid #86EFAC;
     border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -151,6 +149,16 @@
   .table-add-btn { background: #fff; border: 1px dashed #CBD6ED; color: var(--pen); border-radius: 4px; padding: 2px 6px; font-size: 10.5px; font-weight: 500; cursor: pointer; margin-top: 4px; }
   .table-add-btn:hover { background: var(--pen-soft); border-color: var(--pen); }
 
+  /* Academic Integrity Pills */
+  .integrity-pills { display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap; }
+  .pill-badge {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; padding: 2px 6px;
+    border-radius: 4px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;
+  }
+  .pill-green { background: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; }
+  .pill-amber { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+  .pill-red { background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; }
+
   .admin-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
   .admin-box { background: #fff; max-width: 820px; width: 100%; max-height: 80vh; border-radius: 10px; padding: 24px; display: flex; flex-direction: column; overflow-y: auto; }
   .admin-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
@@ -173,6 +181,7 @@
 
   footer { margin-top: 40px; text-align: center; font-size: 12px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; border-top: 1px solid var(--border); padding-top: 20px; }
 
+  /* Print Protection: Strict masking of integrity scores */
   @media print {
     body { background: #fff !important; color: #000 !important; }
     .top-nav, .pending-banner, .admin-modal, header, .mode-switch,
@@ -180,7 +189,8 @@
     .progress-wrap, .empty, .student-list, .student-count, .edit-hint,
     #custom-modal-overlay, #custom-toast, .section-add-btn, .table-add-btn,
     .line-delete-btn, .badge-grid, #admin-reset-modal, #deadline-edit-modal, .link-box,
-    .step-head, .step-desc, .form-group-creation, footer {
+    .step-head, .step-desc, .form-group-creation, footer,
+    .integrity-pills, .fb-integrity-box {
       display: none !important;
     }
     
@@ -302,9 +312,9 @@
         <table class="summary-table">
           <thead>
             <tr>
-              <th style="width: 20%;" class="summary-col-name">Student Name</th>
-              <th style="width: 32%;" class="col-score-breakdown">Score Breakdown</th>
-              <th style="width: 48%;" class="summary-col-mistakes">Mistakes in Your Work</th>
+              <th style="width: 24%;" class="summary-col-name">Student Name</th>
+              <th style="width: 30%;" class="col-score-breakdown">Score Breakdown</th>
+              <th style="width: 46%;" class="summary-col-mistakes">Mistakes in Your Work</th>
             </tr>
           </thead>
           <tbody id="portal-summary-table-body">
@@ -363,9 +373,9 @@
           <table class="summary-table">
             <thead>
               <tr>
-                <th style="width: 20%;" class="summary-col-name">Student Name</th>
-                <th style="width: 32%;" class="col-score-breakdown">Score Breakdown</th>
-                <th style="width: 48%;" class="summary-col-mistakes">Mistakes in Your Work</th>
+                <th style="width: 24%;" class="summary-col-name">Student Name</th>
+                <th style="width: 30%;" class="col-score-breakdown">Score Breakdown</th>
+                <th style="width: 46%;" class="summary-col-mistakes">Mistakes in Your Work</th>
               </tr>
             </thead>
             <tbody id="summary-table-body"></tbody>
@@ -491,7 +501,6 @@ let portalSchemeFiles = [];
 let portalSubmissions = [];
 let allAssignmentsMap = {};
 
-// Manual Mode State
 let schemeFilesList = [];
 let studentSubmissions = [];
 let manualResults = [];
@@ -536,7 +545,6 @@ function setMinDateOnly() {
   if (editDate) editDate.min = today;
 }
 
-// Convert 12-Hour inputs to ISO String
 function getIsoFrom12h(dateId, hourId, minId, ampmId) {
   const dateVal = document.getElementById(dateId).value;
   if (!dateVal) return null;
@@ -552,7 +560,6 @@ function getIsoFrom12h(dateId, hourId, minId, ampmId) {
   return `${dateVal}T${pad(hour)}:${min}:00+03:00`;
 }
 
-// Format ISO string to 12-Hour AM/PM in Cairo Time
 function formatDeadlineString(isoStr) {
   if (!isoStr) return 'No Deadline';
   try {
@@ -571,6 +578,13 @@ function formatDeadlineString(isoStr) {
   } catch (e) {
     return 'Due: ' + isoStr;
   }
+}
+
+function getIntegrityPill(label, score) {
+  const s = parseInt(score, 10) || 0;
+  if (s >= 50) return `<span class="pill-badge pill-red">⚠️ ${label}: ${s}%</span>`;
+  if (s >= 25) return `<span class="pill-badge pill-amber">${label}: ${s}%</span>`;
+  return `<span class="pill-badge pill-green">${label}: ${s}%</span>`;
 }
 
 // Authentication Check
@@ -760,13 +774,18 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
     const displayName = r.name || r.student_name || 'Student';
     const totalScoreVal = r.total_score || '—';
 
-    // Summary Table Row
+    const peerPill = getIntegrityPill('Peer Copy', r.similarity_score);
+    const aiPill = getIntegrityPill('AI Match', r.ai_score);
+    const webPill = r.web_score && r.web_score > 25 ? `<span class="pill-badge pill-amber">Web: ${r.web_score}%</span>` : '';
+
+    // Summary Table Row (Pills masked in print)
     const tr = document.createElement('tr');
     tr.id = `${modePrefix}-summary-tr-${idx}`;
     tr.innerHTML = `
       <td class="summary-col-name">
         <b contenteditable="true" class="editable-field" data-idx="${idx}" data-field="name" data-mode="${modePrefix}">${displayName}</b><br>
-        <small class="summary-score-tag" style="color:var(--pen); font-family:'IBM Plex Mono',monospace;">
+        <div class="integrity-pills no-print">${peerPill} ${aiPill} ${webPill}</div>
+        <small class="summary-score-tag" style="color:var(--pen); font-family:'IBM Plex Mono',monospace; margin-top:2px; display:inline-block;">
           Total: <span contenteditable="true" class="editable-field" id="${modePrefix}-summary-total-${idx}" data-idx="${idx}" data-field="total_score" data-mode="${modePrefix}">${totalScoreVal}</span> (${r.pageCount || 1} page${r.pageCount > 1 ? 's' : ''})
         </small>
       </td>
@@ -781,17 +800,30 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
     `;
     summaryTbody.appendChild(tr);
 
-    // Expandable Detailed Card
+    // Expandable Detailed Card (Detailed Academic Integrity Box inside)
     const card = document.createElement('div');
     card.className = 'result-card';
     card.innerHTML = `
       <div class="result-head" data-idx="${idx}" data-mode="${modePrefix}">
         <div class="badge card-score-badge" id="${modePrefix}-badge-${idx}">${totalScoreVal.split('/')[0]}</div>
-        <div class="result-name" id="${modePrefix}-card-name-${idx}">${displayName} <span style="font-size:12px; font-weight:normal; color:var(--ink-soft);">(${r.pageCount || 1} page${r.pageCount > 1 ? 's' : ''})</span></div>
+        <div class="result-name" id="${modePrefix}-card-name-${idx}">
+          ${displayName} 
+          <span style="font-size:12px; font-weight:normal; color:var(--ink-soft);">(${r.pageCount || 1} page${r.pageCount > 1 ? 's' : ''})</span>
+          <div class="integrity-pills" style="margin-top: 3px;">${peerPill} ${aiPill}</div>
+        </div>
         <div class="result-score card-score-text" id="${modePrefix}-card-score-${idx}">${totalScoreVal}</div>
       </div>
       <div class="result-body" id="${modePrefix}-body-${idx}">
         <div class="result-body-inner">
+          <div class="fb-section fb-integrity-box no-print" style="background:#F8FAFC; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:14px;">
+            <div class="fb-label">🛡️ Academic Integrity & Similarity Audit <span class="edit-hint">(Visible to Teacher Only)</span></div>
+            <div style="font-size:12px; color:var(--ink-soft); line-height:1.6;">
+              <div>• <b>Classmate Overlap:</b> ${r.similarity_score || 0}% match — <i>${escapeHtml(r.similarity_details || 'No duplicate passages found among classmates.')}</i></div>
+              <div>• <b>AI-Generation Risk:</b> ${r.ai_score || 0}% — <i>${escapeHtml(r.ai_details || 'Writing matches natural student cadence.')}</i></div>
+              <div>• <b>Web Source Plagiarism:</b> ${r.web_score || 0}% similarity to public archives</div>
+            </div>
+          </div>
+
           <div class="fb-section fb-score-section">
             <div class="fb-label">
               <span>Score Breakdown by Category <span class="edit-hint">(Edit marks below to auto-update total)</span></span>
@@ -870,7 +902,7 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
   });
 }
 
-// ==================== PORTAL ASSIGNMENT LOGIC ====================
+// ==================== PORTAL LOGIC ====================
 function handlePortalSchemeFiles(e) {
   for (const f of e.target.files) portalSchemeFiles.push(f);
   renderPortalBadges();
@@ -1042,9 +1074,7 @@ async function deleteActiveAssignment() {
   if (!confirmed) return;
 
   try {
-    const res = await fetch(`/api/assignments/${activeCode}`, {
-      method: 'DELETE'
-    });
+    const res = await fetch(`/api/assignments/${activeCode}`, { method: 'DELETE' });
     const d = await res.json();
 
     if (d.success) {
@@ -1053,7 +1083,6 @@ async function deleteActiveAssignment() {
       activeCode = '';
       portalSubmissions = [];
 
-      // Hide results container and link box
       document.getElementById('portal-results-card').style.display = 'none';
       document.getElementById('generated-link-box').style.display = 'none';
 
