@@ -122,8 +122,7 @@ async function initDatabase() {
       );
     `);
 
-    // Schema Migrations for existing deployments
-    const migrationColumns = [
+    const autoMigrations = [
       'ALTER TABLE submissions ADD COLUMN teacher_name TEXT;',
       'ALTER TABLE submissions ADD COLUMN device_id TEXT;',
       'ALTER TABLE submissions ADD COLUMN essay_text TEXT;',
@@ -134,7 +133,7 @@ async function initDatabase() {
       'ALTER TABLE submissions ADD COLUMN web_score INTEGER DEFAULT 0;'
     ];
 
-    for (const sql of migrationColumns) {
+    for (const sql of autoMigrations) {
       try {
         await db.execute(sql);
       } catch (e) {}
@@ -161,7 +160,7 @@ async function cleanExpiredAssignments() {
         if (!isNaN(ddlTime) && now > (ddlTime + TWO_DAYS_MS)) {
           await db.execute({ sql: 'DELETE FROM submissions WHERE assignment_id = ?', args: [row.id] });
           await db.execute({ sql: 'DELETE FROM assignments WHERE id = ?', args: [row.id] });
-          console.log(`[Auto-Cleanup] Purged expired assignment ID ${row.id} (> 2 days past deadline).`);
+          console.log(`[Auto-Cleanup] Purged expired assignment ID ${row.id}`);
         }
       }
     }
@@ -191,9 +190,7 @@ async function authenticateToken(req, res, next) {
   const token = req.cookies.halo_token || (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
 
   if (!token) {
-    if (req.path.startsWith('/api/')) {
-      return res.status(401).json({ error: 'Unauthorized. Please login.' });
-    }
+    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Unauthorized. Please login.' });
     return res.redirect('/login.html');
   }
 
@@ -231,20 +228,14 @@ async function authenticateToken(req, res, next) {
     req.user = userObj;
     next();
   } catch (err) {
-    if (req.path.startsWith('/api/')) {
-      return res.status(403).json({ error: 'Session expired. Please login again.' });
-    }
+    if (req.path.startsWith('/api/')) return res.status(403).json({ error: 'Session expired.' });
     return res.redirect('/login.html');
   }
 }
 
 function requireApprovedUser(req, res, next) {
-  if (['root', 'admin'].includes(req.user.role) || req.user.status === 'approved') {
-    return next();
-  }
-  return res.status(403).json({ 
-    error: 'Access Denied: Your account is pending authorization by an administrator.' 
-  });
+  if (['root', 'admin'].includes(req.user.role) || req.user.status === 'approved') return next();
+  return res.status(403).json({ error: 'Access Denied: Your account is pending authorization by an administrator.' });
 }
 
 function requireAdmin(req, res, next) {
@@ -253,309 +244,6 @@ function requireAdmin(req, res, next) {
   }
   next();
 }
-
-app.get('/api/auth/config', (req, res) => {
-  res.json({ googleClientId: GOOGLE_CLIENT_ID });
-});
-
-// Registration
-app.post('/api/auth/register', async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-    if (!name || !email || !password) return res.status(400).json({ error: 'Please provide all required fields.' });
-
-    const cleanEmail = email.toLowerCase().trim();
-
-    if (!isStrongPassword(password)) {
-      return res.status(400).json({ 
-        error: 'Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.' 
-      });
-    }
-
-    const checkUser = await db.execute({
-      sql: 'SELECT id FROM users WHERE email = ?',
-      args: [cleanEmail]
-    });
-
-    if (checkUser.rows.length > 0) {
-      return res.status(400).json({ error: 'An account with this email already exists.' });
-    }
-
-    let initialRole = 'teacher';
-    let initialStatus = 'pending';
-
-    if (isRootUser(cleanEmail)) {
-      initialRole = 'root';
-      initialStatus = 'approved';
-    } else if (isAdminEmail(cleanEmail)) {
-      initialRole = 'admin';
-      initialStatus = 'approved';
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const insert = await db.execute({
-      sql: 'INSERT INTO users (name, email, password, status, role) VALUES (?, ?, ?, ?, ?)',
-      args: [name.trim(), cleanEmail, hashedPassword, initialStatus, initialRole]
-    });
-
-    const newUserId = Number(insert.lastInsertRowid);
-
-    const token = jwt.sign(
-      { id: newUserId, name: name.trim(), email: cleanEmail, status: initialStatus, role: initialRole },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.cookie('halo_token', token, { 
-      httpOnly: true, 
-      secure: isProduction,
-      sameSite: 'lax', 
-      path: '/', 
-      maxAge: 7 * 24 * 60 * 60 * 1000 
-    });
-
-    return res.json({ 
-      success: true, 
-      user: { name: name.trim(), email: cleanEmail, status: initialStatus, role: initialRole }
-    });
-  } catch (error) {
-    return res.status(500).json({ error: error.message || 'Server error during registration.' });
-  }
-});
-
-// Manual Login
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'Please provide email and password.' });
-
-    const cleanEmail = email.toLowerCase().trim();
-    const result = await db.execute({
-      sql: 'SELECT * FROM users WHERE email = ?',
-      args: [cleanEmail]
-    });
-
-    const user = result.rows[0];
-    if (!user || !user.password) return res.status(400).json({ error: 'Invalid credentials.' });
-
-    const validPassword = await bcrypt.compare(password, String(user.password));
-    if (!validPassword) return res.status(400).json({ error: 'Invalid credentials.' });
-
-    let userRole = user.role;
-    let userStatus = user.status;
-
-    if (isRootUser(cleanEmail) && user.role !== 'root') {
-      await db.execute({ sql: "UPDATE users SET role = 'root', status = 'approved' WHERE id = ?", args: [Number(user.id)] });
-      userRole = 'root';
-      userStatus = 'approved';
-    } else if (isAdminEmail(cleanEmail) && user.role === 'teacher') {
-      await db.execute({ sql: "UPDATE users SET role = 'admin', status = 'approved' WHERE id = ?", args: [Number(user.id)] });
-      userRole = 'admin';
-      userStatus = 'approved';
-    }
-
-    const token = jwt.sign(
-      { id: Number(user.id), name: user.name, email: user.email, status: userStatus, role: userRole },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.cookie('halo_token', token, { 
-      httpOnly: true, 
-      secure: isProduction,
-      sameSite: 'lax', 
-      path: '/', 
-      maxAge: 7 * 24 * 60 * 60 * 1000 
-    });
-
-    return res.json({ success: true, user: { name: user.name, email: user.email, status: userStatus, role: userRole } });
-  } catch (error) {
-    return res.status(500).json({ error: error.message || 'Server error during login.' });
-  }
-});
-
-// Google Auth
-app.post('/api/auth/google', async (req, res) => {
-  try {
-    const { credential } = req.body;
-    if (!credential) return res.status(400).json({ error: 'Missing Google credential token.' });
-
-    let payload;
-    try {
-      const base64Url = credential.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        Buffer.from(base64, 'base64')
-          .toString('utf-8')
-          .split('')
-          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-          .join('')
-      );
-      payload = JSON.parse(jsonPayload);
-    } catch (parseErr) {
-      return res.status(400).json({ error: 'Malformed Google credential token.' });
-    }
-
-    if (!payload || !payload.email) {
-      return res.status(400).json({ error: 'Google token did not contain a valid email address.' });
-    }
-
-    const email = payload.email.toLowerCase().trim();
-    const name = payload.name || email.split('@')[0];
-    const googleId = payload.sub || '';
-
-    const existingResult = await db.execute({
-      sql: 'SELECT * FROM users WHERE email = ?',
-      args: [email]
-    });
-
-    let user = existingResult.rows[0];
-
-    if (!user) {
-      let initialRole = 'teacher';
-      let initialStatus = 'pending';
-
-      if (isRootUser(email)) {
-        initialRole = 'root';
-        initialStatus = 'approved';
-      } else if (isAdminEmail(email)) {
-        initialRole = 'admin';
-        initialStatus = 'approved';
-      }
-
-      const insert = await db.execute({
-        sql: 'INSERT INTO users (name, email, password, google_id, status, role) VALUES (?, ?, ?, ?, ?, ?)',
-        args: [name, email, 'GOOGLE_AUTH_ACCOUNT', googleId, initialStatus, initialRole]
-      });
-
-      user = { id: Number(insert.lastInsertRowid), name, email, status: initialStatus, role: initialRole };
-    } else {
-      let updatedRole = user.role;
-      let updatedStatus = user.status;
-
-      if (isRootUser(email) && user.role !== 'root') {
-        await db.execute({ sql: "UPDATE users SET role = 'root', status = 'approved', google_id = ? WHERE id = ?", args: [googleId, Number(user.id)] });
-        updatedRole = 'root';
-        updatedStatus = 'approved';
-      } else if (isAdminEmail(email) && user.role === 'teacher') {
-        await db.execute({ sql: "UPDATE users SET role = 'admin', status = 'approved', google_id = ? WHERE id = ?", args: [googleId, Number(user.id)] });
-        updatedRole = 'admin';
-        updatedStatus = 'approved';
-      } else if (!user.google_id && googleId) {
-        await db.execute({ sql: 'UPDATE users SET google_id = ? WHERE id = ?', args: [googleId, Number(user.id)] });
-      }
-
-      user = { ...user, id: Number(user.id), role: updatedRole, status: updatedStatus };
-    }
-
-    const token = jwt.sign(
-      { id: Number(user.id), name: user.name, email: user.email, status: user.status, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.cookie('halo_token', token, { 
-      httpOnly: true, 
-      secure: isProduction,
-      sameSite: 'lax', 
-      path: '/', 
-      maxAge: 7 * 24 * 60 * 60 * 1000 
-    });
-
-    return res.json({ 
-      success: true, 
-      user: { name: user.name, email: user.email, status: user.status, role: user.role } 
-    });
-  } catch (error) {
-    console.error('Google Auth Route Error:', error);
-    return res.status(500).json({ error: error.message || 'Google sign-in processing failed.' });
-  }
-});
-
-// Admin User Management Routes
-app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const result = await db.execute('SELECT id, name, email, status, role, created_at FROM users ORDER BY id DESC');
-    res.json({ success: true, users: result.rows });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch users.' });
-  }
-});
-
-app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, async (req, res) => {
-  const { id } = req.params;
-  const { status } = req.body;
-  if (!['approved', 'pending', 'rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status.' });
-
-  const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(id)] });
-  const target = targetResult.rows[0];
-  if (!target) return res.status(404).json({ error: 'User not found.' });
-
-  if (target.role === 'root') return res.status(403).json({ error: 'The Root User account status cannot be modified.' });
-
-  await db.execute({ sql: 'UPDATE users SET status = ? WHERE id = ?', args: [status, Number(id)] });
-  res.json({ success: true, message: `Account updated to ${status}.` });
-});
-
-app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, async (req, res) => {
-  const { id } = req.params;
-  const { role } = req.body;
-  if (!['admin', 'teacher'].includes(role)) return res.status(400).json({ error: 'Invalid role specified.' });
-
-  const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(id)] });
-  const target = targetResult.rows[0];
-  if (!target) return res.status(404).json({ error: 'User not found.' });
-
-  if (target.role === 'root') return res.status(403).json({ error: 'The Root User cannot be demoted.' });
-  if (req.user.id === Number(id) && role !== 'admin') return res.status(400).json({ error: 'You cannot revoke your own admin rights.' });
-
-  await db.execute({ sql: "UPDATE users SET role = ?, status = 'approved' WHERE id = ?", args: [role, Number(id)] });
-  res.json({ success: true, message: `User role changed to ${role}.` });
-});
-
-app.post('/api/admin/users/:id/reset-password', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { newPassword } = req.body;
-
-    if (!newPassword || newPassword.trim().length < 8) {
-      return res.status(400).json({ error: 'New password must be at least 8 characters long.' });
-    }
-
-    const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(id)] });
-    const target = targetResult.rows[0];
-    if (!target) return res.status(404).json({ error: 'User not found.' });
-
-    const hashedPassword = await bcrypt.hash(newPassword.trim(), 10);
-    await db.execute({ sql: 'UPDATE users SET password = ? WHERE id = ?', args: [hashedPassword, Number(id)] });
-
-    res.json({ success: true, message: `Password for ${target.email} updated.` });
-  } catch (err) {
-    res.status(500).json({ error: err.message || 'Failed to update password.' });
-  }
-});
-
-app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
-  const { id } = req.params;
-  const targetResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(id)] });
-  const target = targetResult.rows[0];
-  if (!target) return res.status(404).json({ error: 'User not found.' });
-
-  if (target.role === 'root') return res.status(403).json({ error: 'Root User cannot be deleted.' });
-  if (req.user.id === Number(id)) return res.status(400).json({ error: 'You cannot delete your own account.' });
-
-  await db.execute({ sql: 'DELETE FROM users WHERE id = ?', args: [Number(id)] });
-  res.json({ success: true, message: 'Account deleted successfully.' });
-});
-
-app.get('/api/auth/me', authenticateToken, (req, res) => {
-  res.json({ success: true, user: req.user });
-});
-
-app.post('/api/auth/logout', (req, res) => {
-  res.clearCookie('halo_token');
-  res.json({ success: true, message: 'Logged out successfully.' });
-});
 
 function isImage(file) {
   if (!file) return false;
@@ -634,7 +322,7 @@ function calculateTextSimilarity(text1, text2) {
   return { score, sharedPhrases: shared };
 }
 
-// AI Model Caller with Structured Output & Integrity Parsing
+// High-Reliability Gemini Evaluator
 async function callGemini(inputPayload) {
   const models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
   let lastErr;
@@ -642,52 +330,219 @@ async function callGemini(inputPayload) {
   for (const modelName of models) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const interaction = await ai.interactions.create({
+        const response = await ai.models.generateContent({
           model: modelName,
-          input: inputPayload,
-          response_format: [
-            {
-              type: 'text',
-              mime_type: 'application/json',
-              schema: {
-                type: 'object',
-                properties: {
-                  student_name: { type: 'string' },
-                  extracted_essay: { type: 'string', description: 'Full transcribed student text' },
-                  total_score: { type: 'string' },
-                  category_breakdown: { type: 'string' },
-                  mistakes: { type: 'string' },
-                  weaknesses: { type: 'string' },
-                  ai_probability_score: { type: 'integer', description: '0 to 100 AI generation likelihood' },
-                  ai_detection_notes: { type: 'string', description: 'Cadence and markers breakdown' },
-                  web_similarity_score: { type: 'integer', description: '0 to 100 web/Wikipedia copy indicator' }
-                },
-                required: [
-                  'student_name',
-                  'extracted_essay',
-                  'total_score',
-                  'category_breakdown',
-                  'mistakes',
-                  'weaknesses',
-                  'ai_probability_score',
-                  'ai_detection_notes',
-                  'web_similarity_score'
-                ]
-              }
+          contents: inputPayload,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: 'OBJECT',
+              properties: {
+                student_name: { type: 'STRING' },
+                extracted_essay: { type: 'STRING' },
+                total_score: { type: 'STRING' },
+                category_breakdown: { type: 'STRING' },
+                mistakes: { type: 'STRING' },
+                weaknesses: { type: 'STRING' },
+                ai_probability_score: { type: 'INTEGER' },
+                ai_detection_notes: { type: 'STRING' },
+                web_similarity_score: { type: 'INTEGER' }
+              },
+              required: [
+                'student_name',
+                'extracted_essay',
+                'total_score',
+                'category_breakdown',
+                'mistakes',
+                'weaknesses',
+                'ai_probability_score',
+                'ai_detection_notes',
+                'web_similarity_score'
+              ]
             }
-          ]
+          }
         });
-        return interaction.output_text;
+
+        if (response && response.text) {
+          return response.text;
+        }
       } catch (err) {
         lastErr = err;
-        await delay(800 * (attempt + 1));
+        console.warn(`[${modelName} Attempt ${attempt + 1}] Error:`, err.message);
+        await delay(600 * (attempt + 1));
       }
     }
   }
   throw lastErr;
 }
 
-// 1. Teacher creates an assignment
+// ----------------- AUTH ROUTES -----------------
+app.get('/api/auth/config', (req, res) => res.json({ googleClientId: GOOGLE_CLIENT_ID }));
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) return res.status(400).json({ error: 'Please provide all required fields.' });
+
+    const cleanEmail = email.toLowerCase().trim();
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.' });
+    }
+
+    const checkUser = await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [cleanEmail] });
+    if (checkUser.rows.length > 0) return res.status(400).json({ error: 'An account with this email already exists.' });
+
+    let initialRole = isRootUser(cleanEmail) ? 'root' : isAdminEmail(cleanEmail) ? 'admin' : 'teacher';
+    let initialStatus = ['root', 'admin'].includes(initialRole) ? 'approved' : 'pending';
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const insert = await db.execute({
+      sql: 'INSERT INTO users (name, email, password, status, role) VALUES (?, ?, ?, ?, ?)',
+      args: [name.trim(), cleanEmail, hashedPassword, initialStatus, initialRole]
+    });
+
+    const token = jwt.sign(
+      { id: Number(insert.lastInsertRowid), name: name.trim(), email: cleanEmail, status: initialStatus, role: initialRole },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.cookie('halo_token', token, { httpOnly: true, secure: isProduction, sameSite: 'lax', path: '/', maxAge: 7 * 24 * 60 * 60 * 1000 });
+    return res.json({ success: true, user: { name: name.trim(), email: cleanEmail, status: initialStatus, role: initialRole } });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Server error during registration.' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Please provide email and password.' });
+
+    const cleanEmail = email.toLowerCase().trim();
+    const result = await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [cleanEmail] });
+    const user = result.rows[0];
+
+    if (!user || !user.password) return res.status(400).json({ error: 'Invalid credentials.' });
+    const validPassword = await bcrypt.compare(password, String(user.password));
+    if (!validPassword) return res.status(400).json({ error: 'Invalid credentials.' });
+
+    let userRole = user.role;
+    let userStatus = user.status;
+
+    if (isRootUser(cleanEmail) && user.role !== 'root') {
+      await db.execute({ sql: "UPDATE users SET role = 'root', status = 'approved' WHERE id = ?", args: [Number(user.id)] });
+      userRole = 'root';
+      userStatus = 'approved';
+    } else if (isAdminEmail(cleanEmail) && user.role === 'teacher') {
+      await db.execute({ sql: "UPDATE users SET role = 'admin', status = 'approved' WHERE id = ?", args: [Number(user.id)] });
+      userRole = 'admin';
+      userStatus = 'approved';
+    }
+
+    const token = jwt.sign(
+      { id: Number(user.id), name: user.name, email: user.email, status: userStatus, role: userRole },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.cookie('halo_token', token, { httpOnly: true, secure: isProduction, sameSite: 'lax', path: '/', maxAge: 7 * 24 * 60 * 60 * 1000 });
+    return res.json({ success: true, user: { name: user.name, email: user.email, status: userStatus, role: userRole } });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Server error during login.' });
+  }
+});
+
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { credential } = req.body;
+    const base64Url = credential.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(Buffer.from(base64, 'base64').toString('utf-8').split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+    const payload = JSON.parse(jsonPayload);
+
+    const email = payload.email.toLowerCase().trim();
+    const name = payload.name || email.split('@')[0];
+
+    const existingResult = await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] });
+    let user = existingResult.rows[0];
+
+    if (!user) {
+      let initialRole = isRootUser(email) ? 'root' : isAdminEmail(email) ? 'admin' : 'teacher';
+      let initialStatus = ['root', 'admin'].includes(initialRole) ? 'approved' : 'pending';
+      const insert = await db.execute({
+        sql: 'INSERT INTO users (name, email, password, google_id, status, role) VALUES (?, ?, ?, ?, ?, ?)',
+        args: [name, email, 'GOOGLE_AUTH_ACCOUNT', payload.sub || '', initialStatus, initialRole]
+      });
+      user = { id: Number(insert.lastInsertRowid), name, email, status: initialStatus, role: initialRole };
+    }
+
+    const token = jwt.sign(
+      { id: Number(user.id), name: user.name, email: user.email, status: user.status, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.cookie('halo_token', token, { httpOnly: true, secure: isProduction, sameSite: 'lax', path: '/', maxAge: 7 * 24 * 60 * 60 * 1000 });
+    return res.json({ success: true, user: { name: user.name, email: user.email, status: user.status, role: user.role } });
+  } catch (error) {
+    return res.status(500).json({ error: 'Google sign-in failed.' });
+  }
+});
+
+// Admin User Management Routes
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const result = await db.execute('SELECT id, name, email, status, role, created_at FROM users ORDER BY id DESC');
+    res.json({ success: true, users: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch users.' });
+  }
+});
+
+app.post('/api/admin/users/:id/status', authenticateToken, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  const target = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(id)] })).rows[0];
+  if (!target || target.role === 'root') return res.status(403).json({ error: 'Cannot modify Root user.' });
+
+  await db.execute({ sql: 'UPDATE users SET status = ? WHERE id = ?', args: [status, Number(id)] });
+  res.json({ success: true, message: `Account updated to ${status}.` });
+});
+
+app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { role } = req.body;
+  const target = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(id)] })).rows[0];
+  if (!target || target.role === 'root') return res.status(403).json({ error: 'Cannot modify Root user.' });
+
+  await db.execute({ sql: "UPDATE users SET role = ?, status = 'approved' WHERE id = ?", args: [role, Number(id)] });
+  res.json({ success: true, message: `Role updated to ${role}.` });
+});
+
+app.post('/api/admin/users/:id/reset-password', authenticateToken, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { newPassword } = req.body;
+  const hashedPassword = await bcrypt.hash(newPassword.trim(), 10);
+  await db.execute({ sql: 'UPDATE users SET password = ? WHERE id = ?', args: [hashedPassword, Number(id)] });
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const target = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(id)] })).rows[0];
+  if (!target || target.role === 'root' || req.user.id === Number(id)) return res.status(403).json({ error: 'Action not allowed.' });
+  await db.execute({ sql: 'DELETE FROM users WHERE id = ?', args: [Number(id)] });
+  res.json({ success: true });
+});
+
+app.get('/api/auth/me', authenticateToken, (req, res) => res.json({ success: true, user: req.user }));
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('halo_token');
+  res.json({ success: true });
+});
+
+// ----------------- ASSIGNMENT & EVALUATIONS -----------------
 app.post(
   '/api/assignments/create',
   authenticateToken,
@@ -696,9 +551,7 @@ app.post(
   async (req, res) => {
     try {
       const { title, deadline, schemeText } = req.body;
-      if (!title || !title.trim()) {
-        return res.status(400).json({ error: 'Please provide an assignment title.' });
-      }
+      if (!title || !title.trim()) return res.status(400).json({ error: 'Please provide an assignment title.' });
 
       const schemeFiles = (req.files && req.files['scheme']) || [];
       const cachedSchemePayload = [];
@@ -711,18 +564,20 @@ app.post(
             extractedSchemeText += `\n[Rubric Document Content]:\n${pdfTxt}\n`;
           } else {
             cachedSchemePayload.push({
-              type: 'document',
-              mime_type: 'application/pdf',
-              data: sFile.buffer.toString('base64')
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: sFile.buffer.toString('base64')
+              }
             });
           }
         } else if (isImage(sFile)) {
           let mimeType = sFile.mimetype || 'image/png';
           if (!mimeType.startsWith('image/')) mimeType = 'image/png';
           cachedSchemePayload.push({
-            type: 'image',
-            mime_type: mimeType,
-            data: sFile.buffer.toString('base64')
+            inlineData: {
+              mimeType: mimeType,
+              data: sFile.buffer.toString('base64')
+            }
           });
         } else {
           const txt = await extractText(sFile);
@@ -760,7 +615,6 @@ app.post(
   }
 );
 
-// 2. Fetch Assignments
 app.get('/api/assignments', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const result = await db.execute({
@@ -775,7 +629,7 @@ app.get('/api/assignments', authenticateToken, requireApprovedUser, async (req, 
   }
 });
 
-// 3. Fetch live submissions for an assignment (Teacher view with integrity data)
+// Teacher Submissions Fetch (With Integrity Data For Dashboard ONLY)
 app.get('/api/assignments/:code/submissions', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
@@ -804,7 +658,6 @@ app.get('/api/assignments/:code/submissions', authenticateToken, requireApproved
   }
 });
 
-// 4. Update Assignment Deadline
 app.post('/api/assignments/:code/update-deadline', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
@@ -836,28 +689,21 @@ app.post('/api/assignments/:code/update-deadline', authenticateToken, requireApp
   }
 });
 
-// 5. Delete Assignment & Cascade Delete All Submissions
 app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
+    const isElevated = ['root', 'admin'].includes(req.user.role);
 
     const assignResult = await db.execute({
-      sql: 'SELECT id, title FROM assignments WHERE code = ?' + (['root', 'admin'].includes(req.user.role) ? '' : ' AND teacher_id = ?'),
-      args: ['root', 'admin'].includes(req.user.role) ? [code] : [code, req.user.id]
+      sql: 'SELECT id, title FROM assignments WHERE code = ?' + (isElevated ? '' : ' AND teacher_id = ?'),
+      args: isElevated ? [code] : [code, req.user.id]
     });
 
     const assignment = assignResult.rows[0];
     if (!assignment) return res.status(404).json({ error: 'Assignment not found or unauthorized.' });
 
-    await db.execute({
-      sql: 'DELETE FROM submissions WHERE assignment_id = ?',
-      args: [assignment.id]
-    });
-
-    await db.execute({
-      sql: 'DELETE FROM assignments WHERE id = ?',
-      args: [assignment.id]
-    });
+    await db.execute({ sql: 'DELETE FROM submissions WHERE assignment_id = ?', args: [assignment.id] });
+    await db.execute({ sql: 'DELETE FROM assignments WHERE id = ?', args: [assignment.id] });
 
     res.json({
       success: true,
@@ -869,7 +715,6 @@ app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, asy
   }
 });
 
-// 6. Update Submission Inline (Teacher Edit Persistence)
 app.post('/api/submissions/:id/update', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { id } = req.params;
@@ -888,7 +733,6 @@ app.post('/api/submissions/:id/update', authenticateToken, requireApprovedUser, 
   }
 });
 
-// 7. Public route to inspect assignment details
 app.get('/api/public/assignment/:code', async (req, res) => {
   try {
     const { code } = req.params;
@@ -925,7 +769,7 @@ app.get('/api/public/assignment/:code', async (req, res) => {
   }
 });
 
-// 8. Public student work submission (Calculates Integrity, hides scores from student)
+// Student Public Upload
 app.post(
   '/api/public/submit/:code',
   upload.fields([{ name: 'pages', maxCount: 20 }]),
@@ -950,7 +794,6 @@ app.post(
       const assignment = assignResult.rows[0];
       if (!assignment) return res.status(404).json({ error: 'Assignment not found.' });
 
-      // 1. Strict Server-Side Deadline Gate
       if (assignment.deadline) {
         const ddlTime = new Date(assignment.deadline).getTime();
         if (!isNaN(ddlTime) && Date.now() > ddlTime) {
@@ -958,7 +801,6 @@ app.post(
         }
       }
 
-      // 2. Strict Single Submission Verification by Device ID
       if (deviceIdInput) {
         const deviceCheck = await db.execute({
           sql: 'SELECT id, student_name FROM submissions WHERE assignment_id = ? AND device_id = ?',
@@ -985,12 +827,12 @@ Grade against the provided marking scheme criteria.
 Perform an academic integrity inspection:
 1. Transcribe the entire student essay accurately into 'extracted_essay'.
 2. In 'ai_probability_score', rate from 0 to 100 the likelihood that the essay was generated by ChatGPT/Claude/Gemini based on robotic cadence, burstiness, and uncharacteristic vocabulary.
-3. In 'ai_detection_notes', summarize specific observations about phrasing or indicators (or 'Natural handwritten student cadence').
+3. In 'ai_detection_notes', summarize specific observations about phrasing or indicators (or 'Natural student writing').
 4. In 'web_similarity_score', provide estimated score (0 to 100) if content appears to match publicly known web essays or Wikipedia.
 
 In 'category_breakdown', 'mistakes', and 'weaknesses', list EVERY bullet on a new line starting with a hyphen '-'.
 Format mistakes line-by-line with quoted snippets and clear corrections (e.g. Paragraph 1: 'word' -> 'correction').
-Respond ONLY with valid JSON matching the schema.`;
+Respond strictly in JSON matching the schema.`;
 
       if (assignment.scheme_text && assignment.scheme_text.trim()) {
         promptText += `\n\nMARKING SCHEME CRITERIA:\n${assignment.scheme_text}`;
@@ -1002,15 +844,17 @@ Respond ONLY with valid JSON matching the schema.`;
           let mimeType = file.mimetype || 'image/png';
           if (!mimeType.startsWith('image/')) mimeType = 'image/png';
           inputPayload.push({
-            type: 'image',
-            mime_type: mimeType,
-            data: file.buffer.toString('base64')
+            inlineData: {
+              mimeType: mimeType,
+              data: file.buffer.toString('base64')
+            }
           });
         } else if (isPdf(file)) {
           inputPayload.push({
-            type: 'document',
-            mime_type: 'application/pdf',
-            data: file.buffer.toString('base64')
+            inlineData: {
+              mimeType: 'application/pdf',
+              data: file.buffer.toString('base64')
+            }
           });
         } else {
           const essayText = await extractText(file);
@@ -1019,28 +863,30 @@ Respond ONLY with valid JSON matching the schema.`;
       }
 
       promptText += `\n\nSTUDENT WORK: ${files.length} attached document/image page(s).`;
-      inputPayload.push({ type: 'text', text: promptText });
+      inputPayload.push(promptText);
 
-      let parsedFeedback = {
-        student_name: studentNameInput,
-        extracted_essay: '',
-        total_score: '—',
-        category_breakdown: '- Evaluated',
-        mistakes: '- No major mistakes noted.',
-        weaknesses: '- Well done',
-        ai_probability_score: 0,
-        ai_detection_notes: 'Standard cadence',
-        web_similarity_score: 0
-      };
-
+      let parsedFeedback = null;
       try {
         const rawOutput = await callGemini(inputPayload);
         parsedFeedback = JSON.parse(rawOutput);
       } catch (aiErr) {
-        console.warn('AI evaluation warning:', aiErr.message);
+        console.error('Gemini evaluation critical error:', aiErr);
       }
 
-      // Check Intra-Class Peer Plagiarism against classmates
+      if (!parsedFeedback) {
+        parsedFeedback = {
+          student_name: studentNameInput,
+          extracted_essay: '',
+          total_score: '—',
+          category_breakdown: '- Evaluation Pending / Processing Error',
+          mistakes: '- Check image clarity and handwriting legibility',
+          weaknesses: '- Please review paper manually',
+          ai_probability_score: 0,
+          ai_detection_notes: 'Could not process integrity check',
+          web_similarity_score: 0
+        };
+      }
+
       let highestSimilarity = 0;
       let similarityDetails = 'No peer matches found.';
 
@@ -1050,7 +896,7 @@ Respond ONLY with valid JSON matching the schema.`;
       });
 
       for (const row of existingSubs.rows) {
-        if (row.essay_text) {
+        if (row.essay_text && parsedFeedback.extracted_essay) {
           const comp = calculateTextSimilarity(parsedFeedback.extracted_essay, row.essay_text);
           if (comp.score > highestSimilarity) {
             highestSimilarity = comp.score;
@@ -1085,7 +931,6 @@ Respond ONLY with valid JSON matching the schema.`;
         ]
       });
 
-      // Returns ONLY confirmation to student; scores and integrity remain hidden
       return res.json({
         success: true,
         message: 'Your work has been received and evaluated successfully!',
@@ -1098,7 +943,7 @@ Respond ONLY with valid JSON matching the schema.`;
   }
 );
 
-// 9. Manual Direct Batch Marking
+// Manual Direct Batch
 app.post(
   '/api/mark-batch',
   authenticateToken,
@@ -1145,18 +990,20 @@ app.post(
             allSchemeText += `\n[Rubric Document Content]:\n${pdfTxt}\n`;
           } else {
             cachedSchemePayload.push({
-              type: 'document',
-              mime_type: 'application/pdf',
-              data: sFile.buffer.toString('base64')
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: sFile.buffer.toString('base64')
+              }
             });
           }
         } else if (isImage(sFile)) {
           let mimeType = sFile.mimetype || 'image/png';
           if (!mimeType.startsWith('image/')) mimeType = 'image/png';
           cachedSchemePayload.push({
-            type: 'image',
-            mime_type: mimeType,
-            data: sFile.buffer.toString('base64')
+            inlineData: {
+              mimeType: mimeType,
+              data: sFile.buffer.toString('base64')
+            }
           });
         } else {
           const txt = await extractText(sFile);
@@ -1194,7 +1041,7 @@ Rate 'ai_probability_score' (0-100) and 'web_similarity_score' (0-100).
 
 In 'category_breakdown', 'mistakes', and 'weaknesses', list EVERY bullet on a new line starting with a hyphen '-'.
 Format mistakes line-by-line with exact quoted snippets (e.g. Paragraph 1: 'word' -> 'correction').
-Respond ONLY with valid JSON matching the schema.`;
+Respond strictly in JSON matching the schema.`;
 
         if (allSchemeText.trim()) promptText += `\n\nMARKING SCHEME CRITERIA:\n${allSchemeText}`;
         if (extraNotes.trim()) promptText += `\n\nTEACHER NOTES & GUIDELINES:\n${extraNotes}`;
@@ -1205,15 +1052,17 @@ Respond ONLY with valid JSON matching the schema.`;
             let mimeType = file.mimetype || 'image/png';
             if (!mimeType.startsWith('image/')) mimeType = 'image/png';
             inputPayload.push({
-              type: 'image',
-              mime_type: mimeType,
-              data: file.buffer.toString('base64')
+              inlineData: {
+                mimeType: mimeType,
+                data: file.buffer.toString('base64')
+              }
             });
           } else if (isPdf(file)) {
             inputPayload.push({
-              type: 'document',
-              mime_type: 'application/pdf',
-              data: file.buffer.toString('base64')
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: file.buffer.toString('base64')
+              }
             });
           } else {
             const essayText = await extractText(file);
@@ -1222,7 +1071,7 @@ Respond ONLY with valid JSON matching the schema.`;
         }
 
         promptText += `\n\nSTUDENT WORK: ${job.files.length} attached document/image page(s).`;
-        inputPayload.push({ type: 'text', text: promptText });
+        inputPayload.push(promptText);
 
         try {
           const rawOutput = await callGemini(inputPayload);
