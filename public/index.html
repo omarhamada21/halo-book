@@ -29,7 +29,16 @@
     border-bottom: 1px solid var(--border);
   }
 .brand-group { display: flex; align-items: center; gap: 12px; }
-.mimir-logo-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; object-position: top center; border: 2px solid var(--pen); box-shadow: 0 2px 8px rgba(22, 35, 63, 0.15); flex-shrink: 0; }
+.mimir-logo-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top center;
+  border: 2px solid var(--pen);
+  display: block;
+  flex-shrink: 0;
+}
 .brand-text-wrap { display: flex; flex-direction: column; }
 .brand-title { font-family: 'Source Serif 4', serif; font-size: 18px; font-weight: 700; color: var(--ink); line-height: 1.1; }
 .brand-sub { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--pen); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-top: 2px; }
@@ -221,7 +230,7 @@
 <div class="wrap">
   <div class="top-nav">
     <div class="brand-group">
-  <img src="/mimir.jng" alt="Mimir" class="mimir-logo-avatar">
+  <img src="/mimir.jpg" alt="Mimir" class="mimir-logo-avatar">
   <div class="brand-text-wrap">
     <span class="brand-title">Mimir Marking</span>
     <span class="brand-sub">Smart Marking System</span>
