@@ -1312,15 +1312,15 @@ async function shareReportWhatsApp(includeMarks = true) {
 
   showToast('Generating official report PDF...');
 
-  // 1. Ensure fonts are completely ready in memory before rendering
+  // 1. Wait for web fonts to load
   if (document.fonts && document.fonts.ready) {
     await document.fonts.ready;
   }
 
-  // 2. Expand all cards so feedback content is present in the DOM
+  // 2. Expand all accordions so content is fully present in DOM
   document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
 
-  // 3. Staging wrapper positioned inside the visible viewport
+  // 3. Staging container in the active viewport
   const renderStaging = document.createElement('div');
   renderStaging.id = 'pdf-direct-staging';
   renderStaging.style.position = 'fixed';
@@ -1331,26 +1331,23 @@ async function shareReportWhatsApp(includeMarks = true) {
   renderStaging.style.background = '#ffffff';
   renderStaging.style.zIndex = '999999';
   renderStaging.style.overflowY = 'auto';
-  renderStaging.style.padding = '20px 24px';
+  renderStaging.style.padding = '10px';
   renderStaging.style.boxSizing = 'border-box';
 
   const stagingInner = document.createElement('div');
-  stagingInner.style.width = '690px';
+  stagingInner.style.width = '680px';
   stagingInner.style.margin = '0 auto';
   stagingInner.style.background = '#ffffff';
   stagingInner.style.color = '#16233F';
-  // Use high-compatibility system fonts and explicit spacing to prevent word collision bugs
   stagingInner.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-  stagingInner.style.letterSpacing = '0px';
-  stagingInner.style.wordSpacing = '1px';
-  stagingInner.style.fontVariantLigatures = 'none';
-  stagingInner.style.webkitFontSmoothing = 'antialiased';
+  stagingInner.style.letterSpacing = 'normal';
+  stagingInner.style.wordSpacing = '0.5px';
 
-  // 4. Clone summary table and results list
+  // 4. Clone elements
   const summaryClone = document.getElementById('portal-print-summary').cloneNode(true);
   const listClone = document.getElementById('portal-results-list').cloneNode(true);
 
-  // Set report header title
+  // Set report title
   const titleEl = summaryClone.querySelector('.print-title');
   if (titleEl) {
     titleEl.textContent = includeMarks
@@ -1358,30 +1355,26 @@ async function shareReportWhatsApp(includeMarks = true) {
       : `Student Feedback & Correction Report: ${title}`;
   }
 
-  // Strip UI buttons, edit hints, and interactive elements
+  // Clean interactive and unnecessary UI elements
   [summaryClone, listClone].forEach(root => {
     root.querySelectorAll('.no-print, button, .integrity-pills, .fb-integrity-box, .line-delete-btn, .table-add-btn, .section-add-btn, .edit-hint').forEach(el => el.remove());
     root.querySelectorAll('.editable-field, .line-item').forEach(el => {
       el.removeAttribute('contenteditable');
       el.style.border = 'none';
       el.style.background = 'transparent';
-      el.style.lineHeight = '1.5';
-      el.style.wordSpacing = '1.5px';
-      el.style.letterSpacing = '0px';
+      el.style.lineHeight = '1.4';
       el.style.display = 'block';
     });
     root.querySelectorAll('.line-item-wrap').forEach(el => {
       el.style.border = 'none';
       el.style.background = 'transparent';
-      el.style.padding = '2px 0';
+      el.style.padding = '1px 0';
       el.style.margin = '0 0 2px 0';
       el.style.display = 'block';
-      el.style.pageBreakInside = 'avoid';
-      el.style.breakInside = 'avoid';
     });
   });
 
-  // Table styling: prevent row-splitting and text collisions
+  // Table styling
   const table = summaryClone.querySelector('.summary-table');
   if (table) {
     table.style.width = '100%';
@@ -1394,16 +1387,15 @@ async function shareReportWhatsApp(includeMarks = true) {
     });
     table.querySelectorAll('th, td').forEach(cell => {
       cell.style.border = '1px solid #777';
-      cell.style.padding = '8px 10px';
-      cell.style.fontSize = '12px';
+      cell.style.padding = '6px 8px';
+      cell.style.fontSize = '11.5px';
       cell.style.verticalAlign = 'top';
       cell.style.wordWrap = 'break-word';
       cell.style.overflowWrap = 'break-word';
-      cell.style.wordSpacing = '1px';
     });
   }
 
-  // Column width balance
+  // Column distribution
   if (!includeMarks) {
     summaryClone.querySelectorAll('.col-score-breakdown, .summary-score-tag').forEach(el => el.remove());
     listClone.querySelectorAll('.card-score-badge, .card-score-text, .fb-score-section').forEach(el => el.remove());
@@ -1421,26 +1413,28 @@ async function shareReportWhatsApp(includeMarks = true) {
     if (thMistakes) thMistakes.style.width = '46%';
   }
 
-  // Format student detail cards with clean separation
+  // Each student report card treated as a page block
   listClone.querySelectorAll('.result-card').forEach((card) => {
     card.style.border = 'none';
     card.style.background = '#ffffff';
     card.style.boxShadow = 'none';
     card.style.pageBreakBefore = 'always';
     card.style.breakBefore = 'page';
+    card.style.pageBreakInside = 'avoid';
+    card.style.breakInside = 'avoid';
     card.classList.add('html2pdf__page-break');
-    card.style.marginTop = '20px';
-    card.style.paddingTop = '8px';
+    card.style.paddingTop = '10px';
+    card.style.marginBottom = '0';
 
     const head = card.querySelector('.result-head');
     if (head) {
       head.style.cursor = 'default';
-      head.style.padding = '0 0 10px 0';
+      head.style.padding = '0 0 8px 0';
       head.style.borderBottom = '1px solid #CBD6ED';
       head.style.display = 'flex';
       head.style.alignItems = 'center';
       head.style.justifyContent = 'space-between';
-      head.style.gap = '12px';
+      head.style.gap = '10px';
 
       const badge = head.querySelector('.badge');
       const name = head.querySelector('.result-name');
@@ -1454,7 +1448,7 @@ async function shareReportWhatsApp(includeMarks = true) {
 
       if (badge) leftWrap.appendChild(badge);
       if (name) {
-        name.style.fontSize = '15px';
+        name.style.fontSize = '14.5px';
         name.style.fontWeight = '600';
         leftWrap.appendChild(name);
       }
@@ -1466,7 +1460,7 @@ async function shareReportWhatsApp(includeMarks = true) {
 
       if (score) {
         score.style.fontWeight = '700';
-        score.style.fontSize = '13.5px';
+        score.style.fontSize = '13px';
         score.style.fontFamily = 'monospace';
         rightWrap.appendChild(score);
       }
@@ -1489,37 +1483,42 @@ async function shareReportWhatsApp(includeMarks = true) {
       body.style.maxHeight = 'none';
       body.style.display = 'block';
       body.style.borderTop = 'none';
-      body.style.padding = '12px 0 0 0';
+      body.style.padding = '10px 0 0 0';
     }
 
     card.querySelectorAll('.fb-section').forEach(sec => {
-      sec.style.pageBreakInside = 'avoid';
-      sec.style.breakInside = 'avoid';
-      sec.style.marginBottom = '14px';
+      sec.style.marginBottom = '10px';
+    });
+
+    card.querySelectorAll('.fb-label').forEach(lbl => {
+      lbl.style.marginBottom = '4px';
+      lbl.style.fontSize = '10px';
     });
   });
 
-  summaryClone.style.marginBottom = '20px';
+  summaryClone.style.pageBreakInside = 'avoid';
+  summaryClone.style.breakInside = 'avoid';
+  summaryClone.style.marginBottom = '10px';
 
   stagingInner.appendChild(summaryClone);
   stagingInner.appendChild(listClone);
   renderStaging.appendChild(stagingInner);
   document.body.appendChild(renderStaging);
 
-  await new Promise(r => setTimeout(r, 300));
+  await new Promise(r => setTimeout(r, 250));
 
   const opt = {
-    margin:       [10, 10, 10, 10],
+    margin:       [8, 8, 8, 8],
     filename:     filename,
     image:        { type: 'jpeg', quality: 0.98 },
     html2canvas:  {
       scale: 2,
       useCORS: true,
       scrollY: 0,
-      letterRendering: true
+      letterRendering: false
     },
     jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+    pagebreak:    { mode: ['css', 'legacy'] }
   };
 
   try {
