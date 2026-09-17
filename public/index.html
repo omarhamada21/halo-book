@@ -1317,6 +1317,9 @@ async function shareReportWhatsApp(includeMarks = true) {
   const reportElement = document.getElementById('portal-print-summary');
   showToast('Creating PDF report...');
 
+  // Give the DOM a brief moment to apply print classes and layout changes
+  await new Promise(resolve => setTimeout(resolve, 350));
+
   const opt = {
     margin:       10,
     filename:     filename,
@@ -1367,8 +1370,11 @@ function printReport(type) {
     document.body.classList.remove('print-feedback-only');
     document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${title}`;
   }
-  window.print();
-  setTimeout(() => { document.body.classList.remove('print-feedback-only'); }, 1000);
+  
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => { document.body.classList.remove('print-feedback-only'); }, 1000);
+  }, 200);
 }
 
 // Remove single student submission and permit resubmission
