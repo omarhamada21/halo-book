@@ -1312,10 +1312,10 @@ async function shareReportWhatsApp(includeMarks = true) {
 
   showToast('Generating official report PDF...');
 
-  // 1. Expand all accordions to access full data
+  // 1. Expand all cards so feedback content exists in the DOM
   document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
 
-  // 2. Visible staging container scaled precisely to A4 printable width (700px)
+  // 2. Visible staging container calibrated to A4 width
   const renderStaging = document.createElement('div');
   renderStaging.id = 'pdf-direct-staging';
   renderStaging.style.position = 'fixed';
@@ -1326,23 +1326,21 @@ async function shareReportWhatsApp(includeMarks = true) {
   renderStaging.style.background = '#ffffff';
   renderStaging.style.zIndex = '999999';
   renderStaging.style.overflowY = 'auto';
-  renderStaging.style.padding = '20px 25px';
+  renderStaging.style.padding = '20px 24px';
   renderStaging.style.boxSizing = 'border-box';
 
   const stagingInner = document.createElement('div');
-  stagingInner.style.width = '700px';
+  stagingInner.style.width = '690px';
   stagingInner.style.margin = '0 auto';
   stagingInner.style.background = '#ffffff';
   stagingInner.style.color = '#16233F';
   stagingInner.style.fontFamily = 'Arial, Helvetica, sans-serif';
-  stagingInner.style.letterSpacing = 'normal';
-  stagingInner.style.wordSpacing = 'normal';
 
-  // 3. Clone DOM content
+  // 3. Clone summary and results
   const summaryClone = document.getElementById('portal-print-summary').cloneNode(true);
   const listClone = document.getElementById('portal-results-list').cloneNode(true);
 
-  // Set report header title
+  // Set title
   const titleEl = summaryClone.querySelector('.print-title');
   if (titleEl) {
     titleEl.textContent = includeMarks
@@ -1350,44 +1348,47 @@ async function shareReportWhatsApp(includeMarks = true) {
       : `Student Feedback & Correction Report: ${title}`;
   }
 
-  // Strip UI buttons, integrity pills, and edit hints
+  // Strip UI buttons, edit hints, and interactive badges
   [summaryClone, listClone].forEach(root => {
     root.querySelectorAll('.no-print, button, .integrity-pills, .fb-integrity-box, .line-delete-btn, .table-add-btn, .section-add-btn, .edit-hint').forEach(el => el.remove());
     root.querySelectorAll('.editable-field, .line-item').forEach(el => {
       el.removeAttribute('contenteditable');
       el.style.border = 'none';
       el.style.background = 'transparent';
-      el.style.letterSpacing = 'normal';
-      el.style.wordSpacing = 'normal';
-      el.style.lineHeight = '1.5';
+      el.style.lineHeight = '1.45';
     });
+    // Remove box borders to prevent visual overlap across page cuts
     root.querySelectorAll('.line-item-wrap').forEach(el => {
-      el.style.border = '1px solid #E2E8F0';
-      el.style.borderRadius = '4px';
-      el.style.marginBottom = '4px';
-      el.style.background = '#F8FAFC';
-      el.style.padding = '3px 8px';
+      el.style.border = 'none';
+      el.style.background = 'transparent';
+      el.style.padding = '1px 0';
+      el.style.marginBottom = '2px';
+      el.style.pageBreakInside = 'avoid';
+      el.style.breakInside = 'avoid';
     });
   });
 
-  // Table styling with fixed table-layout to prevent right-margin truncation
+  // Summary Table: prevent mid-row slicing
   const table = summaryClone.querySelector('.summary-table');
   if (table) {
     table.style.width = '100%';
     table.style.tableLayout = 'fixed';
     table.style.borderCollapse = 'collapse';
     table.style.marginTop = '10px';
+    table.querySelectorAll('tr').forEach(tr => {
+      tr.style.pageBreakInside = 'avoid';
+      tr.style.breakInside = 'avoid';
+    });
     table.querySelectorAll('th, td').forEach(cell => {
       cell.style.border = '1px solid #777';
       cell.style.padding = '8px 10px';
       cell.style.fontSize = '12px';
       cell.style.verticalAlign = 'top';
       cell.style.wordWrap = 'break-word';
-      cell.style.overflowWrap = 'break-word';
     });
   }
 
-  // Handle feedback-only mode columns
+  // Column distribution
   if (!includeMarks) {
     summaryClone.querySelectorAll('.col-score-breakdown, .summary-score-tag').forEach(el => el.remove());
     listClone.querySelectorAll('.card-score-badge, .card-score-text, .fb-score-section').forEach(el => el.remove());
@@ -1405,28 +1406,27 @@ async function shareReportWhatsApp(includeMarks = true) {
     if (thMistakes) thMistakes.style.width = '46%';
   }
 
-  // Format student cards into clean standalone pages
-  const cards = listClone.querySelectorAll('.result-card');
-  cards.forEach((card) => {
+  // Format student detail cards
+  listClone.querySelectorAll('.result-card').forEach((card) => {
     card.style.border = 'none';
     card.style.background = '#ffffff';
     card.style.boxShadow = 'none';
     card.style.pageBreakBefore = 'always';
+    card.style.breakBefore = 'page';
     card.classList.add('html2pdf__page-break');
-    card.style.marginTop = '24px';
-    card.style.paddingTop = '10px';
+    card.style.marginTop = '20px';
+    card.style.paddingTop = '8px';
 
     const head = card.querySelector('.result-head');
     if (head) {
       head.style.cursor = 'default';
-      head.style.padding = '0 0 12px 0';
-      head.style.borderBottom = '1.5px solid #CBD6ED';
+      head.style.padding = '0 0 10px 0';
+      head.style.borderBottom = '1px solid #CBD6ED';
       head.style.display = 'flex';
       head.style.alignItems = 'center';
       head.style.justifyContent = 'space-between';
       head.style.gap = '12px';
 
-      // Left cluster: badge + student name
       const badge = head.querySelector('.badge');
       const name = head.querySelector('.result-name');
       const score = head.querySelector('.result-score');
@@ -1444,11 +1444,10 @@ async function shareReportWhatsApp(includeMarks = true) {
         leftWrap.appendChild(name);
       }
 
-      // Right cluster: score + brand watermark cleanly separated
       const rightWrap = document.createElement('div');
       rightWrap.style.display = 'flex';
       rightWrap.style.alignItems = 'center';
-      rightWrap.style.gap = '16px';
+      rightWrap.style.gap = '14px';
 
       if (score) {
         score.style.fontWeight = '700';
@@ -1459,7 +1458,7 @@ async function shareReportWhatsApp(includeMarks = true) {
 
       const brandMark = document.createElement('span');
       brandMark.style.fontFamily = "'Source Serif 4', Georgia, serif";
-      brandMark.style.fontSize = '12.5px';
+      brandMark.style.fontSize = '12px';
       brandMark.style.fontWeight = '600';
       brandMark.style.color = '#1D3A66';
       brandMark.textContent = 'MIMIR MARKING';
@@ -1475,8 +1474,15 @@ async function shareReportWhatsApp(includeMarks = true) {
       body.style.maxHeight = 'none';
       body.style.display = 'block';
       body.style.borderTop = 'none';
-      body.style.padding = '14px 0 0 0';
+      body.style.padding = '12px 0 0 0';
     }
+
+    // Keep sections intact
+    card.querySelectorAll('.fb-section').forEach(sec => {
+      sec.style.pageBreakInside = 'avoid';
+      sec.style.breakInside = 'avoid';
+      sec.style.marginBottom = '14px';
+    });
   });
 
   summaryClone.style.marginBottom = '20px';
@@ -1489,12 +1495,12 @@ async function shareReportWhatsApp(includeMarks = true) {
   await new Promise(r => setTimeout(r, 250));
 
   const opt = {
-    margin:       [8, 8, 8, 8],
+    margin:       [10, 10, 10, 10],
     filename:     filename,
     image:        { type: 'jpeg', quality: 0.98 },
-    html2canvas:  { scale: 2, useCORS: true, scrollY: 0, letterRendering: false },
+    html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
     jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak:    { mode: ['css', 'legacy'] }
+    pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
   };
 
   try {
