@@ -1103,6 +1103,66 @@ async function shareReportWhatsApp(includeMarks = true) {
   const cleanTitle = title.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `${cleanTitle}_${includeMarks ? 'Marked_Report' : 'Feedback_Report'}.pdf`;
 
+  if (!includeMarks) {
+    document.body.classList.add('print-feedback-only');
+    document.getElementById('portal-print-report-title').textContent = `Student Feedback & Correction Report: ${title}`;
+  } else {
+    document.body.classList.remove('print-feedback-only');
+    document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${title}`;
+  }
+
+  const reportElement = document.getElementById('portal-print-summary');
+  showToast('Creating PDF report...');
+
+  const opt = {
+    margin:       10,
+    filename:     filename,
+    image:        { type: 'jpeg', quality: 0.98 },
+    html2canvas:  { scale: 2, useCORS: true },
+    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+
+  try {
+    // Generate PDF as a binary blob
+    const pdfBlob = await html2pdf().set(opt).from(reportElement).output('blob');
+    const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
+
+    // Method A: Native Share Sheet (Mobile / Safari / Edge / Chrome)
+    // Directly hands the PDF file to WhatsApp as a document attachment
+    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      await navigator.share({
+        files: [pdfFile],
+        title: `${title} Report`,
+        text: `Evaluation Report for ${title}`
+      });
+    } else {
+      // Method B: Desktop Fallback (Where browser blocks file auto-attaching)
+      // Automatically download the file, then launch WhatsApp Web with notification
+      const downloadLink = document.createElement('a');
+      downloadLink.href = URL.createObjectURL(pdfBlob);
+      downloadLink.download = filename;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+
+      const notice = encodeURIComponent(`📄 *${title} Evaluation Report*\n(The PDF file was downloaded to your device; attach it directly to this chat).`);
+      window.open(`https://api.whatsapp.com/send?text=${notice}`, '_blank');
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      console.error('PDF Share error:', err);
+      alert('Could not share PDF. Please use the Print button to save as PDF.');
+    }
+  } finally {
+    document.body.classList.remove('print-feedback-only');
+  }
+}
+
+  const assignmentObj = allAssignmentsMap[activeCode];
+  const title = assignmentObj ? assignmentObj.title : 'Assignment';
+  const cleanTitle = title.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `${cleanTitle}_${includeMarks ? 'Marked_Report' : 'Feedback_Report'}.pdf`;
+
   // Toggle feedback view column state if needed
   if (!includeMarks) {
     document.body.classList.add('print-feedback-only');
@@ -1143,7 +1203,7 @@ async function shareReportWhatsApp(includeMarks = true) {
   } finally {
     document.body.classList.remove('print-feedback-only');
   }
-}
+
 function shareReportWhatsApp(includeMarks = true) {
   if (!portalSubmissions || portalSubmissions.length === 0) {
     alert('No student submissions found to share.');
