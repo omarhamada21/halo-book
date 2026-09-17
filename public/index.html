@@ -274,6 +274,9 @@
       <p class="step-desc">Set assignment details, attach the rubric/scheme, and share the generated link with your students.</p>
 
     <div style="margin-left: 38px; margin-top: 16px;">
+        <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Bundle / Group Name (Shown in your dropdown list)</label>
+        <input type="text" id="bundle-group-title-input" placeholder="e.g. Unit 2 Homework Package" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 14px;" />
+
         <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Submission Deadline (12-Hour AM/PM — Cairo Time)</label>
         <div class="picker-12h-wrap">
           <input type="date" id="portal-date" style="flex: 2; min-width: 140px;" />
@@ -1070,11 +1073,30 @@ async function loadTeacherAssignments() {
       allAssignmentsMap = {};
       const select = document.getElementById('past-assignments-select');
       
-      select.innerHTML = '<option value="">-- Select an assignment to view live marks --</option>' +
-        d.assignments.map(a => {
-          allAssignmentsMap[a.code] = a;
-          const deadlineText = formatDeadlineString(a.deadline);
-          return `<option value="${a.code}">${escapeHtml(a.title)} (${a.submission_count} submissions) — ${deadlineText}</option>`;
+      const bundlesMap = {};
+      d.assignments.forEach(a => {
+        const key = a.bundle_code || a.code;
+        if (!bundlesMap[key]) {
+          bundlesMap[key] = {
+            groupTitle: a.group_title || a.title,
+            deadline: a.deadline,
+            tasks: []
+          };
+        }
+        bundlesMap[key].tasks.push(a);
+        allAssignmentsMap[a.code] = a;
+      });
+
+      select.innerHTML = '<option value="">-- Select an assignment package --</option>' +
+        Object.entries(bundlesMap).map(([bKey, bundle]) => {
+          const firstTaskCode = bundle.tasks[0].code;
+          const totalSubs = bundle.tasks.reduce((acc, t) => acc + t.submission_count, 0);
+          const deadlineText = formatDeadlineString(bundle.deadline);
+          const displayLabel = bundle.tasks.length > 1 
+            ? `📦 ${bundle.groupTitle} (${bundle.tasks.length} tasks, ${totalSubs} submissions) — ${deadlineText}`
+            : `${bundle.groupTitle} (${totalSubs} submissions) — ${deadlineText}`;
+
+          return `<option value="${firstTaskCode}">${escapeHtml(displayLabel)}</option>`;
         }).join('');
 
       if (activeCode && allAssignmentsMap[activeCode]) {
@@ -1091,7 +1113,7 @@ function loadSelectedAssignment(selectedCode) {
   activeCode = selectedCode;
 
   const assignmentObj = allAssignmentsMap[selectedCode];
-  const title = assignmentObj ? assignmentObj.title : 'Assignment';
+  const title = assignmentObj ? assignmentObj.group_title || assignmentObj.title : 'Assignment';
   const deadlineText = assignmentObj ? formatDeadlineString(assignmentObj.deadline) : 'No Deadline';
 
   const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
@@ -1104,7 +1126,21 @@ function loadSelectedAssignment(selectedCode) {
   document.getElementById('portal-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
   document.getElementById('portal-results-card').style.display = 'block';
 
-  const fullUrl = `${window.location.origin}/submit.html?code=${selectedCode}`;
+  // If part of a bundle, fetch sibling tasks to render tabs
+  if (assignmentObj && assignmentObj.bundle_code) {
+    fetch(`/api/public/bundle/${assignmentObj.bundle_code}`)
+      .then(res => res.json())
+      .then(d => {
+        if (d.success && d.tasks) {
+          renderBundleTabs(d.tasks);
+        }
+      }).catch(() => {});
+  } else {
+    document.getElementById('bundle-task-tabs').style.display = 'none';
+  }
+
+  const linkParam = assignmentObj && assignmentObj.bundle_code ? `bundle=${assignmentObj.bundle_code}` : `code=${selectedCode}`;
+  const fullUrl = `${window.location.origin}/submit.html?${linkParam}`;
   document.getElementById('generated-link-url').textContent = fullUrl;
   document.getElementById('generated-link-box').style.display = 'flex';
 
@@ -1112,6 +1148,8 @@ function loadSelectedAssignment(selectedCode) {
 }
 
 async function createAssignmentLink() {
+  const groupTitleEl = document.getElementById('bundle-group-title-input');
+  const groupTitle = groupTitleEl ? groupTitleEl.value.trim() : '';
   const deadlineIso = getIsoFrom12h('portal-date', 'portal-hour', 'portal-minute', 'portal-ampm');
 
   if (deadlineIso) {
@@ -1125,6 +1163,7 @@ async function createAssignmentLink() {
   const tasksPayload = [];
   const formData = new FormData();
   if (deadlineIso) formData.append('deadline', deadlineIso);
+  if (groupTitle) formData.append('groupTitle', groupTitle);
 
   for (let i = 0; i < taskDefinitions.length; i++) {
     const titleVal = (document.getElementById(`task-title-${i}`)?.value || `Task ${i + 1}`).trim();
@@ -1150,10 +1189,11 @@ async function createAssignmentLink() {
     if (d.success) {
       activeCode = d.tasks[0].code;
       const deadlineText = formatDeadlineString(deadlineIso);
+      const displayTitle = d.groupTitle || d.tasks[0].title;
 
-      document.getElementById('live-portal-title').textContent = `Live Submissions: ${d.tasks[0].title}`;
+      document.getElementById('live-portal-title').textContent = `Live Submissions: ${displayTitle}`;
       document.getElementById('live-portal-deadline-sub').textContent = deadlineText;
-      document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${d.tasks[0].title}`;
+      document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${displayTitle}`;
       document.getElementById('portal-print-report-sub').textContent = `Teacher: ${currentUser?.name || 'Teacher'} | Total Assessed: 0 Students`;
 
       document.getElementById('generated-link-url').textContent = d.link;
@@ -1189,8 +1229,6 @@ function renderBundleTabs(tasks) {
 
 function switchActiveTaskTab(taskCode, taskTitle) {
   activeCode = taskCode;
-  document.getElementById('live-portal-title').textContent = `Live Submissions: ${taskTitle}`;
-  document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${taskTitle}`;
   fetchLiveSubmissions();
   
   document.querySelectorAll('#bundle-task-tabs button').forEach(btn => {
@@ -1237,7 +1275,7 @@ async function shareReportWhatsApp(includeMarks = true) {
   }
 
   const assignmentObj = allAssignmentsMap[activeCode];
-  const title = assignmentObj ? assignmentObj.title : 'Assignment';
+  const title = assignmentObj ? assignmentObj.group_title || assignmentObj.title : 'Assignment';
   const cleanTitle = title.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `${cleanTitle}_${includeMarks ? 'Marked_Report' : 'Feedback_Report'}.pdf`;
 
@@ -1293,7 +1331,7 @@ async function shareReportWhatsApp(includeMarks = true) {
 
 function printReport(type) {
   const assignmentObj = allAssignmentsMap[activeCode];
-  const title = assignmentObj ? assignmentObj.title : 'Assignment';
+  const title = assignmentObj ? assignmentObj.group_title || assignmentObj.title : 'Assignment';
 
   if (type === 'feedback') {
     document.body.classList.add('print-feedback-only');
@@ -1384,7 +1422,7 @@ async function toggleSubmissionLogsModal() {
 async function deleteActiveAssignment() {
   if (!activeCode) return;
   const assignment = allAssignmentsMap[activeCode];
-  const title = assignment ? assignment.title : 'this assignment';
+  const title = assignment ? assignment.group_title || assignment.title : 'this assignment';
 
   const confirmed = await showConfirmModal(
     `Are you sure you want to permanently delete "${title}"? This will delete all student submissions, marks, and feedback associated with this form from the database.`,
@@ -1405,6 +1443,8 @@ async function deleteActiveAssignment() {
 
       document.getElementById('portal-results-card').style.display = 'none';
       document.getElementById('generated-link-box').style.display = 'none';
+      const tabs = document.getElementById('bundle-task-tabs');
+      if (tabs) tabs.style.display = 'none';
 
       await loadTeacherAssignments();
       showToast(d.message || 'Assignment deleted successfully.');

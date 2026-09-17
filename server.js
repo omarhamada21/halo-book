@@ -89,6 +89,8 @@ async function initDatabase() {
       CREATE TABLE IF NOT EXISTS assignments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         code TEXT UNIQUE NOT NULL,
+        bundle_code TEXT,
+        group_title TEXT,
         teacher_id INTEGER NOT NULL,
         title TEXT NOT NULL,
         deadline TEXT,
@@ -134,6 +136,7 @@ async function initDatabase() {
     
   const autoMigrations = [
   'ALTER TABLE assignments ADD COLUMN bundle_code TEXT;',
+  'ALTER TABLE assignments ADD COLUMN group_title TEXT;',
   'ALTER TABLE submissions ADD COLUMN teacher_name TEXT;',
   'ALTER TABLE submissions ADD COLUMN device_id TEXT;',
   'ALTER TABLE submissions ADD COLUMN essay_text TEXT;',
@@ -568,7 +571,7 @@ app.post(
   upload.any(),
   async (req, res) => {
     try {
-      const { deadline } = req.body;
+      const { deadline, groupTitle } = req.body;
       let tasks = [];
       try {
         tasks = JSON.parse(req.body.tasks || '[]');
@@ -582,6 +585,7 @@ app.post(
 
       const bundleCode = crypto.randomBytes(4).toString('hex');
       const deadlineVal = deadline && deadline.trim() ? deadline.trim() : null;
+      const finalGroupTitle = (groupTitle && groupTitle.trim()) ? groupTitle.trim() : (tasks[0].title + ' Bundle');
       const createdTasks = [];
 
       for (let i = 0; i < tasks.length; i++) {
@@ -620,11 +624,12 @@ app.post(
 
         await db.execute({
           sql: `INSERT INTO assignments 
-                (code, bundle_code, teacher_id, title, deadline, scheme_text, scheme_files_json) 
-                VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                (code, bundle_code, group_title, teacher_id, title, deadline, scheme_text, scheme_files_json) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           args: [
             taskCode,
             bundleCode,
+            finalGroupTitle,
             req.user.id,
             task.title.trim(),
             deadlineVal,
@@ -639,6 +644,7 @@ app.post(
       return res.json({
         success: true,
         bundleCode,
+        groupTitle: finalGroupTitle,
         tasks: createdTasks,
         link: `${req.protocol}://${req.get('host')}/submit.html?bundle=${bundleCode}`
       });
@@ -654,7 +660,7 @@ app.get('/api/public/bundle/:bundleCode', async (req, res) => {
   try {
     const { bundleCode } = req.params;
     const result = await db.execute({
-      sql: `SELECT a.id, a.code, a.bundle_code, a.title, a.deadline, u.name as teacher_name 
+      sql: `SELECT a.id, a.code, a.bundle_code, a.group_title, a.title, a.deadline, u.name as teacher_name 
             FROM assignments a 
             JOIN users u ON a.teacher_id = u.id 
             WHERE a.bundle_code = ? OR a.code = ? 
@@ -676,6 +682,7 @@ app.get('/api/public/bundle/:bundleCode', async (req, res) => {
     res.json({
       success: true,
       teacherName: first.teacher_name,
+      groupTitle: first.group_title || first.title,
       deadline: first.deadline,
       isPastDeadline,
       tasks: result.rows.map(r => ({ code: r.code, title: r.title }))
@@ -757,7 +764,7 @@ app.post(
 app.get('/api/assignments', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const result = await db.execute({
-      sql: `SELECT id, code, title, deadline, created_at,
+      sql: `SELECT id, code, bundle_code, group_title, title, deadline, created_at,
             (SELECT COUNT(*) FROM submissions WHERE assignment_id = assignments.id) as submission_count
             FROM assignments WHERE teacher_id = ? ORDER BY id DESC`,
       args: [req.user.id]
