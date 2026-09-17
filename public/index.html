@@ -1511,8 +1511,27 @@ async function deleteSubTask(taskCode) {
     const d = await res.json();
     if (d.success) {
       showToast(d.message);
-      loadBundleManagerTasks();
-      loadTeacherAssignments();
+      
+      // 1. Refresh modal task list
+      await loadBundleManagerTasks();
+      
+      // 2. Refresh assignment dropdown list
+      await loadTeacherAssignments();
+
+      // 3. Immediately re-fetch bundle tasks and update top-level UI tabs
+      const assignmentObj = allAssignmentsMap[activeCode];
+      if (assignmentObj && assignmentObj.bundle_code) {
+        const bundleRes = await fetch(`/api/public/bundle/${assignmentObj.bundle_code}`);
+        const bundleData = await bundleRes.json();
+        if (bundleData.success && bundleData.tasks) {
+          renderBundleTabs(bundleData.tasks);
+          
+          // If the deleted task was active, switch to the first remaining task automatically
+          if (taskCode === activeCode && bundleData.tasks.length > 0) {
+            switchActiveTaskTab(bundleData.tasks[0].code, bundleData.tasks[0].title);
+          }
+        }
+      }
     } else {
       alert(d.error || 'Failed to delete task.');
     }
