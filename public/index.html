@@ -1567,6 +1567,52 @@ async function addNewSubTaskToBundle() {
       newSubtaskSchemeFiles = [];
       renderNewSubtaskBadges();
       showToast(d.message);
+      
+      // 1. Refresh modal task list
+      loadBundleManagerTasks();
+      
+      // 2. Refresh assignment dropdown list
+      loadTeacherAssignments();
+
+      // 3. Immediately re-fetch bundle tasks and update top-level UI tabs
+      const assignmentObj = allAssignmentsMap[activeCode];
+      if (assignmentObj && assignmentObj.bundle_code) {
+        const bundleRes = await fetch(`/api/public/bundle/${assignmentObj.bundle_code}`);
+        const bundleData = await bundleRes.json();
+        if (bundleData.success && bundleData.tasks) {
+          renderBundleTabs(bundleData.tasks);
+          
+          // Optionally switch to the newly created task tab automatically
+          if (d.code) {
+            switchActiveTaskTab(d.code, title);
+          }
+        }
+      }
+    } else {
+      alert(d.error || 'Failed to add task.');
+    }
+  } catch (err) {
+    alert('Connection error adding task.');
+  }
+}
+
+  const formData = new FormData();
+  formData.append('title', title);
+  formData.append('schemeText', schemeText);
+  newSubtaskSchemeFiles.forEach(f => formData.append('scheme', f));
+
+  try {
+    const res = await fetch(`/api/assignments/bundle/${activeBundleCode}/tasks`, {
+      method: 'POST',
+      body: formData
+    });
+    const d = await res.json();
+    if (d.success) {
+      input.value = '';
+      document.getElementById('new-subtask-scheme-text').value = '';
+      newSubtaskSchemeFiles = [];
+      renderNewSubtaskBadges();
+      showToast(d.message);
       loadBundleManagerTasks();
       loadTeacherAssignments();
     } else {
