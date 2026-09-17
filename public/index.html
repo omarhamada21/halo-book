@@ -1299,7 +1299,8 @@ async function fetchLiveSubmissions() {
 }
 
 // ==================== PURE FRONTEND IDENTICAL REPORT EXPORT FOR WHATSAPP ====================
-async function shareReportWhatsApp(includeMarks = true) {
+
+  async function shareReportWhatsApp(includeMarks = true) {
   if (!portalSubmissions || portalSubmissions.length === 0) {
     alert('No student submissions found to export.');
     return;
@@ -1312,10 +1313,19 @@ async function shareReportWhatsApp(includeMarks = true) {
 
   showToast('Generating official report PDF...');
 
-  // Ensure individual submission accordions are expanded to retrieve full details
+  // 1. Expand all student result accordions so their full feedback is captured
   document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
 
-  // Create staging container within viewport area so html2canvas renders cleanly
+  // 2. Set the appropriate report title and feedback-only mode class
+  if (!includeMarks) {
+    document.body.classList.add('print-feedback-only');
+    document.getElementById('portal-print-report-title').textContent = `Student Feedback & Correction Report: ${title}`;
+  } else {
+    document.body.classList.remove('print-feedback-only');
+    document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${title}`;
+  }
+
+  // 3. Create a visible staging wrapper in the DOM viewport for html2canvas
   const renderStaging = document.createElement('div');
   renderStaging.id = 'pdf-direct-staging';
   renderStaging.style.position = 'fixed';
@@ -1326,39 +1336,31 @@ async function shareReportWhatsApp(includeMarks = true) {
   renderStaging.style.background = '#ffffff';
   renderStaging.style.zIndex = '999999';
   renderStaging.style.overflowY = 'auto';
-  renderStaging.style.padding = '24px 30px';
+  renderStaging.style.padding = '24px 32px';
   renderStaging.style.boxSizing = 'border-box';
 
   const stagingInner = document.createElement('div');
-  stagingInner.style.width = '750px';
+  stagingInner.style.width = '760px';
   stagingInner.style.margin = '0 auto';
   stagingInner.style.background = '#ffffff';
   stagingInner.style.color = '#16233F';
   stagingInner.style.fontFamily = 'Inter, Arial, sans-serif';
 
-  // Clone active report summary table and result list directly from the page
+  // 4. Clone the exact on-screen summary table and result cards
   const summaryClone = document.getElementById('portal-print-summary').cloneNode(true);
   const listClone = document.getElementById('portal-results-list').cloneNode(true);
 
-  // Update cloned report title based on mode
-  const titleEl = summaryClone.querySelector('.print-title');
-  if (titleEl) {
-    titleEl.textContent = includeMarks
-      ? `Class Evaluation Summary: ${title}`
-      : `Student Feedback & Correction Report: ${title}`;
-  }
-
-  // Remove interactive UI buttons and audits
+  // Clean up interactive UI elements from clones
   [summaryClone, listClone].forEach(root => {
     root.querySelectorAll('.no-print, button, .integrity-pills, .fb-integrity-box, .line-delete-btn, .table-add-btn, .section-add-btn').forEach(el => el.remove());
     root.querySelectorAll('.editable-field, .line-item').forEach(el => {
       el.removeAttribute('contenteditable');
       el.style.border = 'none';
-      el.style.padding = '1px 0';
+      el.style.background = 'transparent';
     });
   });
 
-  // Ensure summary table retains consistent borders and layout
+  // Style summary table for clean PDF export
   const table = summaryClone.querySelector('.summary-table');
   if (table) {
     table.style.width = '100%';
@@ -1371,7 +1373,7 @@ async function shareReportWhatsApp(includeMarks = true) {
     });
   }
 
-  // Handle marked vs feedback-only styling
+  // Apply feedback-only column width adjustments if needed
   if (!includeMarks) {
     summaryClone.querySelectorAll('.col-score-breakdown, .summary-score-tag').forEach(el => el.remove());
     listClone.querySelectorAll('.card-score-badge, .card-score-text, .fb-score-section').forEach(el => el.remove());
@@ -1382,26 +1384,28 @@ async function shareReportWhatsApp(includeMarks = true) {
     if (thMistakes) thMistakes.style.width = '72%';
   }
 
-  // Format cards to match individual pages
-  listClone.querySelectorAll('.result-card').forEach((card, i) => {
+  // Format student result cards into professional separate pages
+  listClone.querySelectorAll('.result-card').forEach((card) => {
     card.style.border = 'none';
+    card.style.background = '#ffffff';
+    card.style.boxShadow = 'none';
     card.style.pageBreakBefore = 'always';
-    card.style.marginTop = '24px';
-    card.style.paddingTop = '16px';
-    card.classList.add('html2pdf__page-break');
+    card.style.marginTop = '30px';
+    card.style.paddingTop = '10px';
 
     const head = card.querySelector('.result-head');
     if (head) {
       head.style.cursor = 'default';
-      head.style.padding = '0 0 10px 0';
+      head.style.padding = '0 0 12px 0';
+      head.style.borderBottom = '1px solid #CBD6ED';
       head.style.display = 'flex';
       head.style.justifyContent = 'space-between';
       head.style.alignItems = 'center';
 
-      // Insert branding watermark on each student page
+      // Add clean branding header to individual student pages
       const brandMark = document.createElement('div');
       brandMark.style.fontFamily = "'Source Serif 4', Georgia, serif";
-      brandMark.style.fontSize = '13px';
+      brandMark.style.fontSize = '13.5px';
       brandMark.style.fontWeight = '600';
       brandMark.style.color = '#16233F';
       brandMark.textContent = 'MIMIR MARKING — Smart Marking System';
@@ -1413,22 +1417,23 @@ async function shareReportWhatsApp(includeMarks = true) {
       body.style.maxHeight = 'none';
       body.style.display = 'block';
       body.style.borderTop = 'none';
-      body.classList.add('open');
+      body.style.padding = '10px 0';
     }
   });
 
   summaryClone.style.pageBreakAfter = 'always';
-  summaryClone.classList.add('html2pdf__page-break');
+  summaryClone.style.marginBottom = '30px';
 
   stagingInner.appendChild(summaryClone);
   stagingInner.appendChild(listClone);
   renderStaging.appendChild(stagingInner);
   document.body.appendChild(renderStaging);
 
-  await new Promise(r => setTimeout(r, 250));
+  // Allow DOM styles and fonts to fully settle
+  await new Promise(r => setTimeout(r, 300));
 
   const opt = {
-    margin:       [8, 8, 8, 8],
+    margin:       [10, 10, 10, 10],
     filename:     filename,
     image:        { type: 'jpeg', quality: 0.98 },
     html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
@@ -1439,6 +1444,7 @@ async function shareReportWhatsApp(includeMarks = true) {
   try {
     const pdfBlob = await html2pdf().set(opt).from(stagingInner).output('blob');
     if (renderStaging.parentNode) document.body.removeChild(renderStaging);
+    document.body.classList.remove('print-feedback-only');
 
     const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
 
@@ -1461,6 +1467,7 @@ async function shareReportWhatsApp(includeMarks = true) {
     }
   } catch (err) {
     if (renderStaging.parentNode) document.body.removeChild(renderStaging);
+    document.body.classList.remove('print-feedback-only');
     if (err.name !== 'AbortError') {
       console.error('PDF Share error:', err);
       alert('Could not share PDF: ' + err.message);
