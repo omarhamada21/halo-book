@@ -1312,10 +1312,15 @@ async function shareReportWhatsApp(includeMarks = true) {
 
   showToast('Generating official report PDF...');
 
-  // 1. Expand all cards so feedback content exists in the DOM
+  // 1. Ensure fonts are completely ready in memory before rendering
+  if (document.fonts && document.fonts.ready) {
+    await document.fonts.ready;
+  }
+
+  // 2. Expand all cards so feedback content is present in the DOM
   document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
 
-  // 2. Visible staging container calibrated to A4 width
+  // 3. Staging wrapper positioned inside the visible viewport
   const renderStaging = document.createElement('div');
   renderStaging.id = 'pdf-direct-staging';
   renderStaging.style.position = 'fixed';
@@ -1334,13 +1339,18 @@ async function shareReportWhatsApp(includeMarks = true) {
   stagingInner.style.margin = '0 auto';
   stagingInner.style.background = '#ffffff';
   stagingInner.style.color = '#16233F';
-  stagingInner.style.fontFamily = 'Arial, Helvetica, sans-serif';
+  // Use high-compatibility system fonts and explicit spacing to prevent word collision bugs
+  stagingInner.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  stagingInner.style.letterSpacing = '0px';
+  stagingInner.style.wordSpacing = '1px';
+  stagingInner.style.fontVariantLigatures = 'none';
+  stagingInner.style.webkitFontSmoothing = 'antialiased';
 
-  // 3. Clone summary and results
+  // 4. Clone summary table and results list
   const summaryClone = document.getElementById('portal-print-summary').cloneNode(true);
   const listClone = document.getElementById('portal-results-list').cloneNode(true);
 
-  // Set title
+  // Set report header title
   const titleEl = summaryClone.querySelector('.print-title');
   if (titleEl) {
     titleEl.textContent = includeMarks
@@ -1348,27 +1358,30 @@ async function shareReportWhatsApp(includeMarks = true) {
       : `Student Feedback & Correction Report: ${title}`;
   }
 
-  // Strip UI buttons, edit hints, and interactive badges
+  // Strip UI buttons, edit hints, and interactive elements
   [summaryClone, listClone].forEach(root => {
     root.querySelectorAll('.no-print, button, .integrity-pills, .fb-integrity-box, .line-delete-btn, .table-add-btn, .section-add-btn, .edit-hint').forEach(el => el.remove());
     root.querySelectorAll('.editable-field, .line-item').forEach(el => {
       el.removeAttribute('contenteditable');
       el.style.border = 'none';
       el.style.background = 'transparent';
-      el.style.lineHeight = '1.45';
+      el.style.lineHeight = '1.5';
+      el.style.wordSpacing = '1.5px';
+      el.style.letterSpacing = '0px';
+      el.style.display = 'block';
     });
-    // Remove box borders to prevent visual overlap across page cuts
     root.querySelectorAll('.line-item-wrap').forEach(el => {
       el.style.border = 'none';
       el.style.background = 'transparent';
-      el.style.padding = '1px 0';
-      el.style.marginBottom = '2px';
+      el.style.padding = '2px 0';
+      el.style.margin = '0 0 2px 0';
+      el.style.display = 'block';
       el.style.pageBreakInside = 'avoid';
       el.style.breakInside = 'avoid';
     });
   });
 
-  // Summary Table: prevent mid-row slicing
+  // Table styling: prevent row-splitting and text collisions
   const table = summaryClone.querySelector('.summary-table');
   if (table) {
     table.style.width = '100%';
@@ -1385,10 +1398,12 @@ async function shareReportWhatsApp(includeMarks = true) {
       cell.style.fontSize = '12px';
       cell.style.verticalAlign = 'top';
       cell.style.wordWrap = 'break-word';
+      cell.style.overflowWrap = 'break-word';
+      cell.style.wordSpacing = '1px';
     });
   }
 
-  // Column distribution
+  // Column width balance
   if (!includeMarks) {
     summaryClone.querySelectorAll('.col-score-breakdown, .summary-score-tag').forEach(el => el.remove());
     listClone.querySelectorAll('.card-score-badge, .card-score-text, .fb-score-section').forEach(el => el.remove());
@@ -1406,7 +1421,7 @@ async function shareReportWhatsApp(includeMarks = true) {
     if (thMistakes) thMistakes.style.width = '46%';
   }
 
-  // Format student detail cards
+  // Format student detail cards with clean separation
   listClone.querySelectorAll('.result-card').forEach((card) => {
     card.style.border = 'none';
     card.style.background = '#ffffff';
@@ -1477,7 +1492,6 @@ async function shareReportWhatsApp(includeMarks = true) {
       body.style.padding = '12px 0 0 0';
     }
 
-    // Keep sections intact
     card.querySelectorAll('.fb-section').forEach(sec => {
       sec.style.pageBreakInside = 'avoid';
       sec.style.breakInside = 'avoid';
@@ -1492,13 +1506,18 @@ async function shareReportWhatsApp(includeMarks = true) {
   renderStaging.appendChild(stagingInner);
   document.body.appendChild(renderStaging);
 
-  await new Promise(r => setTimeout(r, 250));
+  await new Promise(r => setTimeout(r, 300));
 
   const opt = {
     margin:       [10, 10, 10, 10],
     filename:     filename,
     image:        { type: 'jpeg', quality: 0.98 },
-    html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
+    html2canvas:  {
+      scale: 2,
+      useCORS: true,
+      scrollY: 0,
+      letterRendering: true
+    },
     jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
   };
