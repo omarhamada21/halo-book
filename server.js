@@ -121,6 +121,16 @@ async function initDatabase() {
         FOREIGN KEY (assignment_id) REFERENCES assignments(id)
       );
     `);
+    await db.execute(`
+    CREATE TABLE IF NOT EXISTS submission_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_name TEXT NOT NULL,
+      assignment_code TEXT,
+      assignment_title TEXT,
+      teacher_name TEXT,
+      submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
     const autoMigrations = [
       'ALTER TABLE submissions ADD COLUMN teacher_name TEXT;',
@@ -692,7 +702,62 @@ app.post('/api/assignments/:code/update-deadline', authenticateToken, requireApp
     res.status(500).json({ error: 'Failed to update deadline.' });
   }
 });
+// DELETE a single student submission (clears from reports & unlocks student)
+app.delete('/api/assignments/:code/submissions/:submissionId', requireAuth, async (req, res) => {
+  const { code, submissionId } = req.params;
+  try {
+    const subResult = await db.execute({
+      sql: `SELECT s.student_name, a.id as assignment_id 
+            FROM submissions s 
+            JOIN assignments a ON s.assignment_id = a.id 
+            WHERE s.id = ? AND a.code = ?`,
+      args: [submissionId, code]
+    });
 
+    if (!subResult.rows || subResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Submission not found.' });
+    }
+
+    const studentName = subResult.rows[0].student_name;
+    const assignmentId = subResult.rows[0].assignment_id;
+
+    // Remove submission row
+    await db.execute({
+      sql: `DELETE FROM submissions WHERE id = ?`,
+      args: [submissionId]
+    });
+
+    // Decrement submission count
+    await db.execute({
+      sql: `UPDATE assignments SET submission_count = MAX(0, submission_count - 1) WHERE id = ?`,
+      args: [assignmentId]
+    });
+
+    res.json({ success: true, message: `Submission for "${studentName}" deleted. Student can now resubmit.` });
+  } catch (err) {
+    console.error('Error removing student submission:', err);
+    res.status(500).json({ success: false, error: 'Failed to remove submission.' });
+  }
+});
+
+// GET permanent audit logs for an assignment
+app.get('/api/assignments/:code/logs', requireAuth, async (req, res) => {
+  const { code } = req.params;
+  try {
+    const result = await db.execute({
+      sql: `SELECT student_name, assignment_title, teacher_name, submitted_at 
+            FROM submission_logs 
+            WHERE assignment_code = ? 
+            ORDER BY submitted_at DESC`,
+      args: [code]
+    });
+
+    res.json({ success: true, logs: result.rows || [] });
+  } catch (err) {
+    console.error('Error fetching logs:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch submission logs.' });
+  }
+});
 app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
@@ -937,7 +1002,21 @@ Respond ONLY with valid JSON matching the schema.`;
           parsedFeedback.web_similarity_score || 0
         ]
       });
-
+// Log permanent timestamp record to submission_logs
+    try {
+      await db.execute({
+        sql: `INSERT INTO submission_logs (student_name, assignment_code, assignment_title, teacher_name, submitted_at)
+              VALUES (?, ?, ?, ?, datetime('now'))`,
+        args: [
+          finalName,
+          assignment.code,
+          assignment.title,
+          teacherName || 'Teacher'
+        ]
+      });
+    } catch (logErr) {
+      console.error('Audit log notice:', logErr.message);
+    }
       return res.json({
         success: true,
         message: 'Your work has been received and evaluated successfully!',
