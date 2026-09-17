@@ -655,7 +655,7 @@ app.post(
   }
 );
 
-// Add a new task to an existing bundle package
+// Add a new task to an existing bundle package with rubric support
 app.post('/api/assignments/bundle/:bundleCode/tasks', authenticateToken, requireApprovedUser, upload.any(), async (req, res) => {
   try {
     const { bundleCode } = req.params;
@@ -688,23 +688,47 @@ app.post('/api/assignments/bundle/:bundleCode/tasks', authenticateToken, require
     for (const sFile of schemeFiles) {
       if (isPdf(sFile)) {
         const pdfTxt = await extractText(sFile);
-        if (pdfTxt && pdfTxt.trim()) extractedSchemeText += `\n[Rubric Content]:\n${pdfTxt}\n`;
-        else cachedSchemePayload.push({ type: 'document', mime_type: 'application/pdf', data: sFile.buffer.toString('base64') });
+        if (pdfTxt && pdfTxt.trim()) {
+          extractedSchemeText += `\n[Rubric Content]:\n${pdfTxt}\n`;
+        } else {
+          cachedSchemePayload.push({
+            type: 'document',
+            mime_type: 'application/pdf',
+            data: sFile.buffer.toString('base64')
+          });
+        }
       } else if (isImage(sFile)) {
-        cachedSchemePayload.push({ type: 'image', mime_type: sFile.mimetype || 'image/png', data: sFile.buffer.toString('base64') });
+        let mimeType = sFile.mimetype || 'image/png';
+        if (!mimeType.startsWith('image/')) mimeType = 'image/png';
+        cachedSchemePayload.push({
+          type: 'image',
+          mime_type: mimeType,
+          data: sFile.buffer.toString('base64')
+        });
       } else {
         const txt = await extractText(sFile);
-        if (txt.trim()) extractedSchemeText += `\n[Rubric File: ${sFile.originalname}]\n${txt}\n`;
+        if (txt.trim()) {
+          extractedSchemeText += `\n[Rubric File: ${sFile.originalname}]\n${txt}\n`;
+        }
       }
     }
 
     await db.execute({
       sql: `INSERT INTO assignments (code, bundle_code, group_title, teacher_id, title, deadline, scheme_text, scheme_files_json) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [newTaskCode, bundleCode, parent.group_title, parent.teacher_id, title.trim(), parent.deadline, extractedSchemeText, JSON.stringify(cachedSchemePayload)]
+      args: [
+        newTaskCode,
+        bundleCode,
+        parent.group_title,
+        parent.teacher_id,
+        title.trim(),
+        parent.deadline,
+        extractedSchemeText,
+        JSON.stringify(cachedSchemePayload)
+      ]
     });
 
-    res.json({ success: true, message: 'Task added successfully to package.', code: newTaskCode });
+    res.json({ success: true, message: 'Task added successfully with rubric criteria.', code: newTaskCode });
   } catch (err) {
     console.error('Add Task Error:', err);
     res.status(500).json({ success: false, error: 'Failed to add task.' });
