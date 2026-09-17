@@ -935,14 +935,20 @@ app.post(
       const cachedSchemePayload = JSON.parse(assignment.scheme_files_json || '[]');
       const inputPayload = [...cachedSchemePayload];
 
-      let promptText = `You are a professional teacher evaluating a student writing assessment.
-Examine the handwriting/typed text in the student's pages against the marking scheme criteria.
+     let promptText = `You are a professional teacher evaluating a student writing assessment.
+Examine the student's attached work strictly against the provided marking scheme rubric.
+
+CRITICAL SCORING & MULTI-PAGE RULES:
+- The student's attached pages are CONTINUATION PAGES of the SAME single assessment/essay, NOT separate assessments.
+- DO NOT increase, multiply, or alter the total achievable marks based on the number of pages attached.
+- STRICT MARKING SCHEME ADHERENCE: Read the rubric carefully to find the EXACT total possible marks (e.g., out of 20, 25, 40, etc.). 
+- The denominator in "total_score" and the sum of category maximums in "category_breakdown" MUST MATCH the total maximum score specified in the rubric exactly. NEVER invent or expand the total score beyond what the rubric states.
 
 INSTRUCTIONS:
-1. Extract and transcribe the student's entire essay text verbatim into "extracted_essay".
-2. Grade strictly according to the marking scheme rubric provided.
-3. In "total_score", provide the total marks (e.g., "16/25").
-4. In "category_breakdown", list each individual marking category on a new line starting with a hyphen (e.g., "- Structure: 4/6\\n- Content: 4/6\\n- SPaG: 3/4").
+1. Extract and transcribe the student's entire essay text across all pages in sequential order into "extracted_essay".
+2. Grade strictly according to the rubric criteria.
+3. In "total_score", provide the awarded marks over the rubric's exact total maximum (e.g., "awarded_score/rubric_max").
+4. In "category_breakdown", list each individual marking category with its score and category maximum on a new line starting with a hyphen (e.g., "- Structure: X/Y\\n- Content: X/Y"). The sum of all Y's must equal the rubric's exact total.
 5. In "mistakes", list line-by-line errors starting with hyphens with quoted excerpts and corrections.
 6. In "weaknesses", suggest actionable revision points starting with hyphens.
 7. Perform an integrity check:
@@ -1164,11 +1170,17 @@ app.post(
         let promptText = `You are a professional exam evaluator reviewing a student's writing assessment.
 Extract the student's handwritten name from the header if visible, or fallback to: "${job.assignedName}".
 Grade strictly against the marking scheme criteria.
-Transcribe the essay in full into 'extracted_essay'.
-Rate 'ai_probability_score' (0-100) and 'web_similarity_score' (0-100).
 
-In 'category_breakdown', 'mistakes', and 'weaknesses', list EVERY bullet on a new line starting with a hyphen '-'.
-Format mistakes line-by-line with exact quoted snippets (e.g. Paragraph 1: 'word' -> 'correction').
+CRITICAL SCORING RULES:
+- The attached files/pages for this student are continuation pages of ONE single assessment. Do not expand or multiply the maximum marks for multiple pages.
+- The total achievable marks (denominator) in "total_score" and the sum of all category maximums in "category_breakdown" MUST EXACTLY equal the maximum possible marks established by the rubric.
+
+INSTRUCTIONS:
+- Transcribe the essay in full across all pages into 'extracted_essay'.
+- Format 'total_score' as "awarded_score/rubric_max".
+- In 'category_breakdown', 'mistakes', and 'weaknesses', list EVERY bullet on a new line starting with a hyphen '-'.
+- Format mistakes line-by-line with exact quoted snippets (e.g. Paragraph 1: 'word' -> 'correction').
+- Rate 'ai_probability_score' (0-100) and 'web_similarity_score' (0-100).
 Respond ONLY with valid JSON matching the schema.`;
 
         if (allSchemeText.trim()) promptText += `\n\nMARKING SCHEME CRITERIA:\n${allSchemeText}`;
