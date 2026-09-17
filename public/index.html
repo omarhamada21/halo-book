@@ -199,7 +199,7 @@
 
   footer { margin-top: 40px; text-align: center; font-size: 12px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; border-top: 1px solid var(--border); padding-top: 20px; }
 
-  /* Web Print & PDF Simulation Styles */
+  /* Web Print Styles */
   @media print {
     body { background: #fff !important; color: #000 !important; }
     
@@ -227,7 +227,6 @@
     .line-item-wrap { border: none !important; background: transparent !important; }
     .line-item { border: none !important; padding: 1px 0 !important; background: transparent !important; }
 
-    /* Results section on print */
     .results { display: block !important; margin-left: 0 !important; }
     .result-card { border: none !important; page-break-before: always; page-break-inside: avoid; margin-bottom: 20px; }
     .result-head { cursor: default !important; padding: 0 0 10px 0 !important; }
@@ -1299,7 +1298,7 @@ async function fetchLiveSubmissions() {
   }
 }
 
-// ==================== IDENTICAL REPORT EXPORT FOR WHATSAPP ====================
+// ==================== PURE FRONTEND IDENTICAL REPORT EXPORT FOR WHATSAPP ====================
 async function shareReportWhatsApp(includeMarks = true) {
   if (!portalSubmissions || portalSubmissions.length === 0) {
     alert('No student submissions found to export.');
@@ -1310,156 +1309,123 @@ async function shareReportWhatsApp(includeMarks = true) {
   const title = assignmentObj ? assignmentObj.group_title || assignmentObj.title : 'Assignment';
   const cleanTitle = title.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `${cleanTitle}_${includeMarks ? 'Marked_Report' : 'Feedback_Report'}.pdf`;
-  const teacherDisplay = currentUser?.name || 'Teacher';
-  const countText = `${portalSubmissions.length} Student${portalSubmissions.length === 1 ? '' : 's'}`;
 
-  showToast('Rendering complete report for WhatsApp...');
+  showToast('Generating official report PDF...');
 
-  // 1. Create a container placed directly in the normal render tree (NOT off-screen)
-  const exportWrapper = document.createElement('div');
-  exportWrapper.id = 'pdf-render-overlay';
-  exportWrapper.style.position = 'fixed';
-  exportWrapper.style.top = '0';
-  exportWrapper.style.left = '0';
-  exportWrapper.style.width = '100vw';
-  exportWrapper.style.height = '100vh';
-  exportWrapper.style.background = '#ffffff';
-  exportWrapper.style.zIndex = '999999';
-  exportWrapper.style.overflowY = 'auto';
-  exportWrapper.style.padding = '30px';
-  exportWrapper.style.boxSizing = 'border-box';
+  // Ensure individual submission accordions are expanded to retrieve full details
+  document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
 
-  const exportContainer = document.createElement('div');
-  exportContainer.style.width = '740px';
-  exportContainer.style.margin = '0 auto';
-  exportContainer.style.background = '#ffffff';
-  exportContainer.style.color = '#16233F';
-  exportContainer.style.fontFamily = 'Inter, Arial, sans-serif';
+  // Create staging container within viewport area so html2canvas renders cleanly
+  const renderStaging = document.createElement('div');
+  renderStaging.id = 'pdf-direct-staging';
+  renderStaging.style.position = 'fixed';
+  renderStaging.style.top = '0';
+  renderStaging.style.left = '0';
+  renderStaging.style.width = '100vw';
+  renderStaging.style.height = '100vh';
+  renderStaging.style.background = '#ffffff';
+  renderStaging.style.zIndex = '999999';
+  renderStaging.style.overflowY = 'auto';
+  renderStaging.style.padding = '24px 30px';
+  renderStaging.style.boxSizing = 'border-box';
 
-  // Part 1: Summary Table Header & Table
-  let html = `
-    <div style="margin-bottom: 24px;">
-      <div style="font-family:'Source Serif 4', Georgia, serif; font-size:22px; font-weight:600; margin-bottom:4px; color:#16233F;">
-        ${includeMarks ? 'Class Evaluation Summary' : 'Student Feedback & Correction Report'}: ${escapeHtml(title)}
-      </div>
-      <div style="font-size:13px; color:#555; margin-bottom:16px;">
-        Teacher: ${escapeHtml(teacherDisplay)} | Total Assessed: ${countText}
-      </div>
-      
-      <table style="width:100%; border-collapse:collapse; font-size:12px; border:1px solid #777;">
-        <thead>
-          <tr style="background:#f2f4f8;">
-            <th style="border:1px solid #777; padding:8px 10px; text-align:left; width:${includeMarks ? '26%' : '35%'}; font-family:'IBM Plex Mono', monospace; font-size:11px; text-transform:uppercase; color:#16233F;">STUDENT NAME</th>
-            ${includeMarks ? '<th style="border:1px solid #777; padding:8px 10px; text-align:left; width:30%; font-family:\'IBM Plex Mono\', monospace; font-size:11px; text-transform:uppercase; color:#16233F;">SCORE BREAKDOWN</th>' : ''}
-            <th style="border:1px solid #777; padding:8px 10px; text-align:left; width:${includeMarks ? '44%' : '65%'}; font-family:'IBM Plex Mono', monospace; font-size:11px; text-transform:uppercase; color:#16233F;">MISTAKES IN YOUR WORK</th>
-          </tr>
-        </thead>
-        <tbody>
-  `;
+  const stagingInner = document.createElement('div');
+  stagingInner.style.width = '750px';
+  stagingInner.style.margin = '0 auto';
+  stagingInner.style.background = '#ffffff';
+  stagingInner.style.color = '#16233F';
+  stagingInner.style.fontFamily = 'Inter, Arial, sans-serif';
 
-  portalSubmissions.forEach(r => {
-    const displayName = r.name || r.student_name || 'Student';
-    const totalScoreVal = r.total_score || '—';
-    const pageText = `${r.pageCount || 1} page${(r.pageCount || 1) > 1 ? 's' : ''}`;
+  // Clone active report summary table and result list directly from the page
+  const summaryClone = document.getElementById('portal-print-summary').cloneNode(true);
+  const listClone = document.getElementById('portal-results-list').cloneNode(true);
 
-    const bLines = (r.category_breakdown || '').split('\n').map(l => l.trim()).filter(Boolean);
-    const bHtml = bLines.map(l => `<div style="margin-bottom:3px; font-size:11.5px;">${escapeHtml(l.startsWith('-') ? l : '- ' + l)}</div>`).join('');
+  // Update cloned report title based on mode
+  const titleEl = summaryClone.querySelector('.print-title');
+  if (titleEl) {
+    titleEl.textContent = includeMarks
+      ? `Class Evaluation Summary: ${title}`
+      : `Student Feedback & Correction Report: ${title}`;
+  }
 
-    const mLines = (r.mistakes || '').split('\n').map(l => l.trim()).filter(Boolean);
-    const mHtml = mLines.map(l => `<div style="margin-bottom:3px; font-size:11.5px; line-height:1.4;">${escapeHtml(l.startsWith('-') ? l : '- ' + l)}</div>`).join('');
-
-    html += `
-      <tr>
-        <td style="border:1px solid #777; padding:8px 10px; vertical-align:top;">
-          <b style="font-size:13px; color:#16233F;">${escapeHtml(displayName)}</b>
-          ${includeMarks ? `<br><span style="color:#1D3A66; font-family:'IBM Plex Mono', monospace; font-size:11px; font-weight:600;">Total: ${escapeHtml(totalScoreVal)} (${pageText})</span>` : ''}
-        </td>
-        ${includeMarks ? `<td style="border:1px solid #777; padding:8px 10px; vertical-align:top; color:#222;">${bHtml || '—'}</td>` : ''}
-        <td style="border:1px solid #777; padding:8px 10px; vertical-align:top; color:#222;">${mHtml || '—'}</td>
-      </tr>
-    `;
+  // Remove interactive UI buttons and audits
+  [summaryClone, listClone].forEach(root => {
+    root.querySelectorAll('.no-print, button, .integrity-pills, .fb-integrity-box, .line-delete-btn, .table-add-btn, .section-add-btn').forEach(el => el.remove());
+    root.querySelectorAll('.editable-field, .line-item').forEach(el => {
+      el.removeAttribute('contenteditable');
+      el.style.border = 'none';
+      el.style.padding = '1px 0';
+    });
   });
 
-  html += `
-        </tbody>
-      </table>
-    </div>
-  `;
+  // Ensure summary table retains consistent borders and layout
+  const table = summaryClone.querySelector('.summary-table');
+  if (table) {
+    table.style.width = '100%';
+    table.style.borderCollapse = 'collapse';
+    table.style.marginTop = '10px';
+    table.querySelectorAll('th, td').forEach(cell => {
+      cell.style.border = '1px solid #777';
+      cell.style.padding = '8px 10px';
+      cell.style.fontSize = '12px';
+    });
+  }
 
-  // Part 2: Individual Student Full Breakdown Pages
-  portalSubmissions.forEach(r => {
-    const displayName = r.name || r.student_name || 'Student';
-    const totalScoreVal = r.total_score || '—';
-    const earnedMarks = totalScoreVal.split('/')[0] || totalScoreVal;
-    const pageText = `${r.pageCount || 1} page${(r.pageCount || 1) > 1 ? 's' : ''}`;
+  // Handle marked vs feedback-only styling
+  if (!includeMarks) {
+    summaryClone.querySelectorAll('.col-score-breakdown, .summary-score-tag').forEach(el => el.remove());
+    listClone.querySelectorAll('.card-score-badge, .card-score-text, .fb-score-section').forEach(el => el.remove());
+    
+    const thName = summaryClone.querySelector('.summary-col-name');
+    const thMistakes = summaryClone.querySelector('.summary-col-mistakes');
+    if (thName) thName.style.width = '28%';
+    if (thMistakes) thMistakes.style.width = '72%';
+  }
 
-    const bLines = (r.category_breakdown || '').split('\n').map(l => l.trim()).filter(Boolean);
-    const bHtml = bLines.map(l => `<div style="margin-bottom:2px; font-size:12px;">${escapeHtml(l.startsWith('-') ? l : '- ' + l)}</div>`).join('');
+  // Format cards to match individual pages
+  listClone.querySelectorAll('.result-card').forEach((card, i) => {
+    card.style.border = 'none';
+    card.style.pageBreakBefore = 'always';
+    card.style.marginTop = '24px';
+    card.style.paddingTop = '16px';
+    card.classList.add('html2pdf__page-break');
 
-    const mLines = (r.mistakes || '').split('\n').map(l => l.trim()).filter(Boolean);
-    const mHtml = mLines.map(l => `<div style="margin-bottom:4px; font-size:12px; line-height:1.45;">${escapeHtml(l.startsWith('-') ? l : '- ' + l)}</div>`).join('');
+    const head = card.querySelector('.result-head');
+    if (head) {
+      head.style.cursor = 'default';
+      head.style.padding = '0 0 10px 0';
+      head.style.display = 'flex';
+      head.style.justifyContent = 'space-between';
+      head.style.alignItems = 'center';
 
-    const wLines = (r.weaknesses || '').split('\n').map(l => l.trim()).filter(Boolean);
-    const wHtml = wLines.map(l => `<div style="margin-bottom:4px; font-size:12px; line-height:1.45;">${escapeHtml(l.startsWith('-') ? l : '- ' + l)}</div>`).join('');
+      // Insert branding watermark on each student page
+      const brandMark = document.createElement('div');
+      brandMark.style.fontFamily = "'Source Serif 4', Georgia, serif";
+      brandMark.style.fontSize = '13px';
+      brandMark.style.fontWeight = '600';
+      brandMark.style.color = '#16233F';
+      brandMark.textContent = 'MIMIR MARKING — Smart Marking System';
+      head.appendChild(brandMark);
+    }
 
-    html += `
-      <div class="html2pdf__page-break" style="page-break-before:always; margin-top:24px; padding-top:20px; border-top:1px dashed #ccc;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-          <div style="display:flex; align-items:center; gap:12px;">
-            ${includeMarks ? `
-              <div style="width:38px; height:38px; border-radius:50%; border:2px solid #1D3A66; color:#1D3A66; font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                ${earnedMarks}
-              </div>
-            ` : ''}
-            <div>
-              <span style="font-size:16px; font-weight:700; color:#16233F;">${escapeHtml(displayName)}</span>
-              <span style="font-size:12px; color:#555; margin-left:4px;">(${pageText})</span>
-            </div>
-          </div>
-          <div style="font-family:'Source Serif 4', Georgia, serif; font-size:14px; font-weight:600; color:#16233F;">
-            MIMIR MARKING — Smart Marking System
-          </div>
-        </div>
-
-        ${includeMarks ? `
-          <div style="margin-bottom:14px;">
-            <div style="font-family:'IBM Plex Mono', monospace; font-size:10.5px; text-transform:uppercase; color:#1D3A66; font-weight:700; margin-bottom:4px;">
-              Score Breakdown by Category
-            </div>
-            <div style="font-size:12.5px; color:#222; line-height:1.5;">${bHtml || '—'}</div>
-          </div>
-
-          <div style="margin-bottom:14px;">
-            <div style="font-family:'IBM Plex Mono', monospace; font-size:10.5px; text-transform:uppercase; color:#1D3A66; font-weight:700; margin-bottom:2px;">
-              Total Score
-            </div>
-            <div style="font-size:14px; font-weight:700; color:#16233F;">${escapeHtml(totalScoreVal)}</div>
-          </div>
-        ` : ''}
-
-        <div style="margin-bottom:14px;">
-          <div style="font-family:'IBM Plex Mono', monospace; font-size:10.5px; text-transform:uppercase; color:#1D3A66; font-weight:700; margin-bottom:4px;">
-            Mistakes in Your Work
-          </div>
-          <div style="font-size:12.5px; color:#222;">${mHtml || 'None recorded.'}</div>
-        </div>
-
-        <div style="margin-bottom:14px;">
-          <div style="font-family:'IBM Plex Mono', monospace; font-size:10.5px; text-transform:uppercase; color:#1D3A66; font-weight:700; margin-bottom:4px;">
-            What to Practice Next
-          </div>
-          <div style="font-size:12.5px; color:#222;">${wHtml || 'No recommendations.'}</div>
-        </div>
-      </div>
-    `;
+    const body = card.querySelector('.result-body');
+    if (body) {
+      body.style.maxHeight = 'none';
+      body.style.display = 'block';
+      body.style.borderTop = 'none';
+      body.classList.add('open');
+    }
   });
 
-  exportContainer.innerHTML = html;
-  exportWrapper.appendChild(exportContainer);
-  document.body.appendChild(exportWrapper);
+  summaryClone.style.pageBreakAfter = 'always';
+  summaryClone.classList.add('html2pdf__page-break');
 
-  // Short delay to allow fonts and layout to settle in DOM
-  await new Promise(r => setTimeout(r, 200));
+  stagingInner.appendChild(summaryClone);
+  stagingInner.appendChild(listClone);
+  renderStaging.appendChild(stagingInner);
+  document.body.appendChild(renderStaging);
+
+  await new Promise(r => setTimeout(r, 250));
 
   const opt = {
     margin:       [8, 8, 8, 8],
@@ -1471,8 +1437,8 @@ async function shareReportWhatsApp(includeMarks = true) {
   };
 
   try {
-    const pdfBlob = await html2pdf().set(opt).from(exportContainer).output('blob');
-    if (exportWrapper.parentNode) document.body.removeChild(exportWrapper);
+    const pdfBlob = await html2pdf().set(opt).from(stagingInner).output('blob');
+    if (renderStaging.parentNode) document.body.removeChild(renderStaging);
 
     const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
 
@@ -1494,11 +1460,56 @@ async function shareReportWhatsApp(includeMarks = true) {
       window.open(`https://api.whatsapp.com/send?text=${notice}`, '_blank');
     }
   } catch (err) {
-    if (exportWrapper.parentNode) document.body.removeChild(exportWrapper);
+    if (renderStaging.parentNode) document.body.removeChild(renderStaging);
     if (err.name !== 'AbortError') {
       console.error('PDF Share error:', err);
-      alert('Could not generate PDF: ' + err.message);
+      alert('Could not share PDF: ' + err.message);
     }
+  }
+}
+
+function printReport(type) {
+  const assignmentObj = allAssignmentsMap[activeCode];
+  const title = assignmentObj ? assignmentObj.group_title || assignmentObj.title : 'Assignment';
+
+  document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
+
+  if (type === 'feedback') {
+    document.body.classList.add('print-feedback-only');
+    document.getElementById('portal-print-report-title').textContent = `Student Feedback & Correction Report: ${title}`;
+  } else {
+    document.body.classList.remove('print-feedback-only');
+    document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${title}`;
+  }
+  
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => { document.body.classList.remove('print-feedback-only'); }, 1000);
+  }, 250);
+}
+
+// Remove single student submission and permit resubmission
+async function deleteStudentSubmission(subId, studentName) {
+  if (!activeCode || !subId) return;
+
+  const confirmed = await showConfirmModal(
+    `Delete submission for "${studentName}"? This removes their evaluation and unlocks them to submit their paper again.`,
+    'Remove Student Submission'
+  );
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`/api/assignments/${activeCode}/submissions/${subId}`, { method: 'DELETE' });
+    const d = await res.json();
+    if (d.success) {
+      showToast(d.message);
+      await fetchLiveSubmissions();
+      await loadTeacherAssignments();
+    } else {
+      alert(d.error || 'Failed to remove submission.');
+    }
+  } catch (err) {
+    alert('Network error while deleting submission.');
   }
 }
 
