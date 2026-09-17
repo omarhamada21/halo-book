@@ -853,6 +853,35 @@ app.get('/api/public/assignment/:code', async (req, res) => {
   }
 });
 
+// Check if a specific device/student currently has an active submission in the database
+app.get('/api/public/assignment/:code/status', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { deviceId } = req.query;
+
+    const assignResult = await db.execute({
+      sql: 'SELECT id FROM assignments WHERE code = ?',
+      args: [code]
+    });
+
+    if (!assignResult.rows || assignResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Assignment not found.' });
+    }
+
+    const assignmentId = assignResult.rows[0].id;
+
+    const subCheck = await db.execute({
+      sql: 'SELECT id FROM submissions WHERE assignment_id = ? AND device_id = ?',
+      args: [assignmentId, deviceId || '']
+    });
+
+    const hasSubmitted = subCheck.rows.length > 0;
+    return res.json({ success: true, hasSubmitted });
+  } catch (err) {
+    return res.status(500).json({ error: 'Status check failed.' });
+  }
+});
+
 // Student Public Upload
 app.post(
   '/api/public/submit/:code',
