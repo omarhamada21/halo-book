@@ -703,45 +703,60 @@ app.post('/api/assignments/:code/update-deadline', authenticateToken, requireApp
   }
 });
 // DELETE a single student submission (clears from reports & unlocks student)
-app.delete('/api/assignments/:code/submissions/:submissionId', async (req, res) => {
+app.delete('/api/assignments/:code/submissions/:submissionId', authenticateToken, requireApprovedUser, async (req, res) => {
   const { code, submissionId } = req.params;
+  const numId = parseInt(submissionId, 10);
+  const cleanNumId = isNaN(numId) ? -1 : numId;
+  const targetName = decodeURIComponent(submissionId).trim().toLowerCase();
+
   try {
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+
+    // 1. Verify assignment belongs to this teacher
+    const assignResult = await db.execute({
+      sql: 'SELECT id FROM assignments WHERE code = ?' + (isElevated ? '' : ' AND teacher_id = ?'),
+      args: isElevated ? [code] : [code, req.user.id]
+    });
+
+    if (!assignResult.rows || assignResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Assignment not found or unauthorized.' });
+    }
+
+    const assignmentId = assignResult.rows[0].id;
+
+    // 2. Locate submission by numeric id or student name
     const subResult = await db.execute({
-      sql: `SELECT s.student_name, a.id as assignment_id 
-            FROM submissions s 
-            JOIN assignments a ON s.assignment_id = a.id 
-            WHERE s.id = ? AND a.code = ?`,
-      args: [submissionId, code]
+      sql: `SELECT id, student_name, device_id FROM submissions 
+            WHERE assignment_id = ? 
+              AND (id = ? OR LOWER(TRIM(student_name)) = ?)`,
+      args: [assignmentId, cleanNumId, targetName]
     });
 
     if (!subResult.rows || subResult.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Submission not found.' });
+      return res.status(404).json({ success: false, error: 'Submission not found in database.' });
     }
 
+    const targetSubId = subResult.rows[0].id;
     const studentName = subResult.rows[0].student_name;
-    const assignmentId = subResult.rows[0].assignment_id;
 
-    // Remove submission row
+    // 3. Delete from submissions table (this clears device_id so student can resubmit)
     await db.execute({
-      sql: `DELETE FROM submissions WHERE id = ?`,
-      args: [submissionId]
+      sql: 'DELETE FROM submissions WHERE id = ?',
+      args: [targetSubId]
     });
 
-    // Decrement submission count
-    await db.execute({
-      sql: `UPDATE assignments SET submission_count = MAX(0, submission_count - 1) WHERE id = ?`,
-      args: [assignmentId]
+    return res.json({ 
+      success: true, 
+      message: `Submission for "${studentName}" permanently deleted. Student can now resubmit.` 
     });
-
-    res.json({ success: true, message: `Submission for "${studentName}" deleted. Student can now resubmit.` });
   } catch (err) {
     console.error('Error removing student submission:', err);
-    res.status(500).json({ success: false, error: 'Failed to remove submission.' });
+    return res.status(500).json({ success: false, error: 'Failed to remove submission.' });
   }
 });
 
 // GET permanent audit logs for an assignment
-app.get('/api/assignments/:code/logs', async (req, res) => {
+app.get('/api/assignments/:code/logs', authenticateToken, requireApprovedUser, async (req, res) => {
   const { code } = req.params;
   try {
     const result = await db.execute({
