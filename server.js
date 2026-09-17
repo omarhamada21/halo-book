@@ -655,6 +655,96 @@ app.post(
   }
 );
 
+// Add a new task to an existing bundle package
+app.post('/api/assignments/bundle/:bundleCode/tasks', authenticateToken, requireApprovedUser, upload.any(), async (req, res) => {
+  try {
+    const { bundleCode } = req.params;
+    const { title, schemeText } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ success: false, error: 'Task title is required.' });
+    }
+
+    const check = await db.execute({
+      sql: 'SELECT teacher_id, group_title, deadline FROM assignments WHERE bundle_code = ? LIMIT 1',
+      args: [bundleCode]
+    });
+
+    if (!check.rows || check.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Bundle package not found.' });
+    }
+
+    const parent = check.rows[0];
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+    if (!isElevated && parent.teacher_id !== req.user.id) {
+      return res.status(403).json({ success: false, error: 'Unauthorized.' });
+    }
+
+    const newTaskCode = crypto.randomBytes(4).toString('hex');
+    const schemeFiles = (req.files || []).filter(f => f.fieldname === 'scheme');
+    let extractedSchemeText = schemeText || '';
+    const cachedSchemePayload = [];
+
+    for (const sFile of schemeFiles) {
+      if (isPdf(sFile)) {
+        const pdfTxt = await extractText(sFile);
+        if (pdfTxt && pdfTxt.trim()) extractedSchemeText += `\n[Rubric Content]:\n${pdfTxt}\n`;
+        else cachedSchemePayload.push({ type: 'document', mime_type: 'application/pdf', data: sFile.buffer.toString('base64') });
+      } else if (isImage(sFile)) {
+        cachedSchemePayload.push({ type: 'image', mime_type: sFile.mimetype || 'image/png', data: sFile.buffer.toString('base64') });
+      } else {
+        const txt = await extractText(sFile);
+        if (txt.trim()) extractedSchemeText += `\n[Rubric File: ${sFile.originalname}]\n${txt}\n`;
+      }
+    }
+
+    await db.execute({
+      sql: `INSERT INTO assignments (code, bundle_code, group_title, teacher_id, title, deadline, scheme_text, scheme_files_json) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [newTaskCode, bundleCode, parent.group_title, parent.teacher_id, title.trim(), parent.deadline, extractedSchemeText, JSON.stringify(cachedSchemePayload)]
+    });
+
+    res.json({ success: true, message: 'Task added successfully to package.', code: newTaskCode });
+  } catch (err) {
+    console.error('Add Task Error:', err);
+    res.status(500).json({ success: false, error: 'Failed to add task.' });
+  }
+});
+
+// Delete a single task from a bundle package
+app.delete('/api/assignments/tasks/:code', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const { code } = req.params;
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+
+    const check = await db.execute({
+      sql: 'SELECT id, teacher_id, bundle_code FROM assignments WHERE code = ?' + (isElevated ? '' : ' AND teacher_id = ?'),
+      args: isElevated ? [code] : [code, req.user.id]
+    });
+
+    const task = check.rows[0];
+    if (!task) return res.status(404).json({ success: false, error: 'Task not found or unauthorized.' });
+
+    if (task.bundle_code) {
+      const countCheck = await db.execute({
+        sql: 'SELECT COUNT(*) as cnt FROM assignments WHERE bundle_code = ?',
+        args: [task.bundle_code]
+      });
+      if (countCheck.rows[0].cnt <= 1) {
+        return res.status(400).json({ success: false, error: 'Cannot delete the only remaining task in a package. Delete the entire form instead.' });
+      }
+    }
+
+    await db.execute({ sql: 'DELETE FROM submissions WHERE assignment_id = ?', args: [task.id] });
+    await db.execute({ sql: 'DELETE FROM assignments WHERE id = ?', args: [task.id] });
+
+    res.json({ success: true, message: 'Task removed successfully.' });
+  } catch (err) {
+    console.error('Delete Task Error:', err);
+    res.status(500).json({ success: false, error: 'Failed to delete task.' });
+  }
+});
+
 // Public Bundle Resolution Endpoint
 app.get('/api/public/bundle/:bundleCode', async (req, res) => {
   try {
@@ -691,6 +781,7 @@ app.get('/api/public/bundle/:bundleCode', async (req, res) => {
     res.status(500).json({ error: 'Failed to retrieve assignment bundle.' });
   }
 });
+
 app.post(
   '/api/assignments/create',
   authenticateToken,
@@ -834,6 +925,7 @@ app.post('/api/assignments/:code/update-deadline', authenticateToken, requireApp
     res.status(500).json({ error: 'Failed to update deadline.' });
   }
 });
+
 // DELETE a single student submission (clears from reports & unlocks student)
 app.delete('/api/assignments/:code/submissions/:submissionId', authenticateToken, requireApprovedUser, async (req, res) => {
   const { code, submissionId } = req.params;
@@ -844,7 +936,6 @@ app.delete('/api/assignments/:code/submissions/:submissionId', authenticateToken
   try {
     const isElevated = ['root', 'admin'].includes(req.user.role);
 
-    // 1. Verify assignment belongs to this teacher
     const assignResult = await db.execute({
       sql: 'SELECT id FROM assignments WHERE code = ?' + (isElevated ? '' : ' AND teacher_id = ?'),
       args: isElevated ? [code] : [code, req.user.id]
@@ -856,7 +947,6 @@ app.delete('/api/assignments/:code/submissions/:submissionId', authenticateToken
 
     const assignmentId = assignResult.rows[0].id;
 
-    // 2. Locate submission by numeric id or student name
     const subResult = await db.execute({
       sql: `SELECT id, student_name, device_id FROM submissions 
             WHERE assignment_id = ? 
@@ -871,7 +961,6 @@ app.delete('/api/assignments/:code/submissions/:submissionId', authenticateToken
     const targetSubId = subResult.rows[0].id;
     const studentName = subResult.rows[0].student_name;
 
-    // 3. Delete from submissions table (this clears device_id so student can resubmit)
     await db.execute({
       sql: 'DELETE FROM submissions WHERE id = ?',
       args: [targetSubId]
@@ -905,13 +994,13 @@ app.get('/api/assignments/:code/logs', authenticateToken, requireApprovedUser, a
     res.status(500).json({ success: false, error: 'Failed to fetch submission logs.' });
   }
 });
+
 // Delete single assignment or bundle
 app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
     const isElevated = ['root', 'admin'].includes(req.user.role);
 
-    // 1. Locate the assignment by code or bundle code
     const assignResult = await db.execute({
       sql: 'SELECT id, bundle_code, title FROM assignments WHERE code = ?' + (isElevated ? '' : ' AND teacher_id = ?'),
       args: isElevated ? [code] : [code, req.user.id]
@@ -922,7 +1011,6 @@ app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, asy
       return res.status(404).json({ success: false, error: 'Assignment not found or unauthorized.' });
     }
 
-    // 2. Determine if this belongs to a bundle (delete all tasks in the bundle) or a single assignment
     const targetBundleCode = assignment.bundle_code;
     let assignmentIdsToDelete = [assignment.id];
 
@@ -934,7 +1022,6 @@ app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, asy
       assignmentIdsToDelete = bundleMembers.rows.map(r => r.id);
     }
 
-    // 3. Delete associated submissions and assignments
     for (const id of assignmentIdsToDelete) {
       await db.execute({ sql: 'DELETE FROM submissions WHERE assignment_id = ?', args: [id] });
       await db.execute({ sql: 'DELETE FROM assignments WHERE id = ?', args: [id] });
@@ -986,7 +1073,6 @@ app.get('/api/public/assignment/:code', async (req, res) => {
   }
 });
 
-// Check if a specific device/student currently has an active submission in the database
 app.get('/api/public/assignment/:code/status', async (req, res) => {
   try {
     const { code } = req.params;
@@ -1185,21 +1271,22 @@ Respond ONLY with valid JSON matching the schema.`;
           parsedFeedback.web_similarity_score || 0
         ]
       });
-// Log permanent timestamp record to submission_logs
-    try {
-      await db.execute({
-        sql: `INSERT INTO submission_logs (student_name, assignment_code, assignment_title, teacher_name, submitted_at)
-              VALUES (?, ?, ?, ?, datetime('now'))`,
-        args: [
-          finalName,
-          assignment.code,
-          assignment.title,
-          teacherName || 'Teacher'
-        ]
-      });
-    } catch (logErr) {
-      console.error('Audit log notice:', logErr.message);
-    }
+
+      try {
+        await db.execute({
+          sql: `INSERT INTO submission_logs (student_name, assignment_code, assignment_title, teacher_name, submitted_at)
+                VALUES (?, ?, ?, ?, datetime('now'))`,
+          args: [
+            finalName,
+            assignment.code,
+            assignment.title,
+            teacherName || 'Teacher'
+          ]
+        });
+      } catch (logErr) {
+        console.error('Audit log notice:', logErr.message);
+      }
+
       return res.json({
         success: true,
         message: 'Your work has been received and evaluated successfully!',
@@ -1212,7 +1299,7 @@ Respond ONLY with valid JSON matching the schema.`;
   }
 );
 
-// 9. Manual Direct Batch Marking
+// Manual Direct Batch Marking
 app.post(
   '/api/mark-batch',
   authenticateToken,

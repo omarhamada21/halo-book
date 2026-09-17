@@ -320,6 +320,7 @@
           <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
             <span style="font-size: 12.5px; color: var(--ink-soft);" id="live-portal-deadline-sub"></span>
             <button type="button" class="ghost" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;" onclick="openDeadlineEditModal()">✏️ Edit Deadline</button>
+            <button type="button" class="ghost" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;" onclick="openBundleManagerModal()">⚙️ Manage Package Tasks</button>
             <button type="button" class="ghost ghost-danger" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;" onclick="deleteActiveAssignment()">🗑️ Delete Form</button>
           </div>
           <div style="font-size: 12px; color: #059669; font-weight: 600; margin-top: 4px;">🟢 Live syncing — auto-updating as students submit</div>
@@ -458,6 +459,21 @@
 
     <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
       <button onclick="toggleSubmissionLogsModal()" style="background:#E3E9F6; color:#16233F; border:1px solid #C2CEE7; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="bundle-manager-modal" style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.55); backdrop-filter:blur(4px); z-index:10004; align-items:center; justify-content:center; padding:16px;">
+  <div style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:600px; width:100%; max-height:80vh; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18); display:flex; flex-direction:column;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <h3 style="margin:0; font-family:'Source Serif 4',serif; font-size:20px; color:#16233F;">Manage Package Tasks</h3>
+      <button onclick="closeBundleManagerModal()" style="border:none; background:none; font-size:20px; cursor:pointer;">&times;</button>
+    </div>
+    <div id="bundle-tasks-list-container" style="overflow-y:auto; flex:1; margin:10px 0; display:flex; flex-direction:column; gap:10px;"></div>
+    <div style="border-top:1px solid var(--border); padding-top:14px; margin-top:10px;">
+      <h4 style="margin:0 0 8px; font-size:14px;">Add New Task to Package</h4>
+      <input type="text" id="new-subtask-title" placeholder="Task Name (e.g., Reading Comprehension)" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:6px; margin-bottom:8px; font-size:13px;" />
+      <button type="button" class="primary" style="margin-left:0; padding:8px 14px; font-size:13px;" onclick="addNewSubTaskToBundle()">+ Add Task</button>
     </div>
   </div>
 </div>
@@ -1126,7 +1142,6 @@ function loadSelectedAssignment(selectedCode) {
   document.getElementById('portal-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
   document.getElementById('portal-results-card').style.display = 'block';
 
-  // If part of a bundle, fetch sibling tasks to render tabs
   if (assignmentObj && assignmentObj.bundle_code) {
     fetch(`/api/public/bundle/${assignmentObj.bundle_code}`)
       .then(res => res.json())
@@ -1414,6 +1429,92 @@ async function toggleSubmissionLogsModal() {
     }
   } catch (err) {
     tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#DC2626; padding:14px;">Failed to load logs.</td></tr>';
+  }
+}
+
+// Package Task Management Modal Logic
+function openBundleManagerModal() {
+  const assignmentObj = allAssignmentsMap[activeCode];
+  if (!assignmentObj || !assignmentObj.bundle_code) {
+    alert('This assignment is not part of a multi-task package.');
+    return;
+  }
+  activeBundleCode = assignmentObj.bundle_code;
+  document.getElementById('bundle-manager-modal').style.display = 'flex';
+  loadBundleManagerTasks();
+}
+
+function closeBundleManagerModal() {
+  document.getElementById('bundle-manager-modal').style.display = 'none';
+}
+
+let activeBundleCode = null;
+
+async function loadBundleManagerTasks() {
+  const container = document.getElementById('bundle-tasks-list-container');
+  container.innerHTML = 'Loading tasks...';
+  try {
+    const res = await fetch(`/api/public/bundle/${activeBundleCode}`);
+    const d = await res.json();
+    if (d.success && d.tasks) {
+      container.innerHTML = d.tasks.map(t => `
+        <div style="display:flex; justify-content:space-between; align-items:center; background:#F8FAFC; border:1px solid var(--border); padding:10px 14px; border-radius:6px;">
+          <div><b>${escapeHtml(t.title)}</b></div>
+          <button type="button" class="ghost ghost-danger" style="padding:4px 8px; font-size:11px;" onclick="deleteSubTask('${t.code}')">🗑️ Delete</button>
+        </div>
+      `).join('');
+    }
+  } catch (err) {
+    container.innerHTML = 'Failed to load package tasks.';
+  }
+}
+
+async function deleteSubTask(taskCode) {
+  const confirmed = await showConfirmModal('Are you sure you want to delete this task and its submissions?', 'Delete Task');
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`/api/assignments/tasks/${taskCode}`, { method: 'DELETE' });
+    const d = await res.json();
+    if (d.success) {
+      showToast(d.message);
+      loadBundleManagerTasks();
+      loadTeacherAssignments();
+    } else {
+      alert(d.error || 'Failed to delete task.');
+    }
+  } catch (err) {
+    alert('Connection error deleting task.');
+  }
+}
+
+async function addNewSubTaskToBundle() {
+  const input = document.getElementById('new-subtask-title');
+  const title = input.value.trim();
+  if (!title) {
+    alert('Please enter a task name.');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('title', title);
+
+  try {
+    const res = await fetch(`/api/assignments/bundle/${activeBundleCode}/tasks`, {
+      method: 'POST',
+      body: formData
+    });
+    const d = await res.json();
+    if (d.success) {
+      input.value = '';
+      showToast(d.message);
+      loadBundleManagerTasks();
+      loadTeacherAssignments();
+    } else {
+      alert(d.error || 'Failed to add task.');
+    }
+  } catch (err) {
+    alert('Connection error adding task.');
   }
 }
 
