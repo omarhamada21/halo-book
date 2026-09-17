@@ -1315,7 +1315,7 @@ async function shareReportWhatsApp(includeMarks = true) {
   // 1. Expand all accordions to access full data
   document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
 
-  // 2. Set viewport staging wrapper
+  // 2. Visible staging container scaled precisely to A4 printable width (700px)
   const renderStaging = document.createElement('div');
   renderStaging.id = 'pdf-direct-staging';
   renderStaging.style.position = 'fixed';
@@ -1326,15 +1326,17 @@ async function shareReportWhatsApp(includeMarks = true) {
   renderStaging.style.background = '#ffffff';
   renderStaging.style.zIndex = '999999';
   renderStaging.style.overflowY = 'auto';
-  renderStaging.style.padding = '20px 24px';
+  renderStaging.style.padding = '20px 25px';
   renderStaging.style.boxSizing = 'border-box';
 
   const stagingInner = document.createElement('div');
-  stagingInner.style.width = '740px';
+  stagingInner.style.width = '700px';
   stagingInner.style.margin = '0 auto';
   stagingInner.style.background = '#ffffff';
   stagingInner.style.color = '#16233F';
-  stagingInner.style.fontFamily = 'Inter, Arial, sans-serif';
+  stagingInner.style.fontFamily = 'Arial, Helvetica, sans-serif';
+  stagingInner.style.letterSpacing = 'normal';
+  stagingInner.style.wordSpacing = 'normal';
 
   // 3. Clone DOM content
   const summaryClone = document.getElementById('portal-print-summary').cloneNode(true);
@@ -1355,13 +1357,24 @@ async function shareReportWhatsApp(includeMarks = true) {
       el.removeAttribute('contenteditable');
       el.style.border = 'none';
       el.style.background = 'transparent';
+      el.style.letterSpacing = 'normal';
+      el.style.wordSpacing = 'normal';
+      el.style.lineHeight = '1.5';
+    });
+    root.querySelectorAll('.line-item-wrap').forEach(el => {
+      el.style.border = '1px solid #E2E8F0';
+      el.style.borderRadius = '4px';
+      el.style.marginBottom = '4px';
+      el.style.background = '#F8FAFC';
+      el.style.padding = '3px 8px';
     });
   });
 
-  // Table styling
+  // Table styling with fixed table-layout to prevent right-margin truncation
   const table = summaryClone.querySelector('.summary-table');
   if (table) {
     table.style.width = '100%';
+    table.style.tableLayout = 'fixed';
     table.style.borderCollapse = 'collapse';
     table.style.marginTop = '10px';
     table.querySelectorAll('th, td').forEach(cell => {
@@ -1369,6 +1382,8 @@ async function shareReportWhatsApp(includeMarks = true) {
       cell.style.padding = '8px 10px';
       cell.style.fontSize = '12px';
       cell.style.verticalAlign = 'top';
+      cell.style.wordWrap = 'break-word';
+      cell.style.overflowWrap = 'break-word';
     });
   }
 
@@ -1381,36 +1396,78 @@ async function shareReportWhatsApp(includeMarks = true) {
     const thMistakes = summaryClone.querySelector('.summary-col-mistakes');
     if (thName) thName.style.width = '28%';
     if (thMistakes) thMistakes.style.width = '72%';
+  } else {
+    const thName = summaryClone.querySelector('.summary-col-name');
+    const thScores = summaryClone.querySelector('.col-score-breakdown');
+    const thMistakes = summaryClone.querySelector('.summary-col-mistakes');
+    if (thName) thName.style.width = '24%';
+    if (thScores) thScores.style.width = '30%';
+    if (thMistakes) thMistakes.style.width = '46%';
   }
 
-  // Format student cards and prevent blank page before first student
+  // Format student cards into clean standalone pages
   const cards = listClone.querySelectorAll('.result-card');
-  cards.forEach((card, idx) => {
+  cards.forEach((card) => {
     card.style.border = 'none';
     card.style.background = '#ffffff';
     card.style.boxShadow = 'none';
     card.style.pageBreakBefore = 'always';
     card.classList.add('html2pdf__page-break');
-    card.style.marginTop = '20px';
+    card.style.marginTop = '24px';
     card.style.paddingTop = '10px';
 
     const head = card.querySelector('.result-head');
     if (head) {
       head.style.cursor = 'default';
       head.style.padding = '0 0 12px 0';
-      head.style.borderBottom = '1px solid #CBD6ED';
+      head.style.borderBottom = '1.5px solid #CBD6ED';
       head.style.display = 'flex';
-      head.style.justifyContent = 'space-between';
       head.style.alignItems = 'center';
+      head.style.justifyContent = 'space-between';
+      head.style.gap = '12px';
 
-      // Reorganize header layout to prevent text overlapping
-      const brandMark = document.createElement('div');
+      // Left cluster: badge + student name
+      const badge = head.querySelector('.badge');
+      const name = head.querySelector('.result-name');
+      const score = head.querySelector('.result-score');
+
+      const leftWrap = document.createElement('div');
+      leftWrap.style.display = 'flex';
+      leftWrap.style.alignItems = 'center';
+      leftWrap.style.gap = '10px';
+      leftWrap.style.flex = '1';
+
+      if (badge) leftWrap.appendChild(badge);
+      if (name) {
+        name.style.fontSize = '15px';
+        name.style.fontWeight = '600';
+        leftWrap.appendChild(name);
+      }
+
+      // Right cluster: score + brand watermark cleanly separated
+      const rightWrap = document.createElement('div');
+      rightWrap.style.display = 'flex';
+      rightWrap.style.alignItems = 'center';
+      rightWrap.style.gap = '16px';
+
+      if (score) {
+        score.style.fontWeight = '700';
+        score.style.fontSize = '13.5px';
+        score.style.fontFamily = 'monospace';
+        rightWrap.appendChild(score);
+      }
+
+      const brandMark = document.createElement('span');
       brandMark.style.fontFamily = "'Source Serif 4', Georgia, serif";
-      brandMark.style.fontSize = '13.5px';
+      brandMark.style.fontSize = '12.5px';
       brandMark.style.fontWeight = '600';
-      brandMark.style.color = '#16233F';
-      brandMark.textContent = 'MIMIR MARKING — Smart Marking System';
-      head.appendChild(brandMark);
+      brandMark.style.color = '#1D3A66';
+      brandMark.textContent = 'MIMIR MARKING';
+      rightWrap.appendChild(brandMark);
+
+      head.innerHTML = '';
+      head.appendChild(leftWrap);
+      head.appendChild(rightWrap);
     }
 
     const body = card.querySelector('.result-body');
@@ -1418,11 +1475,10 @@ async function shareReportWhatsApp(includeMarks = true) {
       body.style.maxHeight = 'none';
       body.style.display = 'block';
       body.style.borderTop = 'none';
-      body.style.padding = '12px 0 0 0';
+      body.style.padding = '14px 0 0 0';
     }
   });
 
-  // Keep summary cleanly styled without forcing an extra double break
   summaryClone.style.marginBottom = '20px';
 
   stagingInner.appendChild(summaryClone);
@@ -1436,7 +1492,7 @@ async function shareReportWhatsApp(includeMarks = true) {
     margin:       [8, 8, 8, 8],
     filename:     filename,
     image:        { type: 'jpeg', quality: 0.98 },
-    html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
+    html2canvas:  { scale: 2, useCORS: true, scrollY: 0, letterRendering: false },
     jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak:    { mode: ['css', 'legacy'] }
   };
