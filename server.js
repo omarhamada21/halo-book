@@ -703,7 +703,7 @@ app.post('/api/assignments/:code/update-deadline', authenticateToken, requireApp
   }
 });
 // DELETE a single student submission (clears from reports & unlocks student)
-app.delete('/api/assignments/:code/submissions/:submissionId', requireAuth, async (req, res) => {
+app.delete('/api/assignments/:code/submissions/:submissionId', async (req, res) => {
   const { code, submissionId } = req.params;
   try {
     const subResult = await db.execute({
@@ -741,7 +741,7 @@ app.delete('/api/assignments/:code/submissions/:submissionId', requireAuth, asyn
 });
 
 // GET permanent audit logs for an assignment
-app.get('/api/assignments/:code/logs', requireAuth, async (req, res) => {
+app.get('/api/assignments/:code/logs', async (req, res) => {
   const { code } = req.params;
   try {
     const result = await db.execute({
