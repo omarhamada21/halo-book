@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MIMIR MARKING — Smart Marking System</title>
-<link rel="icon" type="image/png" href="/mimir.jpg">
-<link rel="shortcut icon" type="image/jpg" href="/mimir.jpg">
+<link rel="icon" type="image/jpeg" href="/mimir.jpg">
+<link rel="shortcut icon" type="image/jpeg" href="/mimir.jpg">
 <link rel="apple-touch-icon" href="/mimir.jpg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -29,20 +29,20 @@
     padding-bottom: 16px;
     border-bottom: 1px solid var(--border);
   }
-.brand-group { display: flex; align-items: center; gap: 12px; }
-.mimir-logo-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  object-fit: cover;
-  object-position: top center;
-  border: 2px solid var(--pen);
-  display: block;
-  flex-shrink: 0;
-}
-.brand-text-wrap { display: flex; flex-direction: column; }
-.brand-title { font-family: 'Source Serif 4', serif; font-size: 18px; font-weight: 700; color: var(--ink); line-height: 1.1; }
-.brand-sub { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--pen); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-top: 2px; }
+  .brand-group { display: flex; align-items: center; gap: 12px; }
+  .mimir-logo-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: top center;
+    border: 2px solid var(--pen);
+    display: block;
+    flex-shrink: 0;
+  }
+  .brand-text-wrap { display: flex; flex-direction: column; }
+  .brand-title { font-family: 'Source Serif 4', serif; font-size: 18px; font-weight: 700; color: var(--ink); line-height: 1.1; }
+  .brand-sub { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--pen); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-top: 2px; }
   .user-badge { display: flex; align-items: center; gap: 12px; font-size: 13.5px; font-weight: 500; }
   .logout-btn, .admin-btn {
     background: var(--card); border: 1px solid var(--border); border-radius: 6px;
@@ -117,7 +117,7 @@
   button.ghost-feedback{ border-color:#86EFAC; color:#065F46; background:#F0FDF4; }
   button.ghost-feedback:hover{ border-color:#059669; color:#064E3B; background:#DCFCE7; }
   button.ghost-whatsapp { border-color: #25D366; color: #128C7E; background: #F0FDF4; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
-button.ghost-whatsapp:hover { border-color: #128C7E; color: #075E54; background: #DCFCE7; }
+  button.ghost-whatsapp:hover { border-color: #128C7E; color: #075E54; background: #DCFCE7; }
   button.ghost-danger{ border-color:#FCA5A5; color:#DC2626; background:#FEF2F2; }
   button.ghost-danger:hover{ border-color:#DC2626; color:#991B1B; background:#FEE2E2; }
 
@@ -204,7 +204,6 @@ button.ghost-whatsapp:hover { border-color: #128C7E; color: #075E54; background:
   @media print {
     body { background: #fff !important; color: #000 !important; }
     
-    /* Hide everything on the page */
     .top-nav, .pending-banner, .admin-modal, header, .mode-switch,
     .no-print, button, .toolbar, .dropzone, textarea, input, select,
     .progress-wrap, .empty, .student-list, .student-count, .edit-hint,
@@ -212,7 +211,10 @@ button.ghost-whatsapp:hover { border-color: #128C7E; color: #075E54; background:
     .line-delete-btn, .badge-grid, #admin-reset-modal, #deadline-edit-modal, .link-box,
     .step-head, .step-desc, .form-group-creation, footer,
     .integrity-pills, .fb-integrity-box, .results, #portal-results-list, #results,
-    .step:not(#portal-results-card) {
+    .step:not(#portal-results-card),
+    #past-assignments-select,
+    select,
+    label {
       display: none !important;
     }
 
@@ -239,12 +241,12 @@ button.ghost-whatsapp:hover { border-color: #128C7E; color: #075E54; background:
 <div class="wrap">
   <div class="top-nav">
     <div class="brand-group">
-  <img src="/mimir.jpg" alt="Mimir" class="mimir-logo-avatar">
-  <div class="brand-text-wrap">
-    <span class="brand-title">Mimir Marking</span>
-    <span class="brand-sub">Smart Marking System</span>
-  </div>
-</div>
+      <img src="/mimir.jpg" alt="Mimir" class="mimir-logo-avatar">
+      <div class="brand-text-wrap">
+        <span class="brand-title">Mimir Marking</span>
+        <span class="brand-sub">Smart Marking System</span>
+      </div>
+    </div>
     <div class="user-badge">
       <span id="user-display">Loading...</span>
       <button class="admin-btn" id="admin-panel-btn" style="display:none;" onclick="openAdminModal()">⚙️ Authorize Users</button>
@@ -323,11 +325,11 @@ button.ghost-whatsapp:hover { border-color: #128C7E; color: #075E54; background:
           </div>
           <div style="font-size: 12px; color: #059669; font-weight: 600; margin-top: 4px;">🟢 Live syncing — auto-updating as students submit</div>
         </div>
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button class="ghost" onclick="printReport('full')">📄 Full Report (With Marks)</button>
           <button class="ghost ghost-feedback" onclick="printReport('feedback')">📝 Feedback Report (No Marks)</button>
-          <button class="ghost ghost-whatsapp" onclick="shareReportWhatsApp(true)">📲 Share Marked Report (WhatsApp)</button>
-<button class="ghost ghost-whatsapp" onclick="shareReportWhatsApp(false)">📝 Share Feedback Report (WhatsApp)</button>
+          <button class="ghost ghost-whatsapp" onclick="shareReportWhatsApp(true)">📲 WhatsApp (With Marks)</button>
+          <button class="ghost ghost-whatsapp" onclick="shareReportWhatsApp(false)">📝 WhatsApp (No Marks)</button>
         </div>
       </div>
 
@@ -341,7 +343,7 @@ button.ghost-whatsapp:hover { border-color: #128C7E; color: #075E54; background:
 
       <div class="print-summary" id="portal-print-summary">
         <div class="print-title" id="portal-print-report-title">Class Evaluation Summary</div>
-        <div class="print-sub" id="portal-print-report-sub">Generated by Mimir Marking — EduPlanet Educational Services</div>
+        <div class="print-sub" id="portal-print-report-sub">Teacher: Teacher | Total Assessed: 0 Students</div>
         <table class="summary-table">
           <thead>
             <tr>
@@ -402,7 +404,7 @@ button.ghost-whatsapp:hover { border-color: #128C7E; color: #075E54; background:
 
         <div class="print-summary" id="print-summary">
           <div class="print-title" id="print-report-title">Class Evaluation Summary</div>
-          <div class="print-sub">Generated by Mimir Marking — EduPlanet Educational Services</div>
+          <div class="print-sub" id="manual-print-report-sub">Teacher: Teacher | Total Assessed: 0 Students</div>
           <table class="summary-table">
             <thead>
               <tr>
@@ -811,7 +813,6 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
     const aiPill = getIntegrityPill('AI Match', r.ai_score);
     const webPill = r.web_score && r.web_score > 25 ? `<span class="pill-badge pill-amber">Web: ${r.web_score}%</span>` : '';
 
-    // Summary Table Row (Pills masked in print)
     const tr = document.createElement('tr');
     tr.id = `${modePrefix}-summary-tr-${idx}`;
     tr.innerHTML = `
@@ -833,7 +834,6 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
     `;
     summaryTbody.appendChild(tr);
 
-    // Expandable Detailed Card
     const card = document.createElement('div');
     card.className = 'result-card';
     card.innerHTML = `
@@ -985,13 +985,13 @@ function loadSelectedAssignment(selectedCode) {
   const deadlineText = assignmentObj ? formatDeadlineString(assignmentObj.deadline) : 'No Deadline';
 
   const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-const studentCount = portalSubmissions ? portalSubmissions.length : 0;
-const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
+  const studentCount = portalSubmissions ? portalSubmissions.length : 0;
+  const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
 
-document.getElementById('live-portal-title').textContent = `Live Submissions: ${title}`;
-document.getElementById('live-portal-deadline-sub').textContent = deadlineText;
-document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${title}`;
-document.getElementById('portal-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
+  document.getElementById('live-portal-title').textContent = `Live Submissions: ${title}`;
+  document.getElementById('live-portal-deadline-sub').textContent = deadlineText;
+  document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${title}`;
+  document.getElementById('portal-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
   document.getElementById('portal-results-card').style.display = 'block';
 
   const fullUrl = `${window.location.origin}/submit.html?code=${selectedCode}`;
@@ -1040,13 +1040,13 @@ async function createAssignmentLink() {
     };
 
     const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-  const studentCount = portalSubmissions ? portalSubmissions.length : 0;
-  const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
+    const studentCount = portalSubmissions ? portalSubmissions.length : 0;
+    const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
 
-  document.getElementById('live-portal-title').textContent = `Live Submissions: ${title}`;
-  document.getElementById('live-portal-deadline-sub').textContent = deadlineText;
-  document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${title}`;
-  document.getElementById('portal-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
+    document.getElementById('live-portal-title').textContent = `Live Submissions: ${title}`;
+    document.getElementById('live-portal-deadline-sub').textContent = deadlineText;
+    document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${title}`;
+    document.getElementById('portal-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
 
     document.getElementById('generated-link-url').textContent = d.link;
     document.getElementById('generated-link-box').style.display = 'flex';
@@ -1081,7 +1081,6 @@ async function fetchLiveSubmissions() {
       portalSubmissions = d.submissions || [];
       renderCardsAndSummaryTable(portalSubmissions, 'portal');
 
-      // Update student count in header dynamically as submissions come in
       const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
       const studentCount = portalSubmissions.length;
       const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
@@ -1092,6 +1091,7 @@ async function fetchLiveSubmissions() {
     console.warn('Live poll sync notice');
   }
 }
+
 async function shareReportWhatsApp(includeMarks = true) {
   if (!portalSubmissions || portalSubmissions.length === 0) {
     alert('No student submissions found to export.');
@@ -1123,12 +1123,9 @@ async function shareReportWhatsApp(includeMarks = true) {
   };
 
   try {
-    // Generate PDF as a binary blob
     const pdfBlob = await html2pdf().set(opt).from(reportElement).output('blob');
     const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
 
-    // Method A: Native Share Sheet (Mobile / Safari / Edge / Chrome)
-    // Directly hands the PDF file to WhatsApp as a document attachment
     if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
       await navigator.share({
         files: [pdfFile],
@@ -1136,8 +1133,6 @@ async function shareReportWhatsApp(includeMarks = true) {
         text: `Evaluation Report for ${title}`
       });
     } else {
-      // Method B: Desktop Fallback (Where browser blocks file auto-attaching)
-      // Automatically download the file, then launch WhatsApp Web with notification
       const downloadLink = document.createElement('a');
       downloadLink.href = URL.createObjectURL(pdfBlob);
       downloadLink.download = filename;
@@ -1158,93 +1153,6 @@ async function shareReportWhatsApp(includeMarks = true) {
   }
 }
 
-  const assignmentObj = allAssignmentsMap[activeCode];
-  const title = assignmentObj ? assignmentObj.title : 'Assignment';
-  const cleanTitle = title.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const filename = `${cleanTitle}_${includeMarks ? 'Marked_Report' : 'Feedback_Report'}.pdf`;
-
-  // Toggle feedback view column state if needed
-  if (!includeMarks) {
-    document.body.classList.add('print-feedback-only');
-    document.getElementById('portal-print-report-title').textContent = `Student Feedback & Correction Report: ${title}`;
-  } else {
-    document.body.classList.remove('print-feedback-only');
-    document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${title}`;
-  }
-
-  const reportElement = document.getElementById('portal-print-summary');
-
-  showToast('Generating PDF report...');
-
-  const opt = {
-    margin:       10,
-    filename:     filename,
-    image:        { type: 'jpeg', quality: 0.98 },
-    html2canvas:  { scale: 2, useCORS: true },
-    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-  };
-
-  try {
-    // Generate and download the clean table as a PDF
-    await html2pdf().set(opt).from(reportElement).save();
-
-    // Prepare WhatsApp message prompt
-    const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-    let text = `📄 *${title} — ${includeMarks ? 'Marked Evaluation Report' : 'Student Feedback Report'}*\n`;
-    text += `👨‍🏫 Teacher: ${teacherDisplay}\n`;
-    text += `👥 Total Assessed: ${portalSubmissions.length} Students\n`;
-    text += `📎 Attached report file: ${filename}`;
-
-    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-    window.open(waUrl, '_blank');
-  } catch (err) {
-    console.error('PDF Generation Error:', err);
-    alert('Failed to generate PDF. Use the print button to save as PDF.');
-  } finally {
-    document.body.classList.remove('print-feedback-only');
-  }
-
-function shareReportWhatsApp(includeMarks = true) {
-  if (!portalSubmissions || portalSubmissions.length === 0) {
-    alert('No student submissions found to share.');
-    return;
-  }
-
-  const assignmentObj = allAssignmentsMap[activeCode];
-  const title = assignmentObj ? assignmentObj.title : 'Assignment';
-  const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-  const studentCount = portalSubmissions.length;
-
-  let text = `📋 *Class Evaluation Summary: ${title}*\n`;
-  text += `👨‍🏫 *Teacher:* ${teacherDisplay}\n`;
-  text += `👥 *Total Students Assessed:* ${studentCount}\n`;
-  text += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-
-  portalSubmissions.forEach((sub, idx) => {
-    const name = sub.name || sub.student_name || `Student ${idx + 1}`;
-    text += `👤 *${name}*\n`;
-
-    if (includeMarks) {
-      text += `🎯 *Total Score:* ${sub.total_score || '—'}\n`;
-      if (sub.category_breakdown) {
-        text += `📊 *Category Breakdown:*\n${sub.category_breakdown}\n`;
-      }
-    }
-
-    if (sub.mistakes && sub.mistakes.trim()) {
-      text += `🔍 *Mistakes in Your Work:*\n${sub.mistakes}\n`;
-    }
-
-    if (sub.weaknesses && sub.weaknesses.trim()) {
-      text += `💡 *What to Practice Next:*\n${sub.weaknesses}\n`;
-    }
-
-    text += `──────────────────────\n\n`;
-  });
-
-  const encodedText = encodeURIComponent(text.trim());
-  window.open(`https://api.whatsapp.com/send?text=${encodedText}`, '_blank');
-}
 function printReport(type) {
   const assignmentObj = allAssignmentsMap[activeCode];
   const title = assignmentObj ? assignmentObj.title : 'Assignment';
@@ -1376,7 +1284,11 @@ async function saveAssignmentDeadline() {
       }
       const formatted = formatDeadlineString(d.deadline);
       document.getElementById('live-portal-deadline-sub').textContent = formatted;
-      document.getElementById('portal-print-report-sub').textContent = `${formatted} | Generated by Mimir Marking`;
+      
+      const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
+      const studentCount = portalSubmissions ? portalSubmissions.length : 0;
+      const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
+      document.getElementById('portal-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
       
       closeDeadlineEditModal();
       await loadTeacherAssignments();
