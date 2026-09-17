@@ -200,6 +200,7 @@
   footer { margin-top: 40px; text-align: center; font-size: 12px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; border-top: 1px solid var(--border); padding-top: 20px; }
 
   /* Web Print Styles */
+  /* Web Print Styles */
   @media print {
     body { background: #fff !important; color: #000 !important; }
     
@@ -210,7 +211,6 @@
     .line-delete-btn, .badge-grid, #admin-reset-modal, #deadline-edit-modal, .link-box,
     .step-head, .step-desc, .form-group-creation, footer,
     .integrity-pills, .fb-integrity-box,
-    .step:not(#portal-results-card),
     #past-assignments-select,
     select,
     label {
@@ -218,7 +218,10 @@
     }
 
     .wrap { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
-    #portal-results-card { border: none !important; padding: 0 !important; background: transparent !important; margin: 0 !important; display: block !important; }
+
+    /* Allow both portal and manual results cards to display when printing */
+    .step { border: none !important; padding: 0 !important; background: transparent !important; margin: 0 !important; }
+    .step.form-group-creation { display: none !important; }
     
     .print-summary { display: block !important; width: 100% !important; page-break-after: always; }
     .summary-table { width: 100% !important; border-collapse: collapse !important; }
@@ -242,6 +245,10 @@
     }
     body.print-feedback-only .summary-col-name { width: 28% !important; }
     body.print-feedback-only .summary-col-mistakes { width: 72% !important; }
+
+    /* Hide the opposite mode when printing */
+    body.printing-manual #portal-section { display: none !important; }
+    body.printing-portal #manual-section { display: none !important; }
   }
 </style>
 </head>
@@ -1558,6 +1565,8 @@ function printReport(type) {
   const title = assignmentObj ? assignmentObj.group_title || assignmentObj.title : 'Assignment';
 
   document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
+  document.body.classList.add('printing-portal');
+  document.body.classList.remove('printing-manual');
 
   if (type === 'feedback') {
     document.body.classList.add('print-feedback-only');
@@ -1569,7 +1578,10 @@ function printReport(type) {
   
   setTimeout(() => {
     window.print();
-    setTimeout(() => { document.body.classList.remove('print-feedback-only'); }, 1000);
+    setTimeout(() => { 
+      document.body.classList.remove('print-feedback-only');
+      document.body.classList.remove('printing-portal');
+    }, 1000);
   }, 250);
 }
 
@@ -2156,18 +2168,48 @@ markBtn.addEventListener('click', async () => {
 });
 
 printBtn.addEventListener('click', () => {
+  if (!manualResults || manualResults.length === 0) {
+    alert('No manual batch results to print.');
+    return;
+  }
   document.querySelectorAll('#results .result-body').forEach(b => b.classList.add('open'));
   document.body.classList.remove('print-feedback-only');
+  document.body.classList.add('printing-manual');
+  document.body.classList.remove('printing-portal');
   document.getElementById('print-report-title').textContent = 'Class Evaluation Summary';
-  window.print();
+  
+  const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
+  document.getElementById('manual-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${manualResults.length} Student${manualResults.length === 1 ? '' : 's'}`;
+
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => {
+      document.body.classList.remove('printing-manual');
+    }, 500);
+  }, 200);
 });
 
 printFeedbackBtn.addEventListener('click', () => {
+  if (!manualResults || manualResults.length === 0) {
+    alert('No manual batch results to print.');
+    return;
+  }
   document.querySelectorAll('#results .result-body').forEach(b => b.classList.add('open'));
   document.body.classList.add('print-feedback-only');
+  document.body.classList.add('printing-manual');
+  document.body.classList.remove('printing-portal');
   document.getElementById('print-report-title').textContent = 'Student Feedback & Correction Report';
-  window.print();
-  setTimeout(() => { document.body.classList.remove('print-feedback-only'); }, 1000);
+
+  const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
+  document.getElementById('manual-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${manualResults.length} Student${manualResults.length === 1 ? '' : 's'}`;
+
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => {
+      document.body.classList.remove('print-feedback-only');
+      document.body.classList.remove('printing-manual');
+    }, 500);
+  }, 200);
 });
 
 // Admin Modals
