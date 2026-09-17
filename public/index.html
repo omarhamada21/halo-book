@@ -273,10 +273,7 @@
       <div class="step-head"><div class="step-num">1</div><h2 class="step-title">Create Assignment & Generate Student Link</h2></div>
       <p class="step-desc">Set assignment details, attach the rubric/scheme, and share the generated link with your students.</p>
 
-      <div style="margin-left: 38px; margin-top: 16px;">
-        <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Assignment Name / Test Title</label>
-        <input type="text" id="portal-title" placeholder="e.g. Year 7 Narrative Essay - Term 1" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 14px;" />
-        
+    <div style="margin-left: 38px; margin-top: 16px;">
         <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Submission Deadline (12-Hour AM/PM — Cairo Time)</label>
         <div class="picker-12h-wrap">
           <input type="date" id="portal-date" style="flex: 2; min-width: 140px;" />
@@ -295,14 +292,13 @@
             <option value="PM" selected>PM</option>
           </select>
         </div>
-      </div>
 
-      <div class="dropzone" id="portal-scheme-dz" onclick="document.getElementById('portal-scheme-file').click()">
-        <div><b>Attach Rubric / Answer Key</b> (PDF, DOCX, Images)</div>
+        <div id="tasks-repeater-container" style="margin-top: 16px;"></div>
+
+        <button type="button" class="ghost" onclick="addNewTaskField()" style="margin-top: 8px; width: 100%; border-style: dashed; padding: 10px; font-weight: 600;">
+          ➕ Add Another Homework / Task
+        </button>
       </div>
-      <input type="file" id="portal-scheme-file" multiple style="display:none;" onchange="handlePortalSchemeFiles(event)" />
-      <div class="badge-grid" id="portal-scheme-badges"></div>
-      <textarea id="portal-scheme-text" placeholder="Extra teacher instructions or mark guidelines..."></textarea>
 
       <button class="primary" onclick="createAssignmentLink()">🔗 Generate Student Submission Link</button>
 
@@ -342,6 +338,8 @@
         <button class="ghost" style="background:#fff; flex-shrink: 0;" onclick="copyLink()">📋 Copy Link</button>
       </div>
 
+      <div id="bundle-task-tabs" style="display: none; gap: 8px; margin: 14px 0; border-bottom: 1px solid var(--border); padding-bottom: 8px;" class="no-print">
+        </div>
       <div class="print-summary" id="portal-print-summary">
         <div class="print-title" id="portal-print-report-title">Class Evaluation Summary</div>
         <div class="print-sub" id="portal-print-report-sub">Teacher: Teacher | Total Assessed: 0 Students</div>
@@ -427,38 +425,6 @@
   <footer>
     &copy; 2026 EduPlanet Educational Services. All rights reserved.
   </footer>
-</div>
-
-<div id="submission-logs-modal" style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.55); backdrop-filter:blur(4px); z-index:10003; align-items:center; justify-content:center; padding:16px;">
-  <div style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:760px; width:100%; max-height:80vh; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18); display:flex; flex-direction:column;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-      <div>
-        <h3 style="margin:0; font-family:'Source Serif 4',serif; font-size:20px; color:#16233F;">Submission Timestamp Logs</h3>
-        <p style="margin:2px 0 0 0; font-size:12.5px; color:var(--ink-soft);">Permanent log of student names, assessment titles, teachers, and submission timestamps.</p>
-      </div>
-      <button onclick="toggleSubmissionLogsModal()" style="border:none; background:none; font-size:20px; cursor:pointer;">&times;</button>
-    </div>
-
-    <div style="overflow-y:auto; flex:1; margin-top:8px;">
-      <table class="admin-table" style="width:100%;">
-        <thead>
-          <tr>
-            <th>Student Name</th>
-            <th>Assessment Title</th>
-            <th>Teacher</th>
-            <th>Submission Date & Time (Cairo Time)</th>
-          </tr>
-        </thead>
-        <tbody id="submission-logs-tbody">
-          <tr><td colspan="4" style="text-align:center;">Loading logs...</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
-      <button onclick="toggleSubmissionLogsModal()" style="background:#E3E9F6; color:#16233F; border:1px solid #C2CEE7; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Close</button>
-    </div>
-  </div>
 </div>
 
 <div id="submission-logs-modal" style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.55); backdrop-filter:blur(4px); z-index:10003; align-items:center; justify-content:center; padding:16px;">
@@ -600,6 +566,72 @@ let livePollTimer = null;
 let portalSchemeFiles = [];
 let portalSubmissions = [];
 let allAssignmentsMap = {};
+let currentBundleTasks = [];
+let taskDefinitions = [
+  { title: 'Task 1: Essay', schemeFiles: [], schemeText: '' }
+];
+
+function renderTaskDefinitions() {
+  const container = document.getElementById('tasks-repeater-container');
+  if (!container) return;
+
+  container.innerHTML = taskDefinitions.map((t, idx) => `
+    <div style="margin-bottom: 16px; border: 1px solid var(--border); background: #FAFBFD; padding: 16px; border-radius: 8px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <span style="font-weight: 600; font-size: 13.5px; color: var(--pen); font-family: 'Source Serif 4', serif;">Task #${idx + 1}</span>
+        ${taskDefinitions.length > 1 ? `
+          <button type="button" onclick="removeTaskDefinition(${idx})" style="color: #DC2626; border: none; background: none; font-weight: 600; cursor: pointer; font-size: 12px;">&times; Remove Task</button>
+        ` : ''}
+      </div>
+      
+      <label style="display:block; font-size: 12.5px; font-weight: 600; margin-bottom: 4px;">Task Name</label>
+      <input type="text" id="task-title-${idx}" value="${escapeHtml(t.title)}" placeholder="e.g. Essay or Grammar Test" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13.5px; margin-bottom: 10px; background: #fff;" />
+
+      <label style="display:block; font-size: 12.5px; font-weight: 600; margin-bottom: 4px;">Marking Scheme / Rubric Files</label>
+      <input type="file" id="task-scheme-file-${idx}" multiple style="display:none;" onchange="handleTaskSchemeFiles(${idx}, event)" accept="image/*,.pdf,.docx,.txt" />
+      <div class="dropzone" onclick="document.getElementById('task-scheme-file-${idx}').click()" style="margin-left: 0; padding: 14px 12px; background: #fff;">
+        <div style="font-size: 12.5px;"><b>Attach Rubric / Answer Key</b> (PDF, DOCX, Images)</div>
+      </div>
+      <div class="badge-grid" id="task-scheme-badges-${idx}" style="margin-left: 0; margin-bottom: 10px;">
+        ${(t.schemeFiles || []).map((f, fIdx) => `
+          <div class="file-chip">
+            <span>📋 ${escapeHtml(f.name)}</span>
+            <button class="file-chip-remove" onclick="removeTaskSchemeFile(${idx}, ${fIdx})">&times;</button>
+          </div>
+        `).join('')}
+      </div>
+
+      <label style="display:block; font-size: 12.5px; font-weight: 600; margin-bottom: 4px;">Rubric Notes & Criteria (Optional)</label>
+      <textarea id="task-scheme-text-${idx}" placeholder="Extra teacher instructions or criteria..." style="margin-left: 0; width: 100%; min-height: 60px; padding: 8px 10px; font-size: 13px; background: #fff;">${escapeHtml(t.schemeText || '')}</textarea>
+    </div>
+  `).join('');
+}
+
+function handleTaskSchemeFiles(taskIdx, e) {
+  if (!taskDefinitions[taskIdx].schemeFiles) taskDefinitions[taskIdx].schemeFiles = [];
+  for (const f of e.target.files) taskDefinitions[taskIdx].schemeFiles.push(f);
+  renderTaskDefinitions();
+}
+
+function removeTaskSchemeFile(taskIdx, fileIdx) {
+  taskDefinitions[taskIdx].schemeFiles.splice(fileIdx, 1);
+  renderTaskDefinitions();
+}
+
+function addNewTaskField() {
+  taskDefinitions.push({
+    title: `Task ${taskDefinitions.length + 1}`,
+    schemeFiles: [],
+    schemeText: ''
+  });
+  renderTaskDefinitions();
+}
+
+function removeTaskDefinition(idx) {
+  if (taskDefinitions.length <= 1) return;
+  taskDefinitions.splice(idx, 1);
+  renderTaskDefinitions();
+}
 
 let schemeFilesList = [];
 let studentSubmissions = [];
@@ -708,6 +740,7 @@ fetch('/api/auth/me')
         document.getElementById('mark-btn').disabled = true;
       }
       setMinDateOnly();
+      renderTaskDefinitions();
       loadTeacherAssignments();
     } else {
       window.location.replace('/login.html');
@@ -1079,14 +1112,7 @@ function loadSelectedAssignment(selectedCode) {
 }
 
 async function createAssignmentLink() {
-  const title = document.getElementById('portal-title').value.trim();
   const deadlineIso = getIsoFrom12h('portal-date', 'portal-hour', 'portal-minute', 'portal-ampm');
-  const schemeText = document.getElementById('portal-scheme-text').value.trim();
-
-  if (!title) {
-    alert('Please provide an assignment title.');
-    return;
-  }
 
   if (deadlineIso) {
     const ddlTime = new Date(deadlineIso).getTime();
@@ -1096,45 +1122,80 @@ async function createAssignmentLink() {
     }
   }
 
+  const tasksPayload = [];
   const formData = new FormData();
-  formData.append('title', title);
   if (deadlineIso) formData.append('deadline', deadlineIso);
-  if (schemeText) formData.append('schemeText', schemeText);
-  for (const f of portalSchemeFiles) formData.append('scheme', f);
 
-  const res = await fetch('/api/assignments/create', { method: 'POST', body: formData });
-  const d = await res.json();
+  for (let i = 0; i < taskDefinitions.length; i++) {
+    const titleVal = (document.getElementById(`task-title-${i}`)?.value || `Task ${i + 1}`).trim();
+    const notesVal = (document.getElementById(`task-scheme-text-${i}`)?.value || '').trim();
 
-  if (d.success) {
-    activeCode = d.code;
-    const deadlineText = formatDeadlineString(deadlineIso);
+    tasksPayload.push({
+      title: titleVal,
+      schemeText: notesVal
+    });
 
-    allAssignmentsMap[d.code] = {
-      code: d.code,
-      title: title,
-      deadline: deadlineIso,
-      submission_count: 0
-    };
-
-    const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-    const studentCount = portalSubmissions ? portalSubmissions.length : 0;
-    const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
-
-    document.getElementById('live-portal-title').textContent = `Live Submissions: ${title}`;
-    document.getElementById('live-portal-deadline-sub').textContent = deadlineText;
-    document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${title}`;
-    document.getElementById('portal-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
-
-    document.getElementById('generated-link-url').textContent = d.link;
-    document.getElementById('generated-link-box').style.display = 'flex';
-    document.getElementById('portal-results-card').style.display = 'block';
-    
-    startLivePolling();
-    loadTeacherAssignments();
-    showToast('Student link generated successfully!');
-  } else {
-    alert(d.error || 'Failed to create link.');
+    const files = taskDefinitions[i].schemeFiles || [];
+    for (const f of files) {
+      formData.append(`scheme_${i}`, f);
+    }
   }
+
+  formData.append('tasks', JSON.stringify(tasksPayload));
+
+  try {
+    const res = await fetch('/api/assignments/create-bundle', { method: 'POST', body: formData });
+    const d = await res.json();
+
+    if (d.success) {
+      activeCode = d.tasks[0].code;
+      const deadlineText = formatDeadlineString(deadlineIso);
+
+      document.getElementById('live-portal-title').textContent = `Live Submissions: ${d.tasks[0].title}`;
+      document.getElementById('live-portal-deadline-sub').textContent = deadlineText;
+      document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${d.tasks[0].title}`;
+      document.getElementById('portal-print-report-sub').textContent = `Teacher: ${currentUser?.name || 'Teacher'} | Total Assessed: 0 Students`;
+
+      document.getElementById('generated-link-url').textContent = d.link;
+      document.getElementById('generated-link-box').style.display = 'flex';
+      document.getElementById('portal-results-card').style.display = 'block';
+
+      renderBundleTabs(d.tasks);
+      startLivePolling();
+      loadTeacherAssignments();
+      showToast('Student link generated successfully!');
+    } else {
+      alert(d.error || 'Failed to create assignment bundle.');
+    }
+  } catch (err) {
+    alert('Connection error creating assignment.');
+  }
+}
+
+function renderBundleTabs(tasks) {
+  const tabsContainer = document.getElementById('bundle-task-tabs');
+  if (!tabsContainer || !tasks || tasks.length <= 1) {
+    if (tabsContainer) tabsContainer.style.display = 'none';
+    return;
+  }
+
+  tabsContainer.style.display = 'flex';
+  tabsContainer.innerHTML = tasks.map(t => `
+    <button type="button" class="ghost ${t.code === activeCode ? 'primary' : ''}" style="margin-left:0; padding:6px 12px; font-size:12.5px; font-weight:600;" onclick="switchActiveTaskTab('${t.code}', '${escapeHtml(t.title)}')">
+      ${escapeHtml(t.title)}
+    </button>
+  `).join('');
+}
+
+function switchActiveTaskTab(taskCode, taskTitle) {
+  activeCode = taskCode;
+  document.getElementById('live-portal-title').textContent = `Live Submissions: ${taskTitle}`;
+  document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${taskTitle}`;
+  fetchLiveSubmissions();
+  
+  document.querySelectorAll('#bundle-task-tabs button').forEach(btn => {
+    btn.classList.toggle('primary', btn.textContent.trim() === taskTitle.trim());
+  });
 }
 
 function copyLink() {
@@ -1319,157 +1380,6 @@ async function toggleSubmissionLogsModal() {
 }
 
 // ==================== DELETE ASSIGNMENT LOGIC ====================
-async function deleteStudentSubmission(subId, studentName) {
-  if (!activeCode) return;
-
-  const confirmed = await showConfirmModal(
-    `Delete submission for "${studentName}"? This permanently removes their evaluation and unlocks them to submit their paper again.`,
-    'Remove Student Submission'
-  );
-  if (!confirmed) return;
-
-  const targetIdentifier = (subId && subId !== 'undefined' && subId !== '') ? subId : encodeURIComponent(studentName);
-
-  try {
-    const res = await fetch(`/api/assignments/${activeCode}/submissions/${targetIdentifier}`, {
-      method: 'DELETE'
-    });
-    const d = await res.json();
-
-    if (d.success) {
-      showToast(d.message);
-      await fetchLiveSubmissions();
-      await loadTeacherAssignments();
-    } else {
-      alert(d.error || 'Failed to remove submission.');
-    }
-  } catch (err) {
-    alert('Network error while deleting submission.');
-  }
-}
-
-async function toggleSubmissionLogsModal() {
-  const modal = document.getElementById('submission-logs-modal');
-  if (modal.style.display === 'flex') {
-    modal.style.display = 'none';
-    return;
-  }
-
-  if (!activeCode) {
-    alert('Please select or create an assignment first.');
-    return;
-  }
-
-  modal.style.display = 'flex';
-  const tbody = document.getElementById('submission-logs-tbody');
-  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:12px;">Loading timestamps...</td></tr>';
-
-  try {
-    const res = await fetch(`/api/assignments/${activeCode}/logs`);
-    const d = await res.json();
-    if (d.success && d.logs && d.logs.length > 0) {
-      tbody.innerHTML = d.logs.map(log => {
-        const dateObj = new Date(log.submitted_at);
-        const formattedDate = !isNaN(dateObj.getTime())
-          ? new Intl.DateTimeFormat('en-US', {
-              timeZone: 'Africa/Cairo',
-              dateStyle: 'medium',
-              timeStyle: 'short'
-            }).format(dateObj)
-          : log.submitted_at;
-
-        return `
-          <tr>
-            <td><b>${escapeHtml(log.student_name)}</b></td>
-            <td>${escapeHtml(log.assignment_title || '—')}</td>
-            <td>${escapeHtml(log.teacher_name || '—')}</td>
-            <td><code style="font-family:'IBM Plex Mono',monospace;">${formattedDate}</code></td>
-          </tr>
-        `;
-      }).join('');
-    } else {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#666; padding:14px;">No submission logs recorded yet.</td></tr>';
-    }
-  } catch (err) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#DC2626; padding:14px;">Failed to load logs.</td></tr>';
-  }
-}
-
-async function deleteStudentSubmission(subId, studentName) {
-  if (!activeCode) return;
-
-  const confirmed = await showConfirmModal(
-    `Delete submission for "${studentName}"? This permanently removes their evaluation and unlocks them to submit their paper again.`,
-    'Remove Student Submission'
-  );
-  if (!confirmed) return;
-
-  const targetIdentifier = (subId && subId !== 'undefined' && subId !== '') ? subId : encodeURIComponent(studentName);
-
-  try {
-    const res = await fetch(`/api/assignments/${activeCode}/submissions/${targetIdentifier}`, {
-      method: 'DELETE'
-    });
-    const d = await res.json();
-
-    if (d.success) {
-      showToast(d.message);
-      await fetchLiveSubmissions();
-      await loadTeacherAssignments();
-    } else {
-      alert(d.error || 'Failed to remove submission.');
-    }
-  } catch (err) {
-    alert('Network error while deleting submission.');
-  }
-}
-
-async function toggleSubmissionLogsModal() {
-  const modal = document.getElementById('submission-logs-modal');
-  if (modal.style.display === 'flex') {
-    modal.style.display = 'none';
-    return;
-  }
-
-  if (!activeCode) {
-    alert('Please select or create an assignment first.');
-    return;
-  }
-
-  modal.style.display = 'flex';
-  const tbody = document.getElementById('submission-logs-tbody');
-  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:12px;">Loading timestamps...</td></tr>';
-
-  try {
-    const res = await fetch(`/api/assignments/${activeCode}/logs`);
-    const d = await res.json();
-    if (d.success && d.logs && d.logs.length > 0) {
-      tbody.innerHTML = d.logs.map(log => {
-        const dateObj = new Date(log.submitted_at);
-        const formattedDate = !isNaN(dateObj.getTime())
-          ? new Intl.DateTimeFormat('en-US', {
-              timeZone: 'Africa/Cairo',
-              dateStyle: 'medium',
-              timeStyle: 'short'
-            }).format(dateObj)
-          : log.submitted_at;
-
-        return `
-          <tr>
-            <td><b>${escapeHtml(log.student_name)}</b></td>
-            <td>${escapeHtml(log.assignment_title || '—')}</td>
-            <td>${escapeHtml(log.teacher_name || '—')}</td>
-            <td><code style="font-family:'IBM Plex Mono',monospace;">${formattedDate}</code></td>
-          </tr>
-        `;
-      }).join('');
-    } else {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#666; padding:14px;">No submission logs recorded yet.</td></tr>';
-    }
-  } catch (err) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#DC2626; padding:14px;">Failed to load logs.</td></tr>';
-  }
-}
 
 async function deleteActiveAssignment() {
   if (!activeCode) return;

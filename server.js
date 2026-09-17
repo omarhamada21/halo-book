@@ -131,17 +131,18 @@ async function initDatabase() {
       submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
-
-    const autoMigrations = [
-      'ALTER TABLE submissions ADD COLUMN teacher_name TEXT;',
-      'ALTER TABLE submissions ADD COLUMN device_id TEXT;',
-      'ALTER TABLE submissions ADD COLUMN essay_text TEXT;',
-      'ALTER TABLE submissions ADD COLUMN similarity_score INTEGER DEFAULT 0;',
-      'ALTER TABLE submissions ADD COLUMN similarity_details TEXT;',
-      'ALTER TABLE submissions ADD COLUMN ai_score INTEGER DEFAULT 0;',
-      'ALTER TABLE submissions ADD COLUMN ai_details TEXT;',
-      'ALTER TABLE submissions ADD COLUMN web_score INTEGER DEFAULT 0;'
-    ];
+    
+  const autoMigrations = [
+  'ALTER TABLE assignments ADD COLUMN bundle_code TEXT;',
+  'ALTER TABLE submissions ADD COLUMN teacher_name TEXT;',
+  'ALTER TABLE submissions ADD COLUMN device_id TEXT;',
+  'ALTER TABLE submissions ADD COLUMN essay_text TEXT;',
+  'ALTER TABLE submissions ADD COLUMN similarity_score INTEGER DEFAULT 0;',
+  'ALTER TABLE submissions ADD COLUMN similarity_details TEXT;',
+  'ALTER TABLE submissions ADD COLUMN ai_score INTEGER DEFAULT 0;',
+  'ALTER TABLE submissions ADD COLUMN ai_details TEXT;',
+  'ALTER TABLE submissions ADD COLUMN web_score INTEGER DEFAULT 0;'
+];
 
     for (const sql of autoMigrations) {
       try {
@@ -559,6 +560,130 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 // ----------------- ASSIGNMENTS & EVALUATIONS -----------------
+// Multi-Task Assignment Bundle Creation
+app.post(
+  '/api/assignments/create-bundle',
+  authenticateToken,
+  requireApprovedUser,
+  upload.any(),
+  async (req, res) => {
+    try {
+      const { deadline } = req.body;
+      let tasks = [];
+      try {
+        tasks = JSON.parse(req.body.tasks || '[]');
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid tasks configuration.' });
+      }
+
+      if (!tasks.length) {
+        return res.status(400).json({ error: 'Please configure at least one assignment task.' });
+      }
+
+      const bundleCode = crypto.randomBytes(4).toString('hex');
+      const deadlineVal = deadline && deadline.trim() ? deadline.trim() : null;
+      const createdTasks = [];
+
+      for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i];
+        const taskCode = crypto.randomBytes(4).toString('hex');
+        const schemeFiles = (req.files || []).filter(f => f.fieldname === `scheme_${i}`);
+
+        let extractedSchemeText = task.schemeText || '';
+        const cachedSchemePayload = [];
+
+        for (const sFile of schemeFiles) {
+          if (isPdf(sFile)) {
+            const pdfTxt = await extractText(sFile);
+            if (pdfTxt && pdfTxt.trim()) {
+              extractedSchemeText += `\n[Rubric Content]:\n${pdfTxt}\n`;
+            } else {
+              cachedSchemePayload.push({
+                type: 'document',
+                mime_type: 'application/pdf',
+                data: sFile.buffer.toString('base64')
+              });
+            }
+          } else if (isImage(sFile)) {
+            let mimeType = sFile.mimetype || 'image/png';
+            if (!mimeType.startsWith('image/')) mimeType = 'image/png';
+            cachedSchemePayload.push({
+              type: 'image',
+              mime_type: mimeType,
+              data: sFile.buffer.toString('base64')
+            });
+          } else {
+            const txt = await extractText(sFile);
+            if (txt.trim()) extractedSchemeText += `\n[Rubric File: ${sFile.originalname}]\n${txt}\n`;
+          }
+        }
+
+        await db.execute({
+          sql: `INSERT INTO assignments 
+                (code, bundle_code, teacher_id, title, deadline, scheme_text, scheme_files_json) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            taskCode,
+            bundleCode,
+            req.user.id,
+            task.title.trim(),
+            deadlineVal,
+            extractedSchemeText,
+            JSON.stringify(cachedSchemePayload)
+          ]
+        });
+
+        createdTasks.push({ code: taskCode, title: task.title.trim() });
+      }
+
+      return res.json({
+        success: true,
+        bundleCode,
+        tasks: createdTasks,
+        link: `${req.protocol}://${req.get('host')}/submit.html?bundle=${bundleCode}`
+      });
+    } catch (err) {
+      console.error('Bundle creation error:', err);
+      return res.status(500).json({ error: err.message || 'Failed to create assignment bundle.' });
+    }
+  }
+);
+
+// Public Bundle Resolution Endpoint
+app.get('/api/public/bundle/:bundleCode', async (req, res) => {
+  try {
+    const { bundleCode } = req.params;
+    const result = await db.execute({
+      sql: `SELECT a.id, a.code, a.bundle_code, a.title, a.deadline, u.name as teacher_name 
+            FROM assignments a 
+            JOIN users u ON a.teacher_id = u.id 
+            WHERE a.bundle_code = ? OR a.code = ? 
+            ORDER BY a.id ASC`,
+      args: [bundleCode, bundleCode]
+    });
+
+    if (!result.rows || result.rows.length === 0) {
+      return res.status(404).json({ error: 'Assignment bundle not found or expired.' });
+    }
+
+    const first = result.rows[0];
+    let isPastDeadline = false;
+    if (first.deadline) {
+      const ddl = new Date(first.deadline).getTime();
+      isPastDeadline = !isNaN(ddl) && Date.now() > ddl;
+    }
+
+    res.json({
+      success: true,
+      teacherName: first.teacher_name,
+      deadline: first.deadline,
+      isPastDeadline,
+      tasks: result.rows.map(r => ({ code: r.code, title: r.title }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve assignment bundle.' });
+  }
+});
 app.post(
   '/api/assignments/create',
   authenticateToken,

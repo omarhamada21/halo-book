@@ -17,7 +17,7 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--paper); color: var(--ink); font-family: 'Inter', sans-serif; padding: 20px; }
-  .wrap { max-width: 540px; margin: 30px auto; }
+  .wrap { max-width: 580px; margin: 30px auto; }
   
   .card {
     background: var(--card); border: 1px solid var(--border); border-radius: 12px;
@@ -38,6 +38,12 @@
     color: #991B1B !important; font-weight: 600 !important;
   }
   
+  .task-card {
+    border: 1px solid var(--border); background: #fff; border-radius: 10px;
+    padding: 18px; margin-bottom: 18px;
+  }
+  .task-title { font-family: 'Source Serif 4', serif; font-size: 17px; margin: 0 0 10px; color: var(--pen); display: flex; justify-content: space-between; align-items: center; }
+
   .form-group { margin-bottom: 18px; }
   label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
   input[type="text"] {
@@ -47,12 +53,12 @@
   input[type="text"]:focus { border-color: var(--pen); }
   
   .dropzone {
-    border: 2px dashed var(--border); border-radius: 10px; padding: 26px 16px;
-    text-align: center; cursor: pointer; background: #fff; transition: all 0.2s;
+    border: 2px dashed var(--border); border-radius: 10px; padding: 20px 16px;
+    text-align: center; cursor: pointer; background: #FAFBFD; transition: all 0.2s;
   }
   .dropzone:hover { border-color: var(--pen); background: var(--pen-soft); }
   
-  .page-preview { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .page-preview { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
   .page-chip {
     background: var(--pen-soft); border: 1px solid var(--border); border-radius: 6px;
     padding: 8px 12px; font-size: 12.5px; display: flex; justify-content: space-between; align-items: center;
@@ -69,13 +75,6 @@
     display: none; text-align: center; padding: 30px 10px;
   }
   .success-banner h2 { color: #059669; font-family: 'Source Serif 4', serif; margin-bottom: 8px; }
-
-  .error-banner {
-    display: none; text-align: center; padding: 20px 16px;
-    background: #FEF2F2; border: 1px solid #F87171; border-radius: 10px; margin-top: 16px;
-  }
-  .error-banner h3 { margin: 0 0 6px; color: #991B1B; font-size: 16px; }
-  .error-banner p { margin: 0; color: #7F1D1D; font-size: 13.5px; line-height: 1.4; }
 </style>
 </head>
 <body>
@@ -94,44 +93,28 @@
       <div class="form-group">
         <label>Your Full Name</label>
         <input type="text" id="student-name" required placeholder="e.g. Fares Ahmed" />
-        <small style="color:var(--ink-soft); font-size:11.5px; margin-top:4px; display:block;">🔒 Protected: Only 1 submission allowed per student.</small>
+        <small style="color:var(--ink-soft); font-size:11.5px; margin-top:4px; display:block;">🔒 Protected: Only 1 submission allowed from this device.</small>
       </div>
 
-      <div class="form-group">
-        <label>Your Work Photos / Pages (You can upload multiple)</label>
-        <div class="dropzone" id="dropzone-box" onclick="document.getElementById('pages-input').click()">
-          <div style="font-size: 26px; margin-bottom: 6px;">📷</div>
-          <b>Tap to take photo or select pages</b>
-          <div style="font-size: 12px; color: var(--ink-soft); margin-top: 4px;">Supports camera photos, PNG, JPG, or PDF</div>
+      <div id="tasks-container">
         </div>
-        <input type="file" id="pages-input" accept="image/*,.pdf" multiple style="display: none;" onchange="handleFilesSelected(event)" />
-        <div class="page-preview" id="page-preview-list"></div>
-      </div>
 
-      <button type="submit" class="btn-submit" id="submit-btn">🚀 Submit Work to Teacher</button>
+      <button type="submit" class="btn-submit" id="submit-btn">🚀 Submit All Tasks to Teacher</button>
     </form>
-
-    <div class="error-banner" id="error-box">
-      <h3 id="error-title">Submission Blocked</h3>
-      <p id="error-desc"></p>
-    </div>
   </div>
 
   <div class="card success-banner" id="success-screen">
     <h2>✓ Work Submitted Successfully!</h2>
     <p style="color: var(--ink-soft); line-height: 1.5; font-size: 14px;">
-      Thank you, <b id="submitted-name"></b>. Your work has been sent to your teacher and evaluated.
+      Thank you, <b id="submitted-name"></b>. Your work has been delivered to your teacher and evaluated.
     </p>
   </div>
 </div>
 
 <script>
   const urlParams = new URLSearchParams(window.location.search);
-  const code = urlParams.get('code');
-  let selectedFiles = [];
-  let isLocked = false;
-
-  // Persistent Device ID Fingerprint
+  const bundleCode = urlParams.get('bundle') || urlParams.get('code');
+  
   function getOrCreateDeviceId() {
     let deviceId = localStorage.getItem('mimir_device_token');
     if (!deviceId) {
@@ -140,203 +123,182 @@
     }
     return deviceId;
   }
-
   const clientDeviceId = getOrCreateDeviceId();
 
-  // Check if this device already completed this specific assignment
-  function checkLocalDeviceHistory(assignmentCode) {
-    const history = JSON.parse(localStorage.getItem('mimir_submitted_codes') || '[]');
-    return history.includes(assignmentCode);
-  }
-
-  function markDeviceAsSubmitted(assignmentCode) {
-    const history = JSON.parse(localStorage.getItem('mimir_submitted_codes') || '[]');
-    if (!history.includes(assignmentCode)) {
-      history.push(assignmentCode);
-      localStorage.setItem('mimir_submitted_codes', JSON.stringify(history));
-    }
-  }
-
-  function clearDeviceSubmittedFlag(assignmentCode) {
-    let history = JSON.parse(localStorage.getItem('mimir_submitted_codes') || '[]');
-    history = history.filter(c => c !== assignmentCode);
-    localStorage.setItem('mimir_submitted_codes', JSON.stringify(history));
-  }
+  let bundleTasks = [];
+  let taskFilesMap = {};
+  let taskLockMap = {};
 
   function formatCairoDateTime(dateObj) {
     return dateObj.toLocaleString('en-US', {
       timeZone: 'Africa/Cairo',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit', hour12: true
     });
   }
 
-  if (!code) {
+  if (!bundleCode) {
     document.getElementById('assign-title').textContent = 'Invalid Assignment Link';
     document.getElementById('student-form').style.display = 'none';
   } else {
-    // Show cached UI block tentatively if local flag exists
-    if (checkLocalDeviceHistory(code)) {
-      isLocked = true;
-      document.getElementById('student-form').style.display = 'none';
-      const errBox = document.getElementById('error-box');
-      errBox.style.display = 'block';
-      document.getElementById('error-title').textContent = 'Submission Already Recorded';
-      document.getElementById('error-desc').textContent = 'Checking server status...';
-    }
-
-    // Load assignment details and perform live device status verification
-    Promise.all([
-      fetch(`/api/public/assignment/${code}`).then(r => r.json()),
-      fetch(`/api/public/assignment/${code}/status?deviceId=${encodeURIComponent(clientDeviceId)}`).then(r => r.json()).catch(() => null)
-    ])
-      .then(([d, statusData]) => {
-        if (!d || !d.success) {
-          document.getElementById('assign-title').textContent = (d && d.error) || 'Assignment Expired';
-          document.getElementById('student-form').style.display = 'none';
-          return;
-        }
-
-        document.getElementById('assign-title').textContent = d.assignment.title;
-        document.getElementById('assign-teacher').textContent = `Teacher: ${d.assignment.teacherName}`;
-
-        let deadlinePassed = false;
-        if (d.assignment.deadline) {
-          const dl = new Date(d.assignment.deadline);
-          const dlBox = document.getElementById('assign-deadline');
-          dlBox.style.display = 'block';
-
-          const formattedCairo = formatCairoDateTime(dl);
-          deadlinePassed = Date.now() > dl.getTime() || d.assignment.isPastDeadline;
-
-          if (deadlinePassed) {
-            isLocked = true;
-            dlBox.className = 'deadline-box deadline-expired';
-            dlBox.innerHTML = `⛔ <b>Submissions Closed:</b> The deadline passed on ${formattedCairo} (Cairo Time). New work is no longer accepted.`;
-            document.getElementById('student-form').style.display = 'none';
-            document.getElementById('error-box').style.display = 'none';
-            return;
-          } else {
-            dlBox.textContent = `⏳ Submission Deadline: ${formattedCairo} (Cairo Time)`;
-          }
-        }
-
-        // Live check: If the teacher deleted the submission from the database, unlock the UI
-        if (statusData && statusData.success) {
-          if (!statusData.hasSubmitted) {
-            clearDeviceSubmittedFlag(code);
-            isLocked = false;
-            document.getElementById('error-box').style.display = 'none';
-            document.getElementById('student-form').style.display = 'block';
-          } else {
-            isLocked = true;
-            markDeviceAsSubmitted(code);
-            document.getElementById('student-form').style.display = 'none';
-            const errBox = document.getElementById('error-box');
-            errBox.style.display = 'block';
-            document.getElementById('error-title').textContent = 'Submission Already Recorded';
-            document.getElementById('error-desc').textContent = 'This device has already submitted work for this assignment. Only one submission is permitted per device.';
-          }
-        } else if (!isLocked) {
-          document.getElementById('student-form').style.display = 'block';
-          document.getElementById('error-box').style.display = 'none';
-        }
-      })
-      .catch(() => {
-        document.getElementById('assign-title').textContent = 'Error connecting to server';
-      });
+    loadAssignmentBundle();
   }
 
-  function handleFilesSelected(e) {
-    if (isLocked) return;
-    for (const f of e.target.files) {
-      selectedFiles.push(f);
+  async function loadAssignmentBundle() {
+    try {
+      const res = await fetch(`/api/public/bundle/${bundleCode}`);
+      const d = await res.json();
+
+      if (!d.success) {
+        document.getElementById('assign-title').textContent = d.error || 'Assignment Expired';
+        document.getElementById('student-form').style.display = 'none';
+        return;
+      }
+
+      bundleTasks = d.tasks || [];
+      document.getElementById('assign-title').textContent = bundleTasks.length > 1 
+        ? `Multi-Task Homework Assignment (${bundleTasks.length} Tasks)` 
+        : bundleTasks[0].title;
+      document.getElementById('assign-teacher').textContent = `Teacher: ${d.teacherName}`;
+
+      if (d.deadline) {
+        const dl = new Date(d.deadline);
+        const dlBox = document.getElementById('assign-deadline');
+        dlBox.style.display = 'block';
+        const formattedCairo = formatCairoDateTime(dl);
+
+        if (d.isPastDeadline || Date.now() > dl.getTime()) {
+          dlBox.className = 'deadline-box deadline-expired';
+          dlBox.innerHTML = `⛔ <b>Submissions Closed:</b> The deadline passed on ${formattedCairo} (Cairo Time).`;
+          document.getElementById('student-form').style.display = 'none';
+          return;
+        } else {
+          dlBox.textContent = `⏳ Submission Deadline: ${formattedCairo} (Cairo Time)`;
+        }
+      }
+
+      await checkLocks();
+      renderTasksUI();
+    } catch (err) {
+      document.getElementById('assign-title').textContent = 'Error connecting to server';
     }
-    renderPages();
+  }
+
+  async function checkLocks() {
+    for (const t of bundleTasks) {
+      taskFilesMap[t.code] = [];
+      try {
+        const r = await fetch(`/api/public/assignment/${t.code}/status?deviceId=${encodeURIComponent(clientDeviceId)}`);
+        const st = await r.json();
+        taskLockMap[t.code] = !!(st && st.hasSubmitted);
+      } catch (e) {
+        taskLockMap[t.code] = false;
+      }
+    }
+  }
+
+  function renderTasksUI() {
+    const container = document.getElementById('tasks-container');
+    const allDone = bundleTasks.every(t => taskLockMap[t.code]);
+
+    if (allDone && bundleTasks.length > 0) {
+      document.getElementById('submission-form-card').style.display = 'none';
+      document.getElementById('submitted-name').textContent = 'Student';
+      document.getElementById('success-screen').style.display = 'block';
+      return;
+    }
+
+    container.innerHTML = bundleTasks.map((t, idx) => {
+      const isDone = taskLockMap[t.code];
+      return `
+        <div class="task-card">
+          <div class="task-title">
+            <span>${idx + 1}. ${escapeHtml(t.title)}</span>
+            ${isDone ? '<span style="font-size: 12px; color: #059669; font-weight: 600;">✓ Completed</span>' : ''}
+          </div>
+
+          ${isDone ? `
+            <div style="padding: 10px; background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 6px; font-size: 13px; color: #065F46;">
+              Your work for this task has been recorded.
+            </div>
+          ` : `
+            <div class="dropzone" onclick="document.getElementById('file-input-${t.code}').click()">
+              <div style="font-size: 24px; margin-bottom: 4px;">📷</div>
+              <b>Tap to take photo or select pages for this task</b>
+              <div style="font-size: 11.5px; color: var(--ink-soft); margin-top: 2px;">Supports camera photos, PNG, JPG, or PDF</div>
+            </div>
+            <input type="file" id="file-input-${t.code}" accept="image/*,.pdf" multiple style="display: none;" onchange="handleTaskFiles('${t.code}', event)" />
+            <div id="preview-${t.code}" class="page-preview"></div>
+          `}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function handleTaskFiles(taskCode, e) {
+    if (!taskFilesMap[taskCode]) taskFilesMap[taskCode] = [];
+    for (const f of e.target.files) taskFilesMap[taskCode].push(f);
+    renderPreviews(taskCode);
     e.target.value = '';
   }
 
-  function renderPages() {
-    const list = document.getElementById('page-preview-list');
-    list.innerHTML = selectedFiles.map((f, i) => `
+  function renderPreviews(taskCode) {
+    const el = document.getElementById(`preview-${taskCode}`);
+    if (!el) return;
+    const files = taskFilesMap[taskCode] || [];
+    el.innerHTML = files.map((f, i) => `
       <div class="page-chip">
         <span>📄 Page ${i + 1}: ${escapeHtml(f.name)} (${(f.size / 1024).toFixed(1)} KB)</span>
-        <button type="button" class="page-remove" onclick="removePage(${i})">&times;</button>
+        <button type="button" class="page-remove" onclick="removeTaskFile('${taskCode}', ${i})">&times;</button>
       </div>
     `).join('');
   }
 
-  function removePage(i) {
-    selectedFiles.splice(i, 1);
-    renderPages();
+  function removeTaskFile(taskCode, i) {
+    taskFilesMap[taskCode].splice(i, 1);
+    renderPreviews(taskCode);
   }
 
   async function handleStudentSubmit(e) {
     e.preventDefault();
-    if (isLocked) {
-      alert('This device is locked from submitting again for this assignment.');
-      return;
-    }
-
     const name = document.getElementById('student-name').value.trim();
     const btn = document.getElementById('submit-btn');
-    const errBox = document.getElementById('error-box');
-    const errDesc = document.getElementById('error-desc');
-    errBox.style.display = 'none';
 
-    if (!selectedFiles.length) {
-      alert('Please take or upload at least one photo of your work.');
-      return;
+    const pending = bundleTasks.filter(t => !taskLockMap[t.code]);
+    for (const t of pending) {
+      if (!taskFilesMap[t.code] || !taskFilesMap[t.code].length) {
+        alert(`Please attach at least one page or photo for: "${t.title}".`);
+        return;
+      }
     }
 
     btn.disabled = true;
-    btn.textContent = 'Uploading and processing...';
-
-    const formData = new FormData();
-    formData.append('studentName', name);
-    formData.append('deviceId', clientDeviceId);
-    for (const f of selectedFiles) {
-      formData.append('pages', f);
-    }
+    btn.textContent = 'Uploading and grading submissions...';
 
     try {
-      const res = await fetch(`/api/public/submit/${code}`, {
-        method: 'POST',
-        body: formData
-      });
-      const d = await res.json();
-
-      if (d.success) {
-        markDeviceAsSubmitted(code);
-        document.getElementById('submission-form-card').style.display = 'none';
-        document.getElementById('submitted-name').textContent = d.studentName || name;
-        document.getElementById('success-screen').style.display = 'block';
-      } else {
-        btn.disabled = false;
-        btn.textContent = '🚀 Submit Work to Teacher';
-        
-        // Duplicate Device Lockout
-        if (res.status === 409) {
-          markDeviceAsSubmitted(code);
-          document.getElementById('student-form').style.display = 'none';
-          document.getElementById('error-title').textContent = 'Device Already Submitted';
-          errDesc.textContent = d.error;
-          errBox.style.display = 'block';
-        } else {
-          alert(d.error || 'Submission failed.');
-          if (res.status === 403) {
-            window.location.reload();
-          }
+      for (const t of pending) {
+        const formData = new FormData();
+        formData.append('studentName', name);
+        formData.append('deviceId', clientDeviceId);
+        for (const f of taskFilesMap[t.code]) {
+          formData.append('pages', f);
         }
+
+        const res = await fetch(`/api/public/submit/${t.code}`, {
+          method: 'POST',
+          body: formData
+        });
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error || `Failed to evaluate ${t.title}`);
       }
+
+      document.getElementById('submission-form-card').style.display = 'none';
+      document.getElementById('submitted-name').textContent = name;
+      document.getElementById('success-screen').style.display = 'block';
     } catch (err) {
-      alert('Connection error. Please retry.');
+      alert(err.message || 'Submission error. Please check your connection and retry.');
       btn.disabled = false;
-      btn.textContent = '🚀 Submit Work to Teacher';
+      btn.textContent = '🚀 Submit All Tasks to Teacher';
     }
   }
 
