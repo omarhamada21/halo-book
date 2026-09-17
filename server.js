@@ -898,47 +898,48 @@ app.get('/api/assignments/:code/logs', authenticateToken, requireApprovedUser, a
     res.status(500).json({ success: false, error: 'Failed to fetch submission logs.' });
   }
 });
+// Delete single assignment or bundle
 app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
     const isElevated = ['root', 'admin'].includes(req.user.role);
 
+    // 1. Locate the assignment by code or bundle code
     const assignResult = await db.execute({
-      sql: 'SELECT id, title FROM assignments WHERE code = ?' + (isElevated ? '' : ' AND teacher_id = ?'),
+      sql: 'SELECT id, bundle_code, title FROM assignments WHERE code = ?' + (isElevated ? '' : ' AND teacher_id = ?'),
       args: isElevated ? [code] : [code, req.user.id]
     });
 
     const assignment = assignResult.rows[0];
-    if (!assignment) return res.status(404).json({ error: 'Assignment not found or unauthorized.' });
+    if (!assignment) {
+      return res.status(404).json({ success: false, error: 'Assignment not found or unauthorized.' });
+    }
 
-    await db.execute({ sql: 'DELETE FROM submissions WHERE assignment_id = ?', args: [assignment.id] });
-    await db.execute({ sql: 'DELETE FROM assignments WHERE id = ?', args: [assignment.id] });
+    // 2. Determine if this belongs to a bundle (delete all tasks in the bundle) or a single assignment
+    const targetBundleCode = assignment.bundle_code;
+    let assignmentIdsToDelete = [assignment.id];
 
-    res.json({
+    if (targetBundleCode) {
+      const bundleMembers = await db.execute({
+        sql: 'SELECT id FROM assignments WHERE bundle_code = ?',
+        args: [targetBundleCode]
+      });
+      assignmentIdsToDelete = bundleMembers.rows.map(r => r.id);
+    }
+
+    // 3. Delete associated submissions and assignments
+    for (const id of assignmentIdsToDelete) {
+      await db.execute({ sql: 'DELETE FROM submissions WHERE assignment_id = ?', args: [id] });
+      await db.execute({ sql: 'DELETE FROM assignments WHERE id = ?', args: [id] });
+    }
+
+    return res.json({
       success: true,
-      message: `Assignment "${assignment.title}" and all associated submissions were permanently deleted.`
+      message: `Assignment successfully deleted from the database.`
     });
   } catch (err) {
     console.error('Delete Assignment Error:', err);
-    res.status(500).json({ error: 'Failed to delete assignment.' });
-  }
-});
-
-app.post('/api/submissions/:id/update', authenticateToken, requireApprovedUser, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, total_score, category_breakdown, mistakes, weaknesses } = req.body;
-
-    await db.execute({
-      sql: `UPDATE submissions 
-            SET student_name = ?, total_score = ?, category_breakdown = ?, mistakes = ?, weaknesses = ? 
-            WHERE id = ?`,
-      args: [name, total_score, category_breakdown, mistakes, weaknesses, Number(id)]
-    });
-
-    res.json({ success: true, message: 'Submission updated successfully.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update submission.' });
+    return res.status(500).json({ success: false, error: 'Failed to delete assignment.' });
   }
 });
 
