@@ -737,6 +737,39 @@ app.post('/api/assignments/bundle/:bundleCode/tasks', authenticateToken, require
   }
 });
 
+// Rename a single task inside a bundle package
+app.patch('/api/assignments/tasks/:code/rename', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { title } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ success: false, error: 'Task title cannot be empty.' });
+    }
+
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+
+    const check = await db.execute({
+      sql: 'SELECT id FROM assignments WHERE code = ?' + (isElevated ? '' : ' AND teacher_id = ?'),
+      args: isElevated ? [code] : [code, req.user.id]
+    });
+
+    if (!check.rows || check.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Task not found or unauthorized.' });
+    }
+
+    await db.execute({
+      sql: 'UPDATE assignments SET title = ? WHERE code = ?',
+      args: [title.trim(), code]
+    });
+
+    res.json({ success: true, message: 'Task renamed successfully.', title: title.trim() });
+  } catch (err) {
+    console.error('Rename Task Error:', err);
+    res.status(500).json({ success: false, error: 'Failed to rename task.' });
+  }
+});
+
 // Delete a single task from a bundle package
 app.delete('/api/assignments/tasks/:code', authenticateToken, requireApprovedUser, async (req, res) => {
   try {

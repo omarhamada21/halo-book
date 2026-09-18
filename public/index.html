@@ -1720,14 +1720,70 @@ async function loadBundleManagerTasks() {
     const d = await res.json();
     if (d.success && d.tasks) {
       container.innerHTML = d.tasks.map(t => `
-        <div style="display:flex; justify-content:space-between; align-items:center; background:#F8FAFC; border:1px solid var(--border); padding:10px 14px; border-radius:6px;">
-          <div><b>${escapeHtml(t.title)}</b></div>
-          <button type="button" class="ghost ghost-danger" style="padding:4px 8px; font-size:11px;" onclick="deleteSubTask('${t.code}')">🗑️ Delete</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; background:#F8FAFC; border:1px solid var(--border); padding:8px 12px; border-radius:6px; gap:8px;">
+          <input 
+            type="text" 
+            id="task-rename-input-${t.code}" 
+            value="${escapeHtml(t.title)}" 
+            style="flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:5px; font-size:13px; font-weight:600; color:var(--ink); background:#fff; outline:none;" 
+            onkeydown="if(event.key==='Enter') renameSubTask('${t.code}')"
+          />
+          <div style="display:flex; gap:6px; flex-shrink:0;">
+            <button type="button" class="ghost" style="padding:5px 9px; font-size:11.5px; border-radius:5px; font-weight:600;" onclick="renameSubTask('${t.code}')">💾 Save</button>
+            <button type="button" class="ghost ghost-danger" style="padding:5px 9px; font-size:11.5px; border-radius:5px;" onclick="deleteSubTask('${t.code}')">🗑️ Delete</button>
+          </div>
         </div>
       `).join('');
     }
   } catch (err) {
     container.innerHTML = 'Failed to load package tasks.';
+  }
+}
+
+async function renameSubTask(taskCode) {
+  const input = document.getElementById(`task-rename-input-${taskCode}`);
+  if (!input) return;
+  const newTitle = input.value.trim();
+
+  if (!newTitle) {
+    alert('Task title cannot be empty.');
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/assignments/tasks/${taskCode}/rename`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: newTitle })
+    });
+    const d = await res.json();
+
+    if (d.success) {
+      showToast(d.message || 'Task renamed successfully!');
+
+      if (allAssignmentsMap[taskCode]) {
+        allAssignmentsMap[taskCode].title = newTitle;
+      }
+
+      await loadTeacherAssignments();
+
+      const assignmentObj = allAssignmentsMap[activeCode];
+      if (assignmentObj && assignmentObj.bundle_code) {
+        const bundleRes = await fetch(`/api/public/bundle/${assignmentObj.bundle_code}`);
+        const bundleData = await bundleRes.json();
+        if (bundleData.success && bundleData.tasks) {
+          renderBundleTabs(bundleData.tasks);
+          if (taskCode === activeCode) {
+            document.getElementById('live-portal-title').textContent = `Live Submissions: ${newTitle}`;
+            document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${newTitle}`;
+          }
+        }
+      }
+    } else {
+      alert(d.error || 'Failed to rename task.');
+    }
+  } catch (err) {
+    alert('Connection error renaming task.');
   }
 }
 
