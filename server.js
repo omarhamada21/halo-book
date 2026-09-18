@@ -593,6 +593,8 @@ app.post(
         const taskCode = crypto.randomBytes(4).toString('hex');
         const schemeFiles = (req.files || []).filter(f => f.fieldname === `scheme_${i}`);
 
+        // Safely resolve the title without crashing on empty/missing inputs
+        const resolvedTitle = (task.title && task.title.trim()) ? task.title.trim() : `Task ${i + 1}`;
         let extractedSchemeText = task.schemeText || '';
         const cachedSchemePayload = [];
 
@@ -631,14 +633,14 @@ app.post(
             bundleCode,
             finalGroupTitle,
             req.user.id,
-            task.title.trim(),
+            resolvedTitle,
             deadlineVal,
             extractedSchemeText,
             JSON.stringify(cachedSchemePayload)
           ]
         });
 
-        createdTasks.push({ code: taskCode, title: task.title.trim() });
+        createdTasks.push({ code: taskCode, title: resolvedTitle });
       }
 
       return res.json({

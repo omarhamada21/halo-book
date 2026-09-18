@@ -612,7 +612,7 @@ let portalSubmissions = [];
 let allAssignmentsMap = {};
 let currentBundleTasks = [];
 let taskDefinitions = [
-  { title: 'Task 1: Essay', schemeFiles: [], schemeText: '' }
+  { title: '', schemeFiles: [], schemeText: '' }
 ];
 
 let newSubtaskSchemeFiles = [];
@@ -631,7 +631,7 @@ function renderTaskDefinitions() {
       </div>
       
       <label style="display:block; font-size: 12.5px; font-weight: 600; margin-bottom: 4px;">Task Name</label>
-      <input type="text" id="task-title-${idx}" value="${escapeHtml(t.title)}" placeholder="e.g. Essay or Grammar Test" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13.5px; margin-bottom: 10px; background: #fff;" />
+      <input type="text" id="task-title-${idx}" value="${escapeHtml(t.title || '')}" oninput="syncTaskTitle(${idx}, this.value)" placeholder="e.g. Essay or Grammar Test" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13.5px; margin-bottom: 10px; background: #fff;" />
 
       <label style="display:block; font-size: 12.5px; font-weight: 600; margin-bottom: 4px;">Marking Scheme / Rubric Files</label>
       <input type="file" id="task-scheme-file-${idx}" multiple style="display:none;" onchange="handleTaskSchemeFiles(${idx}, event)" accept="image/*,.pdf,.docx,.txt" />
@@ -642,15 +642,27 @@ function renderTaskDefinitions() {
         ${(t.schemeFiles || []).map((f, fIdx) => `
           <div class="file-chip">
             <span>📋 ${escapeHtml(f.name)}</span>
-            <button class="file-chip-remove" onclick="removeTaskSchemeFile(${idx}, ${fIdx})">&times;</button>
+            <button class="file-chip-remove" onclick="removeTaskSchemeFile(${idx},${fIdx})">&times;</button>
           </div>
         `).join('')}
       </div>
 
       <label style="display:block; font-size: 12.5px; font-weight: 600; margin-bottom: 4px;">Rubric Notes & Criteria (Optional)</label>
-      <textarea id="task-scheme-text-${idx}" placeholder="Extra teacher instructions or criteria..." style="margin-left: 0; width: 100%; min-height: 60px; padding: 8px 10px; font-size: 13px; background: #fff;">${escapeHtml(t.schemeText || '')}</textarea>
+      <textarea id="task-scheme-text-${idx}" oninput="syncTaskNotes(${idx}, this.value)" placeholder="Extra teacher instructions or criteria..." style="margin-left: 0; width: 100%; min-height: 60px; padding: 8px 10px; font-size: 13px; background: #fff;">${escapeHtml(t.schemeText || '')}</textarea>
     </div>
   `).join('');
+}
+
+function syncTaskTitle(idx, val) {
+  if (taskDefinitions[idx]) {
+    taskDefinitions[idx].title = val;
+  }
+}
+
+function syncTaskNotes(idx, val) {
+  if (taskDefinitions[idx]) {
+    taskDefinitions[idx].schemeText = val;
+  }
 }
 
 function handleTaskSchemeFiles(taskIdx, e) {
@@ -666,7 +678,7 @@ function removeTaskSchemeFile(taskIdx, fileIdx) {
 
 function addNewTaskField() {
   taskDefinitions.push({
-    title: `Task ${taskDefinitions.length + 1}`,
+    title: '',
     schemeFiles: [],
     schemeText: ''
   });
@@ -1203,8 +1215,11 @@ async function createAssignmentLink() {
   if (groupTitle) formData.append('groupTitle', groupTitle);
 
   for (let i = 0; i < taskDefinitions.length; i++) {
-    const titleVal = (document.getElementById(`task-title-${i}`)?.value || `Task ${i + 1}`).trim();
-    const notesVal = (document.getElementById(`task-scheme-text-${i}`)?.value || '').trim();
+    const titleInput = document.getElementById(`task-title-${i}`);
+    const notesInput = document.getElementById(`task-scheme-text-${i}`);
+
+    const titleVal = (titleInput ? titleInput.value.trim() : '') || (taskDefinitions[i].title || '').trim() || `Task ${i + 1}`;
+    const notesVal = (notesInput ? notesInput.value.trim() : '') || (taskDefinitions[i].schemeText || '').trim();
 
     tasksPayload.push({
       title: titleVal,
