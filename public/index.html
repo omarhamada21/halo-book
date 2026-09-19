@@ -1320,7 +1320,7 @@ async function fetchLiveSubmissions() {
   }
 }
 
-// ==================== IDENTICAL REPORT EXPORT FOR WHATSAPP ====================
+// ==================== ROCK-SOLID PDF EXPORT (MOBILE & DESKTOP ALIGNED) ====================
 async function shareReportWhatsApp(includeMarks = true) {
   if (!portalSubmissions || portalSubmissions.length === 0) {
     alert('No student submissions found to export.');
@@ -1334,57 +1334,64 @@ async function shareReportWhatsApp(includeMarks = true) {
 
   showToast('Generating official report PDF...');
 
-  // 1. Wait for web fonts to load
+  // Ensure fonts are fully decoded
   if (document.fonts && document.fonts.ready) {
     await document.fonts.ready;
   }
 
-  // 2. Expand all accordions so content is fully present in DOM
+  // 1. Force open all accordion cards so the complete DOM tree is visible
   document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
 
-  // 3. Staging container in the active viewport
+  // 2. Rigid staging container: Locks exact desktop width (794px = 210mm at 96dpi)
+  // This isolates the snapshot from mobile viewport sizes, zoom levels, and orientation changes.
   const renderStaging = document.createElement('div');
   renderStaging.id = 'pdf-direct-staging';
   renderStaging.style.position = 'fixed';
   renderStaging.style.top = '0';
   renderStaging.style.left = '0';
-  renderStaging.style.width = '100vw';
-  renderStaging.style.height = '100vh';
+  renderStaging.style.width = '794px';
+  renderStaging.style.minWidth = '794px';
+  renderStaging.style.maxWidth = '794px';
   renderStaging.style.background = '#ffffff';
   renderStaging.style.zIndex = '999999';
-  renderStaging.style.overflowY = 'auto';
-  renderStaging.style.padding = '10px';
+  renderStaging.style.padding = '24px 30px';
   renderStaging.style.boxSizing = 'border-box';
+  renderStaging.style.webkitTextSizeAdjust = '100%';
+  renderStaging.style.overflow = 'visible';
 
   const stagingInner = document.createElement('div');
-  stagingInner.style.width = '680px';
-  stagingInner.style.margin = '0 auto';
+  stagingInner.style.width = '100%';
   stagingInner.style.background = '#ffffff';
   stagingInner.style.color = '#16233F';
-  stagingInner.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  stagingInner.style.fontFamily = 'Arial, Helvetica, sans-serif';
   stagingInner.style.letterSpacing = 'normal';
-  stagingInner.style.wordSpacing = '0.5px';
+  stagingInner.style.wordSpacing = 'normal';
+  stagingInner.style.boxSizing = 'border-box';
 
-  // 4. Clone elements
+  // 3. Clone summary and result cards
   const summaryClone = document.getElementById('portal-print-summary').cloneNode(true);
   const listClone = document.getElementById('portal-results-list').cloneNode(true);
 
-  // Set report title
+  // Title assignment
   const titleEl = summaryClone.querySelector('.print-title');
   if (titleEl) {
     titleEl.textContent = includeMarks
       ? `Class Evaluation Summary: ${title}`
       : `Student Feedback & Correction Report: ${title}`;
+    titleEl.style.fontSize = '20px';
+    titleEl.style.fontWeight = '700';
+    titleEl.style.marginBottom = '4px';
   }
 
-  // Clean interactive and unnecessary UI elements
+  // Strip all non-printable and editing UI controls
   [summaryClone, listClone].forEach(root => {
     root.querySelectorAll('.no-print, button, .integrity-pills, .fb-integrity-box, .line-delete-btn, .table-add-btn, .section-add-btn, .edit-hint').forEach(el => el.remove());
     root.querySelectorAll('.editable-field, .line-item').forEach(el => {
       el.removeAttribute('contenteditable');
       el.style.border = 'none';
       el.style.background = 'transparent';
-      el.style.lineHeight = '1.4';
+      el.style.lineHeight = '1.45';
+      el.style.fontSize = '12px';
       el.style.display = 'block';
     });
     root.querySelectorAll('.line-item-wrap').forEach(el => {
@@ -1396,7 +1403,7 @@ async function shareReportWhatsApp(includeMarks = true) {
     });
   });
 
-  // Table styling
+  // 4. Force Summary Table to strict fixed table layout
   const table = summaryClone.querySelector('.summary-table');
   if (table) {
     table.style.width = '100%';
@@ -1409,15 +1416,16 @@ async function shareReportWhatsApp(includeMarks = true) {
     });
     table.querySelectorAll('th, td').forEach(cell => {
       cell.style.border = '1px solid #777';
-      cell.style.padding = '6px 8px';
-      cell.style.fontSize = '11.5px';
+      cell.style.padding = '8px 10px';
+      cell.style.fontSize = '12px';
       cell.style.verticalAlign = 'top';
       cell.style.wordWrap = 'break-word';
       cell.style.overflowWrap = 'break-word';
+      cell.style.boxSizing = 'border-box';
     });
   }
 
-  // Column distribution
+  // Column distributions
   if (!includeMarks) {
     summaryClone.querySelectorAll('.col-score-breakdown, .summary-score-tag').forEach(el => el.remove());
     listClone.querySelectorAll('.card-score-badge, .card-score-text, .fb-score-section').forEach(el => el.remove());
@@ -1435,7 +1443,7 @@ async function shareReportWhatsApp(includeMarks = true) {
     if (thMistakes) thMistakes.style.width = '46%';
   }
 
-  // Each student report card treated as a page block
+  // 5. Format individual student result cards with rigid table headers (avoids flex collisions)
   listClone.querySelectorAll('.result-card').forEach((card) => {
     card.style.border = 'none';
     card.style.background = '#ffffff';
@@ -1447,57 +1455,44 @@ async function shareReportWhatsApp(includeMarks = true) {
     card.classList.add('html2pdf__page-break');
     card.style.paddingTop = '10px';
     card.style.marginBottom = '0';
+    card.style.width = '100%';
 
     const head = card.querySelector('.result-head');
     if (head) {
-      head.style.cursor = 'default';
-      head.style.padding = '0 0 8px 0';
-      head.style.borderBottom = '1px solid #CBD6ED';
-      head.style.display = 'flex';
-      head.style.alignItems = 'center';
-      head.style.justifyContent = 'space-between';
-      head.style.gap = '10px';
-
       const badge = head.querySelector('.badge');
       const name = head.querySelector('.result-name');
       const score = head.querySelector('.result-score');
 
-      const leftWrap = document.createElement('div');
-      leftWrap.style.display = 'flex';
-      leftWrap.style.alignItems = 'center';
-      leftWrap.style.gap = '10px';
-      leftWrap.style.flex = '1';
+      const badgeText = badge ? badge.textContent.trim() : '';
+      const nameText = name ? name.childNodes[0].textContent.trim() : 'Student';
+      const scoreText = score ? score.textContent.trim() : '';
 
-      if (badge) leftWrap.appendChild(badge);
-      if (name) {
-        name.style.fontSize = '14.5px';
-        name.style.fontWeight = '600';
-        leftWrap.appendChild(name);
-      }
+      // Create a rigid HTML table header for the card (impervious to mobile flex bugs)
+      const headTable = document.createElement('table');
+      headTable.style.width = '100%';
+      headTable.style.borderCollapse = 'collapse';
+      headTable.style.borderBottom = '1.5px solid #CBD6ED';
+      headTable.style.marginBottom = '12px';
+      headTable.style.paddingBottom = '8px';
 
-      const rightWrap = document.createElement('div');
-      rightWrap.style.display = 'flex';
-      rightWrap.style.alignItems = 'center';
-      rightWrap.style.gap = '14px';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="vertical-align: middle; text-align: left; padding: 6px 0;">
+          <span style="display: inline-block; width: 34px; height: 34px; line-height: 32px; border-radius: 50%; border: 1.5px solid #1D3A66; color: #1D3A66; text-align: center; font-weight: 700; font-family: monospace; font-size: 13px; margin-right: 8px; vertical-align: middle;">
+            ${badgeText}
+          </span>
+          <span style="font-size: 15px; font-weight: 700; color: #16233F; vertical-align: middle;">
+            ${nameText}
+          </span>
+        </td>
+        <td style="vertical-align: middle; text-align: right; white-space: nowrap; padding: 6px 0;">
+          ${scoreText ? `<span style="font-family: monospace; font-weight: 700; font-size: 13px; margin-right: 14px; color: #16233F;">${scoreText}</span>` : ''}
+          <span style="font-family: Georgia, serif; font-size: 12.5px; font-weight: 600; color: #1D3A66;">MIMIR MARKING</span>
+        </td>
+      `;
+      headTable.appendChild(tr);
 
-      if (score) {
-        score.style.fontWeight = '700';
-        score.style.fontSize = '13px';
-        score.style.fontFamily = 'monospace';
-        rightWrap.appendChild(score);
-      }
-
-      const brandMark = document.createElement('span');
-      brandMark.style.fontFamily = "'Source Serif 4', Georgia, serif";
-      brandMark.style.fontSize = '12px';
-      brandMark.style.fontWeight = '600';
-      brandMark.style.color = '#1D3A66';
-      brandMark.textContent = 'MIMIR MARKING';
-      rightWrap.appendChild(brandMark);
-
-      head.innerHTML = '';
-      head.appendChild(leftWrap);
-      head.appendChild(rightWrap);
+      head.replaceWith(headTable);
     }
 
     const body = card.querySelector('.result-body');
@@ -1505,30 +1500,35 @@ async function shareReportWhatsApp(includeMarks = true) {
       body.style.maxHeight = 'none';
       body.style.display = 'block';
       body.style.borderTop = 'none';
-      body.style.padding = '10px 0 0 0';
+      body.style.padding = '4px 0 0 0';
     }
 
     card.querySelectorAll('.fb-section').forEach(sec => {
-      sec.style.marginBottom = '10px';
+      sec.style.marginBottom = '12px';
+      sec.style.pageBreakInside = 'avoid';
+      sec.style.breakInside = 'avoid';
     });
 
     card.querySelectorAll('.fb-label').forEach(lbl => {
       lbl.style.marginBottom = '4px';
-      lbl.style.fontSize = '10px';
+      lbl.style.fontSize = '10.5px';
+      lbl.style.fontWeight = '700';
     });
   });
 
   summaryClone.style.pageBreakInside = 'avoid';
   summaryClone.style.breakInside = 'avoid';
-  summaryClone.style.marginBottom = '10px';
+  summaryClone.style.marginBottom = '20px';
 
   stagingInner.appendChild(summaryClone);
   stagingInner.appendChild(listClone);
   renderStaging.appendChild(stagingInner);
   document.body.appendChild(renderStaging);
 
-  await new Promise(r => setTimeout(r, 250));
+  // Allow DOM styles to settle
+  await new Promise(r => setTimeout(r, 300));
 
+  // 6. html2pdf settings with explicit windowWidth to ignore phone screen dimensions
   const opt = {
     margin:       [8, 8, 8, 8],
     filename:     filename,
@@ -1537,10 +1537,12 @@ async function shareReportWhatsApp(includeMarks = true) {
       scale: 2,
       useCORS: true,
       scrollY: 0,
+      scrollX: 0,
+      windowWidth: 1024, // Forces desktop layout evaluation on phones
       letterRendering: false
     },
     jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak:    { mode: ['css', 'legacy'] }
+    pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
   };
 
   try {
@@ -1551,6 +1553,7 @@ async function shareReportWhatsApp(includeMarks = true) {
 
     let sharedSuccessfully = false;
 
+    // Mobile Web Share with fallback
     if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
       try {
         await navigator.share({
@@ -1560,10 +1563,7 @@ async function shareReportWhatsApp(includeMarks = true) {
         });
         sharedSuccessfully = true;
       } catch (shareErr) {
-        if (shareErr.name === 'AbortError') {
-          if (renderStaging.parentNode) document.body.removeChild(renderStaging);
-          return;
-        }
+        if (shareErr.name === 'AbortError') return;
         console.warn('Web share gesture expired, falling back to direct download:', shareErr);
       }
     }
