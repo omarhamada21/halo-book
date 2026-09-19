@@ -1321,7 +1321,7 @@ async function fetchLiveSubmissions() {
   }
 }
 
-// ==================== CLEAN NATIVE PDF EXPORT VIA SERVER ====================
+// ==================== CLEAN NATIVE PDF EXPORT VIA PUPPETEER ====================
 async function shareReportWhatsApp(includeMarks = true) {
   if (!portalSubmissions || portalSubmissions.length === 0) {
     alert('No student submissions found to export.');
@@ -1335,14 +1335,13 @@ async function shareReportWhatsApp(includeMarks = true) {
 
   showToast('Generating official report PDF...');
 
-  // 1. Expand all cards so content is visible in the DOM
+  // 1. Expand all cards so content is visible
   document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
 
   // 2. Clone the summary and cards
   const summaryClone = document.getElementById('portal-print-summary').cloneNode(true);
   const listClone = document.getElementById('portal-results-list').cloneNode(true);
 
-  // Set title
   const titleEl = summaryClone.querySelector('.print-title');
   if (titleEl) {
     titleEl.textContent = includeMarks
@@ -1350,7 +1349,7 @@ async function shareReportWhatsApp(includeMarks = true) {
       : `Student Feedback & Correction Report: ${title}`;
   }
 
-  // Remove UI buttons and edit hints
+  // Remove UI action buttons
   [summaryClone, listClone].forEach(root => {
     root.querySelectorAll('.no-print, button, .integrity-pills, .fb-integrity-box, .line-delete-btn, .table-add-btn, .section-add-btn, .edit-hint').forEach(el => el.remove());
     root.querySelectorAll('.editable-field, .line-item').forEach(el => {
@@ -1358,13 +1357,12 @@ async function shareReportWhatsApp(includeMarks = true) {
     });
   });
 
-  // Handle feedback-only mode columns
   if (!includeMarks) {
     summaryClone.querySelectorAll('.col-score-breakdown, .summary-score-tag').forEach(el => el.remove());
     listClone.querySelectorAll('.card-score-badge, .card-score-text, .fb-score-section').forEach(el => el.remove());
   }
 
-  // 3. Assemble a clean, isolated HTML document with print styling
+  // 3. Complete standalone HTML document for Chromium print pipeline
   const fullHtml = `
     <!DOCTYPE html>
     <html>
@@ -1382,8 +1380,6 @@ async function shareReportWhatsApp(includeMarks = true) {
           padding: 0;
           font-size: 12px;
           line-height: 1.45;
-          letter-spacing: normal;
-          word-spacing: normal;
         }
         .print-summary {
           width: 100%;
@@ -1538,7 +1534,10 @@ async function shareReportWhatsApp(includeMarks = true) {
       body: JSON.stringify({ htmlContent: fullHtml, filename })
     });
 
-    if (!response.ok) throw new Error('Server PDF compilation failed.');
+    if (!response.ok) {
+      const errJson = await response.json().catch(() => ({}));
+      throw new Error(errJson.error || 'Server PDF compilation failed.');
+    }
 
     const pdfBlob = await response.blob();
     const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
@@ -1579,7 +1578,6 @@ async function shareReportWhatsApp(includeMarks = true) {
     alert('Could not generate PDF: ' + err.message);
   }
 }
-
 
 function printReport(type) {
   const assignmentObj = allAssignmentsMap[activeCode];

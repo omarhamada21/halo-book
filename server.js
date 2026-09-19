@@ -12,7 +12,9 @@ import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import { createClient } from '@libsql/client';
 import crypto from 'crypto';
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
+
 
 const require = createRequire(import.meta.url);
 
@@ -1552,30 +1554,31 @@ Respond ONLY with valid JSON matching the schema.`;
   }
 );
 
-// Server-side pixel-perfect PDF generator
+// Server-side Puppeteer PDF generator (Render & Linux compatible)
 app.post('/api/export/pdf', authenticateToken, requireApprovedUser, async (req, res) => {
   const { htmlContent, filename } = req.body;
   if (!htmlContent) return res.status(400).json({ error: 'Missing HTML content' });
 
   let browser;
   try {
+    const isLocal = process.platform === 'win32';
+
     browser = await puppeteer.launch({
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process'
-      ]
+      args: isLocal ? ['--no-sandbox', '--disable-setuid-sandbox'] : chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: isLocal 
+        ? (process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')
+        : await chromium.executablePath(),
+      headless: chromium.headless
     });
 
     const page = await browser.newPage();
     
-    // Inject print layout directly
-    await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+    // Pass raw HTML directly into headless Chromium
+    await page.setContent(htmlContent, { 
+      waitUntil: 'networkidle0',
+      timeout: 30000 
+    });
 
     const pdfBuffer = await page.pdf({
       format: 'A4',
@@ -1595,10 +1598,11 @@ app.post('/api/export/pdf', authenticateToken, requireApprovedUser, async (req, 
     return res.send(pdfBuffer);
   } catch (err) {
     if (browser) await browser.close();
-    console.error('Puppeteer PDF export error:', err);
-    return res.status(500).json({ error: 'Failed to generate PDF on server.' });
+    console.error('Puppeteer compilation error:', err);
+    return res.status(500).json({ error: err.message || 'Puppeteer compilation failed on server.' });
   }
 });
+
 
 // Static assets
 const publicDir = path.resolve(__dirname, 'public');

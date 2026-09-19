@@ -9,6 +9,7 @@
     "dependencies": {
         "@google/genai": "^2.16.0",
         "@libsql/client": "^0.17.4",
+        "@sparticuz/chromium": "^153.0.0",
         "bcryptjs": "^3.0.3",
         "better-sqlite3": "^13.0.3",
         "cookie-parser": "^1.4.7",
@@ -22,9 +23,12 @@
         "nodemailer": "^9.0.5",
         "pdf-parse": "^2.4.5",
         "puppeteer": "^25.11.0",
+        "puppeteer-core": "^25.11.0",
         "resend": "^6.20.0"
     },
     "allowScripts": {
-        "puppeteer@25.11.0": true
+        "puppeteer@25.11.0": true,
+        "@sparticuz/chromium@153.0.0": true,
+        "puppeteer-core@25.11.0": true
     }
 }
