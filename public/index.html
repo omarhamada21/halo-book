@@ -1549,27 +1549,45 @@ async function shareReportWhatsApp(includeMarks = true) {
 
     const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
 
+    let sharedSuccessfully = false;
+
     if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-      await navigator.share({
-        files: [pdfFile],
-        title: `${title} Report`,
-        text: `Evaluation Report for ${title}`
-      });
-    } else {
+      try {
+        await navigator.share({
+          files: [pdfFile],
+          title: `${title} Report`,
+          text: `Evaluation Report for ${title}`
+        });
+        sharedSuccessfully = true;
+      } catch (shareErr) {
+        if (shareErr.name === 'AbortError') {
+          if (renderStaging.parentNode) document.body.removeChild(renderStaging);
+          return;
+        }
+        console.warn('Web share gesture expired, falling back to direct download:', shareErr);
+      }
+    }
+
+    if (!sharedSuccessfully) {
       const downloadLink = document.createElement('a');
-      downloadLink.href = URL.createObjectURL(pdfBlob);
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      downloadLink.href = blobUrl;
       downloadLink.download = filename;
       document.body.appendChild(downloadLink);
       downloadLink.click();
-      document.body.removeChild(downloadLink);
+      setTimeout(() => {
+        if (downloadLink.parentNode) document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(blobUrl);
+      }, 1500);
 
-      const notice = encodeURIComponent(`📄 *${title} Evaluation Report*\n(The PDF file was downloaded to your device; attach it directly to this chat).`);
+      showToast('Report downloaded to device.');
+      const notice = encodeURIComponent(`📄 *${title} Evaluation Report*\n(The PDF file was saved to your downloads; attach it directly to this chat).`);
       window.open(`https://api.whatsapp.com/send?text=${notice}`, '_blank');
     }
   } catch (err) {
-    if (renderStaging.parentNode) document.body.removeChild(renderStaging);
+    if (renderStaging && renderStaging.parentNode) document.body.removeChild(renderStaging);
     if (err.name !== 'AbortError') {
-      console.error('PDF Share error:', err);
+      console.error('PDF generation error:', err);
       alert('Could not generate PDF: ' + err.message);
     }
   }
