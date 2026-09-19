@@ -1164,16 +1164,25 @@ function loadSelectedAssignment(selectedCode) {
   activeCode = selectedCode;
 
   const assignmentObj = allAssignmentsMap[selectedCode];
-  const title = assignmentObj ? assignmentObj.group_title || assignmentObj.title : 'Assignment';
-  const deadlineText = assignmentObj ? formatDeadlineString(assignmentObj.deadline) : 'No Deadline';
+  const groupName = assignmentObj ? assignmentObj.group_title || '' : '';
+  const taskName = assignmentObj ? assignmentObj.title || '' : '';
 
+  // Combine Group Name and Homework Task Name
+  let fullDisplayTitle = taskName || 'Assignment';
+  if (groupName && taskName && groupName !== taskName) {
+    fullDisplayTitle = `${groupName} — ${taskName}`;
+  } else if (groupName) {
+    fullDisplayTitle = groupName;
+  }
+
+  const deadlineText = assignmentObj ? formatDeadlineString(assignmentObj.deadline) : 'No Deadline';
   const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
   const studentCount = portalSubmissions ? portalSubmissions.length : 0;
   const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
 
-  document.getElementById('live-portal-title').textContent = `Live Submissions: ${title}`;
+  document.getElementById('live-portal-title').textContent = `Live Submissions: ${fullDisplayTitle}`;
   document.getElementById('live-portal-deadline-sub').textContent = deadlineText;
-  document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${title}`;
+  document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${fullDisplayTitle}`;
   document.getElementById('portal-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
   document.getElementById('portal-results-card').style.display = 'block';
 
@@ -1282,6 +1291,18 @@ function renderBundleTabs(tasks) {
 
 function switchActiveTaskTab(taskCode, taskTitle) {
   activeCode = taskCode;
+  
+  const assignmentObj = allAssignmentsMap[taskCode];
+  const groupName = assignmentObj ? assignmentObj.group_title || '' : '';
+  
+  let fullDisplayTitle = taskTitle;
+  if (groupName && taskTitle && groupName !== taskTitle) {
+    fullDisplayTitle = `${groupName} — ${taskTitle}`;
+  }
+
+  document.getElementById('live-portal-title').textContent = `Live Submissions: ${fullDisplayTitle}`;
+  document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${fullDisplayTitle}`;
+
   fetchLiveSubmissions();
   
   document.querySelectorAll('#bundle-task-tabs button').forEach(btn => {
@@ -1336,9 +1357,18 @@ async function shareReportWhatsApp(includeMarks = true) {
   }
 
   const assignmentObj = allAssignmentsMap[activeCode];
-  const title = assignmentObj ? assignmentObj.group_title || assignmentObj.title : 'Assignment';
-  const cleanTitle = title.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const filename = `${cleanTitle}_${includeMarks ? 'Marked_Report' : 'Feedback_Report'}.pdf`;
+  const groupName = assignmentObj ? assignmentObj.group_title || '' : '';
+  const taskName = assignmentObj ? assignmentObj.title || '' : '';
+
+  let reportTitle = taskName || 'Assignment';
+  if (groupName && taskName && groupName !== taskName) {
+    reportTitle = `${groupName} — ${taskName}`;
+  } else if (groupName) {
+    reportTitle = groupName;
+  }
+
+  const cleanFileTitle = reportTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `${cleanFileTitle}_${includeMarks ? 'Marked_Report' : 'Feedback_Report'}.pdf`;
 
   isExportingPdf = true;
   showToast('Compiling official report PDF via server...');
@@ -1353,8 +1383,8 @@ async function shareReportWhatsApp(includeMarks = true) {
   const titleEl = summaryClone.querySelector('.print-title');
   if (titleEl) {
     titleEl.textContent = includeMarks
-      ? `Class Evaluation Summary: ${title}`
-      : `Student Feedback & Correction Report: ${title}`;
+      ? `Class Evaluation Summary: ${reportTitle}`
+      : `Student Feedback & Correction Report: ${reportTitle}`;
   }
 
   // Remove UI action buttons
@@ -1554,10 +1584,10 @@ async function shareReportWhatsApp(includeMarks = true) {
 
     if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
       try {
-        await navigator.share({
+       await navigator.share({
           files: [pdfFile],
-          title: `${title} Report`,
-          text: `Evaluation Report for ${title}`
+          title: `${reportTitle} Report`,
+          text: `Evaluation Report for ${reportTitle}`
         });
         sharedSuccessfully = true;
       } catch (shareErr) {
