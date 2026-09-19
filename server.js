@@ -12,6 +12,7 @@ import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import { createClient } from '@libsql/client';
 import crypto from 'crypto';
+import puppeteer from 'puppeteer';
 
 const require = createRequire(import.meta.url);
 
@@ -1550,6 +1551,51 @@ Respond ONLY with valid JSON matching the schema.`;
     }
   }
 );
+
+// Server-side pixel-perfect PDF generator
+app.post('/api/export/pdf', authenticateToken, requireApprovedUser, async (req, res) => {
+  const { htmlContent, filename } = req.body;
+  if (!htmlContent) return res.status(400).json({ error: 'Missing HTML content' });
+
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu'
+      ]
+    });
+
+    const page = await browser.newPage();
+    
+    // Inject print layout directly
+    await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '12mm',
+        bottom: '12mm',
+        left: '12mm',
+        right: '12mm'
+      }
+    });
+
+    await browser.close();
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename || 'Report.pdf'}"`);
+    return res.send(pdfBuffer);
+  } catch (err) {
+    if (browser) await browser.close();
+    console.error('Puppeteer PDF export error:', err);
+    return res.status(500).json({ error: 'Failed to generate PDF on server.' });
+  }
+});
 
 // Static assets
 const publicDir = path.resolve(__dirname, 'public');

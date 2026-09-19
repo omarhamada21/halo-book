@@ -1320,7 +1320,7 @@ async function fetchLiveSubmissions() {
   }
 }
 
-// ==================== ROCK-SOLID PDF EXPORT (MOBILE & DESKTOP ALIGNED) ====================
+// ==================== CLEAN NATIVE PDF EXPORT VIA SERVER ====================
 async function shareReportWhatsApp(includeMarks = true) {
   if (!portalSubmissions || portalSubmissions.length === 0) {
     alert('No student submissions found to export.');
@@ -1334,226 +1334,216 @@ async function shareReportWhatsApp(includeMarks = true) {
 
   showToast('Generating official report PDF...');
 
-  // Ensure fonts are fully decoded
-  if (document.fonts && document.fonts.ready) {
-    await document.fonts.ready;
-  }
-
-  // 1. Force open all accordion cards so the complete DOM tree is visible
+  // 1. Expand all cards so content is visible in the DOM
   document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
 
-  // 2. Rigid staging container: Locks exact desktop width (794px = 210mm at 96dpi)
-  // This isolates the snapshot from mobile viewport sizes, zoom levels, and orientation changes.
-  const renderStaging = document.createElement('div');
-  renderStaging.id = 'pdf-direct-staging';
-  renderStaging.style.position = 'fixed';
-  renderStaging.style.top = '0';
-  renderStaging.style.left = '0';
-  renderStaging.style.width = '794px';
-  renderStaging.style.minWidth = '794px';
-  renderStaging.style.maxWidth = '794px';
-  renderStaging.style.background = '#ffffff';
-  renderStaging.style.zIndex = '999999';
-  renderStaging.style.padding = '24px 30px';
-  renderStaging.style.boxSizing = 'border-box';
-  renderStaging.style.webkitTextSizeAdjust = '100%';
-  renderStaging.style.overflow = 'visible';
-
-  const stagingInner = document.createElement('div');
-  stagingInner.style.width = '100%';
-  stagingInner.style.background = '#ffffff';
-  stagingInner.style.color = '#16233F';
-  stagingInner.style.fontFamily = 'Arial, Helvetica, sans-serif';
-  stagingInner.style.letterSpacing = 'normal';
-  stagingInner.style.wordSpacing = 'normal';
-  stagingInner.style.boxSizing = 'border-box';
-
-  // 3. Clone summary and result cards
+  // 2. Clone the summary and cards
   const summaryClone = document.getElementById('portal-print-summary').cloneNode(true);
   const listClone = document.getElementById('portal-results-list').cloneNode(true);
 
-  // Title assignment
+  // Set title
   const titleEl = summaryClone.querySelector('.print-title');
   if (titleEl) {
     titleEl.textContent = includeMarks
       ? `Class Evaluation Summary: ${title}`
       : `Student Feedback & Correction Report: ${title}`;
-    titleEl.style.fontSize = '20px';
-    titleEl.style.fontWeight = '700';
-    titleEl.style.marginBottom = '4px';
   }
 
-  // Strip all non-printable and editing UI controls
+  // Remove UI buttons and edit hints
   [summaryClone, listClone].forEach(root => {
     root.querySelectorAll('.no-print, button, .integrity-pills, .fb-integrity-box, .line-delete-btn, .table-add-btn, .section-add-btn, .edit-hint').forEach(el => el.remove());
     root.querySelectorAll('.editable-field, .line-item').forEach(el => {
       el.removeAttribute('contenteditable');
-      el.style.border = 'none';
-      el.style.background = 'transparent';
-      el.style.lineHeight = '1.45';
-      el.style.fontSize = '12px';
-      el.style.display = 'block';
-    });
-    root.querySelectorAll('.line-item-wrap').forEach(el => {
-      el.style.border = 'none';
-      el.style.background = 'transparent';
-      el.style.padding = '1px 0';
-      el.style.margin = '0 0 2px 0';
-      el.style.display = 'block';
     });
   });
 
-  // 4. Force Summary Table to strict fixed table layout
-  const table = summaryClone.querySelector('.summary-table');
-  if (table) {
-    table.style.width = '100%';
-    table.style.tableLayout = 'fixed';
-    table.style.borderCollapse = 'collapse';
-    table.style.marginTop = '10px';
-    table.querySelectorAll('tr').forEach(tr => {
-      tr.style.pageBreakInside = 'avoid';
-      tr.style.breakInside = 'avoid';
-    });
-    table.querySelectorAll('th, td').forEach(cell => {
-      cell.style.border = '1px solid #777';
-      cell.style.padding = '8px 10px';
-      cell.style.fontSize = '12px';
-      cell.style.verticalAlign = 'top';
-      cell.style.wordWrap = 'break-word';
-      cell.style.overflowWrap = 'break-word';
-      cell.style.boxSizing = 'border-box';
-    });
-  }
-
-  // Column distributions
+  // Handle feedback-only mode columns
   if (!includeMarks) {
     summaryClone.querySelectorAll('.col-score-breakdown, .summary-score-tag').forEach(el => el.remove());
     listClone.querySelectorAll('.card-score-badge, .card-score-text, .fb-score-section').forEach(el => el.remove());
-    
-    const thName = summaryClone.querySelector('.summary-col-name');
-    const thMistakes = summaryClone.querySelector('.summary-col-mistakes');
-    if (thName) thName.style.width = '28%';
-    if (thMistakes) thMistakes.style.width = '72%';
-  } else {
-    const thName = summaryClone.querySelector('.summary-col-name');
-    const thScores = summaryClone.querySelector('.col-score-breakdown');
-    const thMistakes = summaryClone.querySelector('.summary-col-mistakes');
-    if (thName) thName.style.width = '24%';
-    if (thScores) thScores.style.width = '30%';
-    if (thMistakes) thMistakes.style.width = '46%';
   }
 
-  // 5. Format individual student result cards with rigid table headers (avoids flex collisions)
-  listClone.querySelectorAll('.result-card').forEach((card) => {
-    card.style.border = 'none';
-    card.style.background = '#ffffff';
-    card.style.boxShadow = 'none';
-    card.style.pageBreakBefore = 'always';
-    card.style.breakBefore = 'page';
-    card.style.pageBreakInside = 'avoid';
-    card.style.breakInside = 'avoid';
-    card.classList.add('html2pdf__page-break');
-    card.style.paddingTop = '10px';
-    card.style.marginBottom = '0';
-    card.style.width = '100%';
+  // 3. Assemble a clean, isolated HTML document with print styling
+  const fullHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>${escapeHtml(title)}</title>
+      <style>
+        @page { size: A4 portrait; margin: 12mm; }
+        * { box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+          color: #16233F;
+          background: #fff;
+          margin: 0;
+          padding: 0;
+          font-size: 12px;
+          line-height: 1.45;
+          letter-spacing: normal;
+          word-spacing: normal;
+        }
+        .print-summary {
+          width: 100%;
+          page-break-after: always;
+          break-after: page;
+        }
+        .print-title {
+          font-family: Georgia, serif;
+          font-size: 19px;
+          font-weight: 700;
+          margin-bottom: 4px;
+        }
+        .print-sub {
+          font-size: 11.5px;
+          color: #555;
+          margin-bottom: 14px;
+        }
+        .summary-table {
+          width: 100%;
+          border-collapse: collapse;
+          table-layout: fixed;
+        }
+        .summary-table th, .summary-table td {
+          border: 1px solid #777;
+          padding: 8px 10px;
+          vertical-align: top;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+        }
+        .summary-table th {
+          background: #f2f4f8;
+          font-family: monospace;
+          font-size: 10.5px;
+          text-transform: uppercase;
+        }
+        .summary-col-name { width: ${includeMarks ? '24%' : '28%'}; }
+        ${includeMarks ? '.col-score-breakdown { width: 30%; }' : ''}
+        .summary-col-mistakes { width: ${includeMarks ? '46%' : '72%'}; }
+        
+        .line-item-wrap { margin-bottom: 2px; }
+        .line-item { word-break: break-word; }
 
-    const head = card.querySelector('.result-head');
-    if (head) {
-      const badge = head.querySelector('.badge');
-      const name = head.querySelector('.result-name');
-      const score = head.querySelector('.result-score');
+        .result-card {
+          page-break-before: always;
+          break-before: page;
+          page-break-inside: avoid;
+          break-inside: avoid;
+          margin-bottom: 20px;
+        }
+        .result-head {
+          border-bottom: 1.5px solid #CBD6ED;
+          padding-bottom: 8px;
+          margin-bottom: 12px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .card-header-left {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .badge {
+          width: 32px;
+          height: 32px;
+          line-height: 30px;
+          border-radius: 50%;
+          border: 1.5px solid #1D3A66;
+          color: #1D3A66;
+          text-align: center;
+          font-weight: 700;
+          font-family: monospace;
+          font-size: 12px;
+        }
+        .result-name {
+          font-size: 14.5px;
+          font-weight: 700;
+        }
+        .card-header-right {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+        .result-score {
+          font-family: monospace;
+          font-weight: 700;
+          font-size: 13px;
+        }
+        .brand-watermark {
+          font-family: Georgia, serif;
+          font-size: 12px;
+          font-weight: 600;
+          color: #1D3A66;
+        }
+        .result-body {
+          display: block !important;
+          max-height: none !important;
+        }
+        .fb-section {
+          margin-bottom: 12px;
+          page-break-inside: avoid;
+          break-inside: avoid;
+        }
+        .fb-label {
+          font-family: monospace;
+          font-size: 10px;
+          text-transform: uppercase;
+          color: #1D3A66;
+          font-weight: 700;
+          margin-bottom: 4px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="print-summary">
+        ${summaryClone.innerHTML}
+      </div>
+      <div class="results">
+        ${Array.from(listClone.querySelectorAll('.result-card')).map(card => {
+          const badge = card.querySelector('.badge');
+          const name = card.querySelector('.result-name');
+          const score = card.querySelector('.result-score');
+          const body = card.querySelector('.result-body');
 
-      const badgeText = badge ? badge.textContent.trim() : '';
-      const nameText = name ? name.childNodes[0].textContent.trim() : 'Student';
-      const scoreText = score ? score.textContent.trim() : '';
-
-      // Create a rigid HTML table header for the card (impervious to mobile flex bugs)
-      const headTable = document.createElement('table');
-      headTable.style.width = '100%';
-      headTable.style.borderCollapse = 'collapse';
-      headTable.style.borderBottom = '1.5px solid #CBD6ED';
-      headTable.style.marginBottom = '12px';
-      headTable.style.paddingBottom = '8px';
-
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td style="vertical-align: middle; text-align: left; padding: 6px 0;">
-          <span style="display: inline-block; width: 34px; height: 34px; line-height: 32px; border-radius: 50%; border: 1.5px solid #1D3A66; color: #1D3A66; text-align: center; font-weight: 700; font-family: monospace; font-size: 13px; margin-right: 8px; vertical-align: middle;">
-            ${badgeText}
-          </span>
-          <span style="font-size: 15px; font-weight: 700; color: #16233F; vertical-align: middle;">
-            ${nameText}
-          </span>
-        </td>
-        <td style="vertical-align: middle; text-align: right; white-space: nowrap; padding: 6px 0;">
-          ${scoreText ? `<span style="font-family: monospace; font-weight: 700; font-size: 13px; margin-right: 14px; color: #16233F;">${scoreText}</span>` : ''}
-          <span style="font-family: Georgia, serif; font-size: 12.5px; font-weight: 600; color: #1D3A66;">MIMIR MARKING</span>
-        </td>
-      `;
-      headTable.appendChild(tr);
-
-      head.replaceWith(headTable);
-    }
-
-    const body = card.querySelector('.result-body');
-    if (body) {
-      body.style.maxHeight = 'none';
-      body.style.display = 'block';
-      body.style.borderTop = 'none';
-      body.style.padding = '4px 0 0 0';
-    }
-
-    card.querySelectorAll('.fb-section').forEach(sec => {
-      sec.style.marginBottom = '12px';
-      sec.style.pageBreakInside = 'avoid';
-      sec.style.breakInside = 'avoid';
-    });
-
-    card.querySelectorAll('.fb-label').forEach(lbl => {
-      lbl.style.marginBottom = '4px';
-      lbl.style.fontSize = '10.5px';
-      lbl.style.fontWeight = '700';
-    });
-  });
-
-  summaryClone.style.pageBreakInside = 'avoid';
-  summaryClone.style.breakInside = 'avoid';
-  summaryClone.style.marginBottom = '20px';
-
-  stagingInner.appendChild(summaryClone);
-  stagingInner.appendChild(listClone);
-  renderStaging.appendChild(stagingInner);
-  document.body.appendChild(renderStaging);
-
-  // Allow DOM styles to settle
-  await new Promise(r => setTimeout(r, 300));
-
-  // 6. html2pdf settings with explicit windowWidth to ignore phone screen dimensions
-  const opt = {
-    margin:       [8, 8, 8, 8],
-    filename:     filename,
-    image:        { type: 'jpeg', quality: 0.98 },
-    html2canvas:  {
-      scale: 2,
-      useCORS: true,
-      scrollY: 0,
-      scrollX: 0,
-      windowWidth: 1024, // Forces desktop layout evaluation on phones
-      letterRendering: false
-    },
-    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
-  };
+          return `
+            <div class="result-card">
+              <div class="result-head">
+                <div class="card-header-left">
+                  ${badge ? `<div class="badge">${badge.textContent.trim()}</div>` : ''}
+                  <div class="result-name">${name ? name.childNodes[0].textContent.trim() : 'Student'}</div>
+                </div>
+                <div class="card-header-right">
+                  ${includeMarks && score ? `<div class="result-score">${score.textContent.trim()}</div>` : ''}
+                  <div class="brand-watermark">MIMIR MARKING</div>
+                </div>
+              </div>
+              <div class="result-body">
+                ${body ? body.innerHTML : ''}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </body>
+    </html>
+  `;
 
   try {
-    const pdfBlob = await html2pdf().set(opt).from(stagingInner).output('blob');
-    if (renderStaging.parentNode) document.body.removeChild(renderStaging);
+    const response = await fetch('/api/export/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ htmlContent: fullHtml, filename })
+    });
 
+    if (!response.ok) throw new Error('Server PDF compilation failed.');
+
+    const pdfBlob = await response.blob();
     const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
 
     let sharedSuccessfully = false;
 
-    // Mobile Web Share with fallback
     if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
       try {
         await navigator.share({
@@ -1564,7 +1554,6 @@ async function shareReportWhatsApp(includeMarks = true) {
         sharedSuccessfully = true;
       } catch (shareErr) {
         if (shareErr.name === 'AbortError') return;
-        console.warn('Web share gesture expired, falling back to direct download:', shareErr);
       }
     }
 
@@ -1581,15 +1570,12 @@ async function shareReportWhatsApp(includeMarks = true) {
       }, 1500);
 
       showToast('Report downloaded to device.');
-      const notice = encodeURIComponent(`📄 *${title} Evaluation Report*\n(The PDF file was saved to your downloads; attach it directly to this chat).`);
+      const notice = encodeURIComponent(`📄 *${title} Evaluation Report*\n(The PDF file has been downloaded; attach it directly to this chat).`);
       window.open(`https://api.whatsapp.com/send?text=${notice}`, '_blank');
     }
   } catch (err) {
-    if (renderStaging && renderStaging.parentNode) document.body.removeChild(renderStaging);
-    if (err.name !== 'AbortError') {
-      console.error('PDF generation error:', err);
-      alert('Could not generate PDF: ' + err.message);
-    }
+    console.error('PDF export error:', err);
+    alert('Could not generate PDF: ' + err.message);
   }
 }
 
