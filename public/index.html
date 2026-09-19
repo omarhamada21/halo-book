@@ -1292,16 +1292,25 @@ function renderBundleTabs(tasks) {
 function switchActiveTaskTab(taskCode, taskTitle) {
   activeCode = taskCode;
   
-  const assignmentObj = allAssignmentsMap[taskCode];
-  const groupName = assignmentObj ? assignmentObj.group_title || '' : '';
-  
-  let fullDisplayTitle = taskTitle;
-  if (groupName && taskTitle && groupName !== taskTitle) {
-    fullDisplayTitle = `${groupName} — ${taskTitle}`;
+  if (allAssignmentsMap[taskCode]) {
+    allAssignmentsMap[taskCode].title = taskTitle;
   }
 
-  document.getElementById('live-portal-title').textContent = `Live Submissions: ${fullDisplayTitle}`;
-  document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${fullDisplayTitle}`;
+  const assignmentObj = allAssignmentsMap[taskCode];
+  const groupName = assignmentObj ? (assignmentObj.group_title || '').trim() : '';
+  
+  let fullTitle = taskTitle;
+  if (groupName && taskTitle && groupName.toLowerCase() !== taskTitle.toLowerCase()) {
+    fullTitle = `${groupName} — ${taskTitle}`;
+  } else if (groupName) {
+    fullTitle = groupName;
+  }
+
+  const liveTitle = document.getElementById('live-portal-title');
+  if (liveTitle) liveTitle.textContent = `Live Submissions: ${fullTitle}`;
+
+  const summaryTitle = document.getElementById('portal-print-report-title');
+  if (summaryTitle) summaryTitle.textContent = `Class Evaluation Summary: ${fullTitle}`;
 
   fetchLiveSubmissions();
   
@@ -1342,24 +1351,20 @@ async function fetchLiveSubmissions() {
   }
 }
 
-// ==================== CLEAN NATIVE PDF EXPORT VIA PUPPETEER ====================
-let isExportingPdf = false;
-
+// ==================== INSTANT LOCAL VECTOR ENGINE ====================
 async function shareReportWhatsApp(includeMarks = true) {
-  if (isExportingPdf) {
-    showToast('A report is already being compiled. Please wait a moment...');
-    return;
-  }
-
   if (!portalSubmissions || portalSubmissions.length === 0) {
     alert('No student submissions found to export.');
     return;
   }
 
-  // --- PROBLEM 2 FIX: Resolve Both Group Name AND Homework Name ---
+  // --- 1. RESOLVE BOTH GROUP NAME AND TASK NAME DIRECTLY FROM THE ACTIVE UI TAB ---
   const assignmentObj = allAssignmentsMap[activeCode];
   const groupName = assignmentObj ? (assignmentObj.group_title || '').trim() : '';
-  const taskName = assignmentObj ? (assignmentObj.title || '').trim() : '';
+
+  // Grab the title from the selected tab button if visible, otherwise from data
+  const activeTabBtn = document.querySelector('#bundle-task-tabs button.primary');
+  let taskName = activeTabBtn ? activeTabBtn.textContent.trim() : (assignmentObj ? (assignmentObj.title || '').trim() : '');
 
   let fullReportTitle = taskName || 'Assignment';
   if (groupName && taskName && groupName.toLowerCase() !== taskName.toLowerCase()) {
@@ -1368,285 +1373,236 @@ async function shareReportWhatsApp(includeMarks = true) {
     fullReportTitle = groupName;
   }
 
+  showToast('Generating official report PDF...');
+
+  // --- 2. VECTOR PDF (Instant - Under 1 second, No Server Call) ---
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const contentWidth = pageWidth - (margin * 2);
+
+  function addPageHeader(docInstance, studentName = '', scoreText = '') {
+    docInstance.setFont('helvetica', 'bold');
+    docInstance.setFontSize(13);
+    docInstance.setTextColor(22, 35, 63);
+
+    if (studentName) {
+      docInstance.text(studentName, margin, 16);
+      docInstance.setFont('courier', 'bold');
+      docInstance.setFontSize(10.5);
+      docInstance.setTextColor(29, 58, 102);
+
+      let rightText = fullReportTitle;
+      if (includeMarks && scoreText) {
+        rightText = `${scoreText}  |  ${rightText}`;
+      }
+      docInstance.text(rightText, pageWidth - margin, 16, { align: 'right' });
+      
+      docInstance.setDrawColor(203, 214, 237);
+      docInstance.setLineWidth(0.4);
+      docInstance.line(margin, 19, pageWidth - margin, 19);
+    }
+  }
+
+  function cleanLines(text) {
+    if (!text) return [];
+    return text.split(/\n|(?=- Section)|(?=- Question)|(?=- Q\d)/g)
+      .map(l => l.replace(/^[-•*]\s*/, '').trim())
+      .filter(l => l.length > 0);
+  }
+
+  // ================= PAGE 1: EVALUATION SUMMARY =================
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(22, 35, 63);
+  doc.text(includeMarks ? `Class Evaluation Summary: ${fullReportTitle}` : `Student Feedback & Correction Report: ${fullReportTitle}`, margin, 18);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  doc.setTextColor(85, 85, 85);
+  const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
+  doc.text(`Teacher: ${teacherDisplay}   |   Total Assessed: ${portalSubmissions.length} Student${portalSubmissions.length === 1 ? '' : 's'}`, margin, 24);
+
+  const tableHeaders = includeMarks 
+    ? [['STUDENT NAME', 'SCORE BREAKDOWN', 'MISTAKES IN YOUR WORK']]
+    : [['STUDENT NAME', 'MISTAKES IN YOUR WORK']];
+
+  const tableBody = portalSubmissions.map(sub => {
+    const studentName = sub.name || sub.student_name || 'Student';
+    const totalScore = sub.total_score || '—';
+
+    const mistakesArr = cleanLines(sub.mistakes);
+    const mistakesFormatted = mistakesArr.length ? mistakesArr.map(m => `• ${m}`).join('\n\n') : '• None';
+
+    if (includeMarks) {
+      const breakdownArr = cleanLines(sub.category_breakdown);
+      const breakdownFormatted = breakdownArr.length ? breakdownArr.map(b => `• ${b}`).join('\n') : '• None';
+      return [
+        `${studentName}\n\nTotal: ${totalScore}`,
+        breakdownFormatted,
+        mistakesFormatted
+      ];
+    } else {
+      return [
+        studentName,
+        mistakesFormatted
+      ];
+    }
+  });
+
+  doc.autoTable({
+    startY: 28,
+    head: tableHeaders,
+    body: tableBody,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [242, 244, 248],
+      textColor: [22, 35, 63],
+      font: 'courier',
+      fontSize: 8.5,
+      fontStyle: 'bold',
+      cellPadding: 3
+    },
+    bodyStyles: {
+      textColor: [22, 35, 63],
+      fontSize: 8.5,
+      cellPadding: 3.5,
+      lineColor: [160, 160, 160],
+      lineWidth: 0.2
+    },
+    columnStyles: includeMarks ? {
+      0: { cellWidth: 42, fontStyle: 'bold' },
+      1: { cellWidth: 50 },
+      2: { cellWidth: 'auto' }
+    } : {
+      0: { cellWidth: 48, fontStyle: 'bold' },
+      1: { cellWidth: 'auto' }
+    },
+    margin: { left: margin, right: margin, bottom: 12 },
+    pageBreak: 'auto'
+  });
+
+  // ================= INDIVIDUAL STUDENT PAGES =================
+  portalSubmissions.forEach(sub => {
+    doc.addPage();
+    const studentName = sub.name || sub.student_name || 'Student';
+    const scoreVal = sub.total_score || '—';
+
+    addPageHeader(doc, studentName, scoreVal);
+
+    let currentY = 27;
+
+    function renderSection(titleText, linesArr, badgeColor = [29, 58, 102]) {
+      if (!linesArr || linesArr.length === 0) return;
+
+      doc.setFont('courier', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(badgeColor[0], badgeColor[1], badgeColor[2]);
+      doc.text(titleText.toUpperCase(), margin, currentY);
+      currentY += 5;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(30, 30, 30);
+
+      linesArr.forEach(line => {
+        const bulletText = `• ${line}`;
+        const splitText = doc.splitTextToSize(bulletText, contentWidth - 4);
+        const requiredHeight = splitText.length * 4.2;
+
+        if (currentY + requiredHeight > pageHeight - 14) {
+          doc.addPage();
+          addPageHeader(doc, studentName, scoreVal);
+          currentY = 27;
+        }
+
+        doc.text(splitText, margin + 2, currentY);
+        currentY += requiredHeight + 2.5;
+      });
+
+      currentY += 4;
+    }
+
+    if (includeMarks) {
+      const breakdown = cleanLines(sub.category_breakdown);
+      renderSection('Score Breakdown by Category', breakdown, [29, 58, 102]);
+    }
+
+    const mistakes = cleanLines(sub.mistakes);
+    renderSection('Mistakes in Your Work', mistakes, [180, 40, 40]);
+
+    const weaknesses = cleanLines(sub.weaknesses);
+    renderSection('What to Practice Next', weaknesses, [5, 120, 80]);
+  });
+
+  // --- 3. DISPATCH PDF & OPEN WHATSAPP ---
   const cleanTitle = fullReportTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `${cleanTitle}_${includeMarks ? 'Marked_Report' : 'Feedback_Report'}.pdf`;
+  const pdfBlob = doc.output('blob');
+  const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
 
-  // --- PROBLEM 1 FIX: Show toast with auto-hide fallback ---
-  isExportingPdf = true;
-  showToast('Compiling official report PDF via server...');
-
-  try {
-    // 1. Expand all cards so content is visible in the DOM
-    document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
-
-    // 2. Clone the summary and cards
-    const summaryClone = document.getElementById('portal-print-summary').cloneNode(true);
-    const listClone = document.getElementById('portal-results-list').cloneNode(true);
-
-    // Set the dual title on the evaluation summary page
-    const titleEl = summaryClone.querySelector('.print-title');
-    if (titleEl) {
-      titleEl.textContent = includeMarks
-        ? `Class Evaluation Summary: ${fullReportTitle}`
-        : `Student Feedback & Correction Report: ${fullReportTitle}`;
-    }
-
-    const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-    const studentCount = portalSubmissions.length;
-    const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
-    const subEl = summaryClone.querySelector('.print-sub');
-    if (subEl) {
-      subEl.textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
-    }
-
-    // Remove UI action buttons
-    [summaryClone, listClone].forEach(root => {
-      root.querySelectorAll('.no-print, button, .integrity-pills, .fb-integrity-box, .line-delete-btn, .table-add-btn, .section-add-btn, .edit-hint').forEach(el => el.remove());
-      root.querySelectorAll('.editable-field, .line-item').forEach(el => {
-        el.removeAttribute('contenteditable');
+  // On Mobile: Directly share file into WhatsApp
+  if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+    try {
+      await navigator.share({
+        files: [pdfFile],
+        title: `${fullReportTitle} Report`,
+        text: `Evaluation Report for ${fullReportTitle}`
       });
-    });
-
-    if (!includeMarks) {
-      summaryClone.querySelectorAll('.col-score-breakdown, .summary-score-tag').forEach(el => el.remove());
-      listClone.querySelectorAll('.card-score-badge, .card-score-text, .fb-score-section').forEach(el => el.remove());
+      return;
+    } catch (shareErr) {
+      if (shareErr.name === 'AbortError') return;
     }
-
-    // 3. Complete standalone HTML document for Chromium print pipeline
-    const fullHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>${escapeHtml(fullReportTitle)}</title>
-        <style>
-          @page { size: A4 portrait; margin: 12mm; }
-          * { box-sizing: border-box; }
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            color: #16233F;
-            background: #fff;
-            margin: 0;
-            padding: 0;
-            font-size: 12px;
-            line-height: 1.45;
-          }
-          .print-summary {
-            width: 100%;
-            page-break-after: always;
-            break-after: page;
-          }
-          .print-title {
-            font-family: Georgia, serif;
-            font-size: 19px;
-            font-weight: 700;
-            margin-bottom: 4px;
-          }
-          .print-sub {
-            font-size: 11.5px;
-            color: #555;
-            margin-bottom: 14px;
-          }
-          .summary-table {
-            width: 100%;
-            border-collapse: collapse;
-            table-layout: fixed;
-          }
-          .summary-table th, .summary-table td {
-            border: 1px solid #777;
-            padding: 8px 10px;
-            vertical-align: top;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-          }
-          .summary-table th {
-            background: #f2f4f8;
-            font-family: monospace;
-            font-size: 10.5px;
-            text-transform: uppercase;
-          }
-          .summary-col-name { width: ${includeMarks ? '24%' : '28%'}; }
-          ${includeMarks ? '.col-score-breakdown { width: 30%; }' : ''}
-          .summary-col-mistakes { width: ${includeMarks ? '46%' : '72%'}; }
-          
-          .line-item-wrap { margin-bottom: 2px; }
-          .line-item { word-break: break-word; }
-
-          .result-card {
-            page-break-before: always;
-            break-before: page;
-            page-break-inside: avoid;
-            break-inside: avoid;
-            margin-bottom: 20px;
-          }
-          .result-head {
-            border-bottom: 1.5px solid #CBD6ED;
-            padding-bottom: 8px;
-            margin-bottom: 12px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-          }
-          .card-header-left {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-          }
-          .badge {
-            width: 32px;
-            height: 32px;
-            line-height: 30px;
-            border-radius: 50%;
-            border: 1.5px solid #1D3A66;
-            color: #1D3A66;
-            text-align: center;
-            font-weight: 700;
-            font-family: monospace;
-            font-size: 12px;
-          }
-          .result-name {
-            font-size: 14.5px;
-            font-weight: 700;
-          }
-          .card-header-right {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-          }
-          .result-score {
-            font-family: monospace;
-            font-weight: 700;
-            font-size: 13px;
-          }
-          .brand-watermark {
-            font-family: Georgia, serif;
-            font-size: 12px;
-            font-weight: 600;
-            color: #1D3A66;
-          }
-          .result-body {
-            display: block !important;
-            max-height: none !important;
-          }
-          .fb-section {
-            margin-bottom: 12px;
-            page-break-inside: avoid;
-            break-inside: avoid;
-          }
-          .fb-label {
-            font-family: monospace;
-            font-size: 10px;
-            text-transform: uppercase;
-            color: #1D3A66;
-            font-weight: 700;
-            margin-bottom: 4px;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="print-summary">
-          ${summaryClone.innerHTML}
-        </div>
-        <div class="results">
-          ${Array.from(listClone.querySelectorAll('.result-card')).map(card => {
-            const badge = card.querySelector('.badge');
-            const name = card.querySelector('.result-name');
-            const score = card.querySelector('.result-score');
-            const body = card.querySelector('.result-body');
-
-            return `
-              <div class="result-card">
-                <div class="result-head">
-                  <div class="card-header-left">
-                    ${badge ? `<div class="badge">${badge.textContent.trim()}</div>` : ''}
-                    <div class="result-name">${name ? name.childNodes[0].textContent.trim() : 'Student'}</div>
-                  </div>
-                  <div class="card-header-right">
-                    ${includeMarks && score ? `<div class="result-score">${score.textContent.trim()}</div>` : ''}
-                    <div class="brand-watermark">${escapeHtml(fullReportTitle)}</div>
-                  </div>
-                </div>
-                <div class="result-body">
-                  ${body ? body.innerHTML : ''}
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      </body>
-      </html>
-    `;
-
-    const response = await fetch('/api/export/pdf', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ htmlContent: fullHtml, filename })
-    });
-
-    if (!response.ok) {
-      const errJson = await response.json().catch(() => ({}));
-      throw new Error(errJson.error || 'Server PDF compilation failed.');
-    }
-
-    const pdfBlob = await response.blob();
-    const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
-
-    let sharedSuccessfully = false;
-
-    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-      try {
-        await navigator.share({
-          files: [pdfFile],
-          title: `${fullReportTitle} Report`,
-          text: `Evaluation Report for ${fullReportTitle}`
-        });
-        sharedSuccessfully = true;
-      } catch (shareErr) {
-        if (shareErr.name === 'AbortError') return;
-      }
-    }
-
-    if (!sharedSuccessfully) {
-      const downloadLink = document.createElement('a');
-      const blobUrl = URL.createObjectURL(pdfBlob);
-      downloadLink.href = blobUrl;
-      downloadLink.download = filename;
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      setTimeout(() => {
-        if (downloadLink.parentNode) document.body.removeChild(downloadLink);
-        URL.revokeObjectURL(blobUrl);
-      }, 1500);
-
-      showToast('Report downloaded to device.');
-      const notice = encodeURIComponent(`📄 *${fullReportTitle} Evaluation Report*\n(The PDF file has been downloaded; attach it directly to this chat).`);
-      window.open(`https://api.whatsapp.com/send?text=${notice}`, '_blank');
-    }
-  } catch (err) {
-    console.error('PDF export error:', err);
-    alert('Could not generate PDF: ' + err.message);
-  } finally {
-    // Dismiss toast and clear state
-    const toast = document.getElementById('custom-toast');
-    if (toast) toast.style.display = 'none';
-    isExportingPdf = false;
   }
+
+  // On Desktop: Save file and open WhatsApp Web
+  const downloadLink = document.createElement('a');
+  const blobUrl = URL.createObjectURL(pdfBlob);
+  downloadLink.href = blobUrl;
+  downloadLink.download = filename;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  setTimeout(() => {
+    if (downloadLink.parentNode) document.body.removeChild(downloadLink);
+    URL.revokeObjectURL(blobUrl);
+  }, 1500);
+
+  showToast('PDF downloaded! Attach it directly in WhatsApp.');
+  const whatsappNotice = encodeURIComponent(`📄 *${fullReportTitle} Evaluation Report*\n(The PDF file has been downloaded; attach it directly to this chat).`);
+  window.open(`https://web.whatsapp.com/send?text=${whatsappNotice}`, '_blank');
 }
 
 function printReport(type) {
   const assignmentObj = allAssignmentsMap[activeCode];
-  const title = assignmentObj ? assignmentObj.group_title || assignmentObj.title : 'Assignment';
+  const groupName = assignmentObj ? (assignmentObj.group_title || '').trim() : '';
+  const activeTabBtn = document.querySelector('#bundle-task-tabs button.primary');
+  let taskName = activeTabBtn ? activeTabBtn.textContent.trim() : (assignmentObj ? (assignmentObj.title || '').trim() : '');
+
+  let fullReportTitle = taskName || 'Assignment';
+  if (groupName && taskName && groupName.toLowerCase() !== taskName.toLowerCase()) {
+    fullReportTitle = `${groupName} — ${taskName}`;
+  } else if (groupName) {
+    fullReportTitle = groupName;
+  }
 
   document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
   document.body.classList.add('printing-portal');
   document.body.classList.remove('printing-manual');
 
+  const reportTitleEl = document.getElementById('portal-print-report-title');
   if (type === 'feedback') {
     document.body.classList.add('print-feedback-only');
-    document.getElementById('portal-print-report-title').textContent = `Student Feedback & Correction Report: ${title}`;
+    if (reportTitleEl) reportTitleEl.textContent = `Student Feedback & Correction Report: ${fullReportTitle}`;
   } else {
     document.body.classList.remove('print-feedback-only');
-    document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${title}`;
+    if (reportTitleEl) reportTitleEl.textContent = `Class Evaluation Summary: ${fullReportTitle}`;
   }
   
   setTimeout(() => {
