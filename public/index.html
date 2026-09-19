@@ -1356,216 +1356,227 @@ async function shareReportWhatsApp(includeMarks = true) {
     return;
   }
 
+  // --- PROBLEM 2 FIX: Resolve Both Group Name AND Homework Name ---
   const assignmentObj = allAssignmentsMap[activeCode];
-  const groupName = assignmentObj ? assignmentObj.group_title || '' : '';
-  const taskName = assignmentObj ? assignmentObj.title || '' : '';
+  const groupName = assignmentObj ? (assignmentObj.group_title || '').trim() : '';
+  const taskName = assignmentObj ? (assignmentObj.title || '').trim() : '';
 
-  let reportTitle = taskName || 'Assignment';
-  if (groupName && taskName && groupName !== taskName) {
-    reportTitle = `${groupName} — ${taskName}`;
+  let fullReportTitle = taskName || 'Assignment';
+  if (groupName && taskName && groupName.toLowerCase() !== taskName.toLowerCase()) {
+    fullReportTitle = `${groupName} — ${taskName}`;
   } else if (groupName) {
-    reportTitle = groupName;
+    fullReportTitle = groupName;
   }
 
-  const cleanFileTitle = reportTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const filename = `${cleanFileTitle}_${includeMarks ? 'Marked_Report' : 'Feedback_Report'}.pdf`;
+  const cleanTitle = fullReportTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `${cleanTitle}_${includeMarks ? 'Marked_Report' : 'Feedback_Report'}.pdf`;
 
+  // --- PROBLEM 1 FIX: Show toast with auto-hide fallback ---
   isExportingPdf = true;
   showToast('Compiling official report PDF via server...');
 
-  // 1. Expand all cards so content is visible in the DOM
-  document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
-
-  // 2. Clone the summary and cards
-  const summaryClone = document.getElementById('portal-print-summary').cloneNode(true);
-  const listClone = document.getElementById('portal-results-list').cloneNode(true);
-
-  const titleEl = summaryClone.querySelector('.print-title');
-  if (titleEl) {
-    titleEl.textContent = includeMarks
-      ? `Class Evaluation Summary: ${reportTitle}`
-      : `Student Feedback & Correction Report: ${reportTitle}`;
-  }
-
-  // Remove UI action buttons
-  [summaryClone, listClone].forEach(root => {
-    root.querySelectorAll('.no-print, button, .integrity-pills, .fb-integrity-box, .line-delete-btn, .table-add-btn, .section-add-btn, .edit-hint').forEach(el => el.remove());
-    root.querySelectorAll('.editable-field, .line-item').forEach(el => {
-      el.removeAttribute('contenteditable');
-    });
-  });
-
-  if (!includeMarks) {
-    summaryClone.querySelectorAll('.col-score-breakdown, .summary-score-tag').forEach(el => el.remove());
-    listClone.querySelectorAll('.card-score-badge, .card-score-text, .fb-score-section').forEach(el => el.remove());
-  }
-
-  // 3. Complete standalone HTML document for Chromium print pipeline
-  const fullHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <title>${escapeHtml(title)}</title>
-      <style>
-        @page { size: A4 portrait; margin: 12mm; }
-        * { box-sizing: border-box; }
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-          color: #16233F;
-          background: #fff;
-          margin: 0;
-          padding: 0;
-          font-size: 12px;
-          line-height: 1.45;
-        }
-        .print-summary {
-          width: 100%;
-          page-break-after: always;
-          break-after: page;
-        }
-        .print-title {
-          font-family: Georgia, serif;
-          font-size: 19px;
-          font-weight: 700;
-          margin-bottom: 4px;
-        }
-        .print-sub {
-          font-size: 11.5px;
-          color: #555;
-          margin-bottom: 14px;
-        }
-        .summary-table {
-          width: 100%;
-          border-collapse: collapse;
-          table-layout: fixed;
-        }
-        .summary-table th, .summary-table td {
-          border: 1px solid #777;
-          padding: 8px 10px;
-          vertical-align: top;
-          word-wrap: break-word;
-          overflow-wrap: break-word;
-        }
-        .summary-table th {
-          background: #f2f4f8;
-          font-family: monospace;
-          font-size: 10.5px;
-          text-transform: uppercase;
-        }
-        .summary-col-name { width: ${includeMarks ? '24%' : '28%'}; }
-        ${includeMarks ? '.col-score-breakdown { width: 30%; }' : ''}
-        .summary-col-mistakes { width: ${includeMarks ? '46%' : '72%'}; }
-        
-        .line-item-wrap { margin-bottom: 2px; }
-        .line-item { word-break: break-word; }
-
-        .result-card {
-          page-break-before: always;
-          break-before: page;
-          page-break-inside: avoid;
-          break-inside: avoid;
-          margin-bottom: 20px;
-        }
-        .result-head {
-          border-bottom: 1.5px solid #CBD6ED;
-          padding-bottom: 8px;
-          margin-bottom: 12px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        .card-header-left {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-        .badge {
-          width: 32px;
-          height: 32px;
-          line-height: 30px;
-          border-radius: 50%;
-          border: 1.5px solid #1D3A66;
-          color: #1D3A66;
-          text-align: center;
-          font-weight: 700;
-          font-family: monospace;
-          font-size: 12px;
-        }
-        .result-name {
-          font-size: 14.5px;
-          font-weight: 700;
-        }
-        .card-header-right {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-        }
-        .result-score {
-          font-family: monospace;
-          font-weight: 700;
-          font-size: 13px;
-        }
-        .brand-watermark {
-          font-family: Georgia, serif;
-          font-size: 12px;
-          font-weight: 600;
-          color: #1D3A66;
-        }
-        .result-body {
-          display: block !important;
-          max-height: none !important;
-        }
-        .fb-section {
-          margin-bottom: 12px;
-          page-break-inside: avoid;
-          break-inside: avoid;
-        }
-        .fb-label {
-          font-family: monospace;
-          font-size: 10px;
-          text-transform: uppercase;
-          color: #1D3A66;
-          font-weight: 700;
-          margin-bottom: 4px;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="print-summary">
-        ${summaryClone.innerHTML}
-      </div>
-      <div class="results">
-        ${Array.from(listClone.querySelectorAll('.result-card')).map(card => {
-          const badge = card.querySelector('.badge');
-          const name = card.querySelector('.result-name');
-          const score = card.querySelector('.result-score');
-          const body = card.querySelector('.result-body');
-
-          return `
-            <div class="result-card">
-              <div class="result-head">
-                <div class="card-header-left">
-                  ${badge ? `<div class="badge">${badge.textContent.trim()}</div>` : ''}
-                  <div class="result-name">${name ? name.childNodes[0].textContent.trim() : 'Student'}</div>
-                </div>
-                <div class="card-header-right">
-                  ${includeMarks && score ? `<div class="result-score">${score.textContent.trim()}</div>` : ''}
-                  <div class="brand-watermark">MIMIR MARKING</div>
-                </div>
-              </div>
-              <div class="result-body">
-                ${body ? body.innerHTML : ''}
-              </div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    </body>
-    </html>
-  `;
-
   try {
+    // 1. Expand all cards so content is visible in the DOM
+    document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
+
+    // 2. Clone the summary and cards
+    const summaryClone = document.getElementById('portal-print-summary').cloneNode(true);
+    const listClone = document.getElementById('portal-results-list').cloneNode(true);
+
+    // Set the dual title on the evaluation summary page
+    const titleEl = summaryClone.querySelector('.print-title');
+    if (titleEl) {
+      titleEl.textContent = includeMarks
+        ? `Class Evaluation Summary: ${fullReportTitle}`
+        : `Student Feedback & Correction Report: ${fullReportTitle}`;
+    }
+
+    const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
+    const studentCount = portalSubmissions.length;
+    const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
+    const subEl = summaryClone.querySelector('.print-sub');
+    if (subEl) {
+      subEl.textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
+    }
+
+    // Remove UI action buttons
+    [summaryClone, listClone].forEach(root => {
+      root.querySelectorAll('.no-print, button, .integrity-pills, .fb-integrity-box, .line-delete-btn, .table-add-btn, .section-add-btn, .edit-hint').forEach(el => el.remove());
+      root.querySelectorAll('.editable-field, .line-item').forEach(el => {
+        el.removeAttribute('contenteditable');
+      });
+    });
+
+    if (!includeMarks) {
+      summaryClone.querySelectorAll('.col-score-breakdown, .summary-score-tag').forEach(el => el.remove());
+      listClone.querySelectorAll('.card-score-badge, .card-score-text, .fb-score-section').forEach(el => el.remove());
+    }
+
+    // 3. Complete standalone HTML document for Chromium print pipeline
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${escapeHtml(fullReportTitle)}</title>
+        <style>
+          @page { size: A4 portrait; margin: 12mm; }
+          * { box-sizing: border-box; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            color: #16233F;
+            background: #fff;
+            margin: 0;
+            padding: 0;
+            font-size: 12px;
+            line-height: 1.45;
+          }
+          .print-summary {
+            width: 100%;
+            page-break-after: always;
+            break-after: page;
+          }
+          .print-title {
+            font-family: Georgia, serif;
+            font-size: 19px;
+            font-weight: 700;
+            margin-bottom: 4px;
+          }
+          .print-sub {
+            font-size: 11.5px;
+            color: #555;
+            margin-bottom: 14px;
+          }
+          .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+          }
+          .summary-table th, .summary-table td {
+            border: 1px solid #777;
+            padding: 8px 10px;
+            vertical-align: top;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+          }
+          .summary-table th {
+            background: #f2f4f8;
+            font-family: monospace;
+            font-size: 10.5px;
+            text-transform: uppercase;
+          }
+          .summary-col-name { width: ${includeMarks ? '24%' : '28%'}; }
+          ${includeMarks ? '.col-score-breakdown { width: 30%; }' : ''}
+          .summary-col-mistakes { width: ${includeMarks ? '46%' : '72%'}; }
+          
+          .line-item-wrap { margin-bottom: 2px; }
+          .line-item { word-break: break-word; }
+
+          .result-card {
+            page-break-before: always;
+            break-before: page;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            margin-bottom: 20px;
+          }
+          .result-head {
+            border-bottom: 1.5px solid #CBD6ED;
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .card-header-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          }
+          .badge {
+            width: 32px;
+            height: 32px;
+            line-height: 30px;
+            border-radius: 50%;
+            border: 1.5px solid #1D3A66;
+            color: #1D3A66;
+            text-align: center;
+            font-weight: 700;
+            font-family: monospace;
+            font-size: 12px;
+          }
+          .result-name {
+            font-size: 14.5px;
+            font-weight: 700;
+          }
+          .card-header-right {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+          }
+          .result-score {
+            font-family: monospace;
+            font-weight: 700;
+            font-size: 13px;
+          }
+          .brand-watermark {
+            font-family: Georgia, serif;
+            font-size: 12px;
+            font-weight: 600;
+            color: #1D3A66;
+          }
+          .result-body {
+            display: block !important;
+            max-height: none !important;
+          }
+          .fb-section {
+            margin-bottom: 12px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          .fb-label {
+            font-family: monospace;
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #1D3A66;
+            font-weight: 700;
+            margin-bottom: 4px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-summary">
+          ${summaryClone.innerHTML}
+        </div>
+        <div class="results">
+          ${Array.from(listClone.querySelectorAll('.result-card')).map(card => {
+            const badge = card.querySelector('.badge');
+            const name = card.querySelector('.result-name');
+            const score = card.querySelector('.result-score');
+            const body = card.querySelector('.result-body');
+
+            return `
+              <div class="result-card">
+                <div class="result-head">
+                  <div class="card-header-left">
+                    ${badge ? `<div class="badge">${badge.textContent.trim()}</div>` : ''}
+                    <div class="result-name">${name ? name.childNodes[0].textContent.trim() : 'Student'}</div>
+                  </div>
+                  <div class="card-header-right">
+                    ${includeMarks && score ? `<div class="result-score">${score.textContent.trim()}</div>` : ''}
+                    <div class="brand-watermark">${escapeHtml(fullReportTitle)}</div>
+                  </div>
+                </div>
+                <div class="result-body">
+                  ${body ? body.innerHTML : ''}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </body>
+      </html>
+    `;
+
     const response = await fetch('/api/export/pdf', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1584,10 +1595,10 @@ async function shareReportWhatsApp(includeMarks = true) {
 
     if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
       try {
-       await navigator.share({
+        await navigator.share({
           files: [pdfFile],
-          title: `${reportTitle} Report`,
-          text: `Evaluation Report for ${reportTitle}`
+          title: `${fullReportTitle} Report`,
+          text: `Evaluation Report for ${fullReportTitle}`
         });
         sharedSuccessfully = true;
       } catch (shareErr) {
@@ -1608,13 +1619,16 @@ async function shareReportWhatsApp(includeMarks = true) {
       }, 1500);
 
       showToast('Report downloaded to device.');
-      const notice = encodeURIComponent(`📄 *${title} Evaluation Report*\n(The PDF file has been downloaded; attach it directly to this chat).`);
+      const notice = encodeURIComponent(`📄 *${fullReportTitle} Evaluation Report*\n(The PDF file has been downloaded; attach it directly to this chat).`);
       window.open(`https://api.whatsapp.com/send?text=${notice}`, '_blank');
     }
   } catch (err) {
     console.error('PDF export error:', err);
     alert('Could not generate PDF: ' + err.message);
   } finally {
+    // Dismiss toast and clear state
+    const toast = document.getElementById('custom-toast');
+    if (toast) toast.style.display = 'none';
     isExportingPdf = false;
   }
 }
