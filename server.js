@@ -1554,53 +1554,79 @@ Respond ONLY with valid JSON matching the schema.`;
   }
 );
 
-// Server-side Puppeteer PDF generator (Render & Linux compatible)
+// Server-side Puppeteer PDF generator (Fixed ETXTBSY concurrency & timeout)
+let activePuppeteerJob = Promise.resolve();
+
 app.post('/api/export/pdf', authenticateToken, requireApprovedUser, async (req, res) => {
   const { htmlContent, filename } = req.body;
   if (!htmlContent) return res.status(400).json({ error: 'Missing HTML content' });
 
-  let browser;
-  try {
-    const isLocal = process.platform === 'win32';
+  // Queue requests sequentially so @sparticuz/chromium never collides on /tmp/chromium (prevents ETXTBSY)
+  activePuppeteerJob = activePuppeteerJob.then(async () => {
+    let browser;
+    try {
+      const isLocal = process.platform === 'win32';
 
-    browser = await puppeteer.launch({
-      args: isLocal ? ['--no-sandbox', '--disable-setuid-sandbox'] : chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: isLocal 
-        ? (process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')
-        : await chromium.executablePath(),
-      headless: chromium.headless
-    });
+      browser = await puppeteer.launch({
+        args: isLocal
+          ? ['--no-sandbox', '--disable-setuid-sandbox']
+          : [
+              ...chromium.args,
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-gpu',
+              '--single-process',
+              '--no-zygote'
+            ],
+        defaultViewport: chromium.defaultViewport,
+        executablePath: isLocal
+          ? (process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')
+          : await chromium.executablePath(),
+        headless: chromium.headless
+      });
 
-    const page = await browser.newPage();
-    
-    // Pass raw HTML directly into headless Chromium
-    await page.setContent(htmlContent, { 
-      waitUntil: 'networkidle0',
-      timeout: 30000 
-    });
+      const page = await browser.newPage();
 
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: {
-        top: '12mm',
-        bottom: '12mm',
-        left: '12mm',
-        right: '12mm'
+      // domcontentloaded avoids hanging forever on Render loopback
+      await page.setContent(htmlContent, {
+        waitUntil: 'domcontentloaded',
+        timeout: 15000
+      });
+
+      await delay(300);
+
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: {
+          top: '12mm',
+          bottom: '12mm',
+          left: '12mm',
+          right: '12mm'
+        }
+      });
+
+      await browser.close();
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename || 'Report.pdf'}"`);
+      return res.send(pdfBuffer);
+    } catch (err) {
+      if (browser) {
+        try { await browser.close(); } catch (_) {}
       }
-    });
-
-    await browser.close();
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename || 'Report.pdf'}"`);
-    return res.send(pdfBuffer);
-  } catch (err) {
-    if (browser) await browser.close();
-    console.error('Puppeteer compilation error:', err);
-    return res.status(500).json({ error: err.message || 'Puppeteer compilation failed on server.' });
-  }
+      console.error('Puppeteer PDF compilation error:', err);
+      if (!res.headersSent) {
+        return res.status(500).json({ error: err.message || 'Server PDF compilation failed.' });
+      }
+    }
+  }).catch((queueErr) => {
+    console.error('Puppeteer Queue error:', queueErr);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Server busy generating another report. Please retry in a moment.' });
+    }
+  });
 });
 
 

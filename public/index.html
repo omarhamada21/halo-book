@@ -1322,7 +1322,14 @@ async function fetchLiveSubmissions() {
 }
 
 // ==================== CLEAN NATIVE PDF EXPORT VIA PUPPETEER ====================
+let isExportingPdf = false;
+
 async function shareReportWhatsApp(includeMarks = true) {
+  if (isExportingPdf) {
+    showToast('A report is already being compiled. Please wait a moment...');
+    return;
+  }
+
   if (!portalSubmissions || portalSubmissions.length === 0) {
     alert('No student submissions found to export.');
     return;
@@ -1333,9 +1340,10 @@ async function shareReportWhatsApp(includeMarks = true) {
   const cleanTitle = title.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `${cleanTitle}_${includeMarks ? 'Marked_Report' : 'Feedback_Report'}.pdf`;
 
-  showToast('Generating official report PDF...');
+  isExportingPdf = true;
+  showToast('Compiling official report PDF via server...');
 
-  // 1. Expand all cards so content is visible
+  // 1. Expand all cards so content is visible in the DOM
   document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
 
   // 2. Clone the summary and cards
@@ -1576,6 +1584,8 @@ async function shareReportWhatsApp(includeMarks = true) {
   } catch (err) {
     console.error('PDF export error:', err);
     alert('Could not generate PDF: ' + err.message);
+  } finally {
+    isExportingPdf = false;
   }
 }
 
