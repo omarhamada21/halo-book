@@ -1321,7 +1321,7 @@ async function fetchLiveSubmissions() {
   }
 }
 
-// ==================== VECTOR-BASED ENGINE (NO SLICING, NO OVERLAPS) ====================
+// ==================== CLEAN NATIVE PDF EXPORT VIA SERVER ====================
 async function shareReportWhatsApp(includeMarks = true) {
   if (!portalSubmissions || portalSubmissions.length === 0) {
     alert('No student submissions found to export.');
@@ -1335,211 +1335,248 @@ async function shareReportWhatsApp(includeMarks = true) {
 
   showToast('Generating official report PDF...');
 
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4'
-  });
+  // 1. Expand all cards so content is visible in the DOM
+  document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
 
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 14;
-  const contentWidth = pageWidth - (margin * 2);
+  // 2. Clone the summary and cards
+  const summaryClone = document.getElementById('portal-print-summary').cloneNode(true);
+  const listClone = document.getElementById('portal-results-list').cloneNode(true);
 
-  // Running header for individual student pages
-  function addPageHeader(docInstance, studentName = '', scoreText = '') {
-    docInstance.setFont('helvetica', 'bold');
-    docInstance.setFontSize(13);
-    docInstance.setTextColor(22, 35, 63);
-
-    if (studentName) {
-      docInstance.text(studentName, margin, 16);
-      docInstance.setFont('courier', 'bold');
-      docInstance.setFontSize(11);
-      docInstance.setTextColor(29, 58, 102);
-
-      let rightText = 'MIMIR MARKING';
-      if (includeMarks && scoreText) {
-        rightText = `${scoreText}   |   ${rightText}`;
-      }
-      docInstance.text(rightText, pageWidth - margin, 16, { align: 'right' });
-      
-      docInstance.setDrawColor(203, 214, 237);
-      docInstance.setLineWidth(0.4);
-      docInstance.line(margin, 19, pageWidth - margin, 19);
-    }
+  // Set title
+  const titleEl = summaryClone.querySelector('.print-title');
+  if (titleEl) {
+    titleEl.textContent = includeMarks
+      ? `Class Evaluation Summary: ${title}`
+      : `Student Feedback & Correction Report: ${title}`;
   }
 
-  // Parse lines cleanly into bullet points
-  function cleanLines(text) {
-    if (!text) return [];
-    return text.split(/\n|(?=- Section)|(?=- Question)|(?=- Q\d)/g)
-      .map(l => l.replace(/^[-•*]\s*/, '').trim())
-      .filter(l => l.length > 0);
+  // Remove UI buttons and edit hints
+  [summaryClone, listClone].forEach(root => {
+    root.querySelectorAll('.no-print, button, .integrity-pills, .fb-integrity-box, .line-delete-btn, .table-add-btn, .section-add-btn, .edit-hint').forEach(el => el.remove());
+    root.querySelectorAll('.editable-field, .line-item').forEach(el => {
+      el.removeAttribute('contenteditable');
+    });
+  });
+
+  // Handle feedback-only mode columns
+  if (!includeMarks) {
+    summaryClone.querySelectorAll('.col-score-breakdown, .summary-score-tag').forEach(el => el.remove());
+    listClone.querySelectorAll('.card-score-badge, .card-score-text, .fb-score-section').forEach(el => el.remove());
   }
 
-  // ================= PAGE 1: EVALUATION SUMMARY =================
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(17);
-  doc.setTextColor(22, 35, 63);
-  doc.text(includeMarks ? `Class Evaluation Summary: ${title}` : `Student Feedback & Correction Report: ${title}`, margin, 18);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
-  doc.setTextColor(85, 85, 85);
-  const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-  doc.text(`Teacher: ${teacherDisplay}   |   Total Assessed: ${portalSubmissions.length} Student${portalSubmissions.length === 1 ? '' : 's'}`, margin, 24);
-
-  // Build Summary Table Rows
-  const tableHeaders = includeMarks 
-    ? [['STUDENT NAME', 'SCORE BREAKDOWN', 'MISTAKES IN YOUR WORK']]
-    : [['STUDENT NAME', 'MISTAKES IN YOUR WORK']];
-
-  const tableBody = portalSubmissions.map(sub => {
-    const studentName = sub.name || sub.student_name || 'Student';
-    const totalScore = sub.total_score || '—';
-
-    const mistakesArr = cleanLines(sub.mistakes);
-    const mistakesFormatted = mistakesArr.length ? mistakesArr.map(m => `• ${m}`).join('\n\n') : '• None';
-
-    if (includeMarks) {
-      const breakdownArr = cleanLines(sub.category_breakdown);
-      const breakdownFormatted = breakdownArr.length ? breakdownArr.map(b => `• ${b}`).join('\n') : '• None';
-      return [
-        `${studentName}\n\nTotal: ${totalScore}`,
-        breakdownFormatted,
-        mistakesFormatted
-      ];
-    } else {
-      return [
-        studentName,
-        mistakesFormatted
-      ];
-    }
-  });
-
-  doc.autoTable({
-    startY: 28,
-    head: tableHeaders,
-    body: tableBody,
-    theme: 'grid',
-    headStyles: {
-      fillColor: [242, 244, 248],
-      textColor: [22, 35, 63],
-      font: 'courier',
-      fontSize: 8.5,
-      fontStyle: 'bold',
-      cellPadding: 3
-    },
-    bodyStyles: {
-      textColor: [22, 35, 63],
-      fontSize: 8.5,
-      cellPadding: 3.5,
-      lineColor: [160, 160, 160],
-      lineWidth: 0.2
-    },
-    columnStyles: includeMarks ? {
-      0: { cellWidth: 42, fontStyle: 'bold' },
-      1: { cellWidth: 50 },
-      2: { cellWidth: 'auto' }
-    } : {
-      0: { cellWidth: 48, fontStyle: 'bold' },
-      1: { cellWidth: 'auto' }
-    },
-    margin: { left: margin, right: margin, bottom: 12 },
-    pageBreak: 'auto'
-  });
-
-  // ================= INDIVIDUAL STUDENT REPORT PAGES =================
-  portalSubmissions.forEach(sub => {
-    doc.addPage();
-    const studentName = sub.name || sub.student_name || 'Student';
-    const scoreVal = sub.total_score || '—';
-
-    addPageHeader(doc, studentName, scoreVal);
-
-    let currentY = 27;
-
-    function renderSection(titleText, linesArr, badgeColor = [29, 58, 102]) {
-      if (!linesArr || linesArr.length === 0) return;
-
-      // Section Title
-      doc.setFont('courier', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(badgeColor[0], badgeColor[1], badgeColor[2]);
-      doc.text(titleText.toUpperCase(), margin, currentY);
-      currentY += 5;
-
-      // Section Content
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(30, 30, 30);
-
-      linesArr.forEach(line => {
-        const bulletText = `• ${line}`;
-        const splitText = doc.splitTextToSize(bulletText, contentWidth - 4);
-        const requiredHeight = splitText.length * 4.2;
-
-        if (currentY + requiredHeight > pageHeight - 14) {
-          doc.addPage();
-          addPageHeader(doc, studentName, scoreVal);
-          currentY = 27;
+  // 3. Assemble a clean, isolated HTML document with print styling
+  const fullHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>${escapeHtml(title)}</title>
+      <style>
+        @page { size: A4 portrait; margin: 12mm; }
+        * { box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+          color: #16233F;
+          background: #fff;
+          margin: 0;
+          padding: 0;
+          font-size: 12px;
+          line-height: 1.45;
+          letter-spacing: normal;
+          word-spacing: normal;
         }
+        .print-summary {
+          width: 100%;
+          page-break-after: always;
+          break-after: page;
+        }
+        .print-title {
+          font-family: Georgia, serif;
+          font-size: 19px;
+          font-weight: 700;
+          margin-bottom: 4px;
+        }
+        .print-sub {
+          font-size: 11.5px;
+          color: #555;
+          margin-bottom: 14px;
+        }
+        .summary-table {
+          width: 100%;
+          border-collapse: collapse;
+          table-layout: fixed;
+        }
+        .summary-table th, .summary-table td {
+          border: 1px solid #777;
+          padding: 8px 10px;
+          vertical-align: top;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+        }
+        .summary-table th {
+          background: #f2f4f8;
+          font-family: monospace;
+          font-size: 10.5px;
+          text-transform: uppercase;
+        }
+        .summary-col-name { width: ${includeMarks ? '24%' : '28%'}; }
+        ${includeMarks ? '.col-score-breakdown { width: 30%; }' : ''}
+        .summary-col-mistakes { width: ${includeMarks ? '46%' : '72%'}; }
+        
+        .line-item-wrap { margin-bottom: 2px; }
+        .line-item { word-break: break-word; }
 
-        doc.text(splitText, margin + 2, currentY);
-        currentY += requiredHeight + 2.5;
-      });
+        .result-card {
+          page-break-before: always;
+          break-before: page;
+          page-break-inside: avoid;
+          break-inside: avoid;
+          margin-bottom: 20px;
+        }
+        .result-head {
+          border-bottom: 1.5px solid #CBD6ED;
+          padding-bottom: 8px;
+          margin-bottom: 12px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .card-header-left {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .badge {
+          width: 32px;
+          height: 32px;
+          line-height: 30px;
+          border-radius: 50%;
+          border: 1.5px solid #1D3A66;
+          color: #1D3A66;
+          text-align: center;
+          font-weight: 700;
+          font-family: monospace;
+          font-size: 12px;
+        }
+        .result-name {
+          font-size: 14.5px;
+          font-weight: 700;
+        }
+        .card-header-right {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+        .result-score {
+          font-family: monospace;
+          font-weight: 700;
+          font-size: 13px;
+        }
+        .brand-watermark {
+          font-family: Georgia, serif;
+          font-size: 12px;
+          font-weight: 600;
+          color: #1D3A66;
+        }
+        .result-body {
+          display: block !important;
+          max-height: none !important;
+        }
+        .fb-section {
+          margin-bottom: 12px;
+          page-break-inside: avoid;
+          break-inside: avoid;
+        }
+        .fb-label {
+          font-family: monospace;
+          font-size: 10px;
+          text-transform: uppercase;
+          color: #1D3A66;
+          font-weight: 700;
+          margin-bottom: 4px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="print-summary">
+        ${summaryClone.innerHTML}
+      </div>
+      <div class="results">
+        ${Array.from(listClone.querySelectorAll('.result-card')).map(card => {
+          const badge = card.querySelector('.badge');
+          const name = card.querySelector('.result-name');
+          const score = card.querySelector('.result-score');
+          const body = card.querySelector('.result-body');
 
-      currentY += 4;
+          return `
+            <div class="result-card">
+              <div class="result-head">
+                <div class="card-header-left">
+                  ${badge ? `<div class="badge">${badge.textContent.trim()}</div>` : ''}
+                  <div class="result-name">${name ? name.childNodes[0].textContent.trim() : 'Student'}</div>
+                </div>
+                <div class="card-header-right">
+                  ${includeMarks && score ? `<div class="result-score">${score.textContent.trim()}</div>` : ''}
+                  <div class="brand-watermark">MIMIR MARKING</div>
+                </div>
+              </div>
+              <div class="result-body">
+                ${body ? body.innerHTML : ''}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </body>
+    </html>
+  `;
+
+  try {
+    const response = await fetch('/api/export/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ htmlContent: fullHtml, filename })
+    });
+
+    if (!response.ok) throw new Error('Server PDF compilation failed.');
+
+    const pdfBlob = await response.blob();
+    const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
+
+    let sharedSuccessfully = false;
+
+    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      try {
+        await navigator.share({
+          files: [pdfFile],
+          title: `${title} Report`,
+          text: `Evaluation Report for ${title}`
+        });
+        sharedSuccessfully = true;
+      } catch (shareErr) {
+        if (shareErr.name === 'AbortError') return;
+      }
     }
 
-    if (includeMarks) {
-      const breakdown = cleanLines(sub.category_breakdown);
-      renderSection('Score Breakdown by Category', breakdown, [29, 58, 102]);
+    if (!sharedSuccessfully) {
+      const downloadLink = document.createElement('a');
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      downloadLink.href = blobUrl;
+      downloadLink.download = filename;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      setTimeout(() => {
+        if (downloadLink.parentNode) document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(blobUrl);
+      }, 1500);
+
+      showToast('Report downloaded to device.');
+      const notice = encodeURIComponent(`📄 *${title} Evaluation Report*\n(The PDF file has been downloaded; attach it directly to this chat).`);
+      window.open(`https://api.whatsapp.com/send?text=${notice}`, '_blank');
     }
-
-    const mistakes = cleanLines(sub.mistakes);
-    renderSection('Mistakes in Your Work', mistakes, [180, 40, 40]);
-
-    const weaknesses = cleanLines(sub.weaknesses);
-    renderSection('What to Practice Next', weaknesses, [5, 120, 80]);
-  });
-
-  // Export File Blob
-  const pdfBlob = doc.output('blob');
-  const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
-
-  let sharedSuccessfully = false;
-
-  if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-    try {
-      await navigator.share({
-        files: [pdfFile],
-        title: `${title} Report`,
-        text: `Evaluation Report for ${title}`
-      });
-      sharedSuccessfully = true;
-    } catch (shareErr) {
-      if (shareErr.name === 'AbortError') return;
-    }
-  }
-
-  if (!sharedSuccessfully) {
-    const downloadLink = document.createElement('a');
-    const blobUrl = URL.createObjectURL(pdfBlob);
-    downloadLink.href = blobUrl;
-    downloadLink.download = filename;
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    setTimeout(() => {
-      if (downloadLink.parentNode) document.body.removeChild(downloadLink);
-      URL.revokeObjectURL(blobUrl);
-    }, 1500);
-
-    showToast('Report downloaded to device.');
-    const notice = encodeURIComponent(`📄 *${title} Evaluation Report*\n(The PDF file has been downloaded; attach it directly to this chat).`);
-    window.open(`https://api.whatsapp.com/send?text=${notice}`, '_blank');
+  } catch (err) {
+    console.error('PDF export error:', err);
+    alert('Could not generate PDF: ' + err.message);
   }
 }
 
