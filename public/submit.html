@@ -94,7 +94,9 @@
       <div class="form-group">
         <label for="student-name">Your Full Name</label>
         <input type="text" id="student-name" required placeholder="e.g. Fares Ahmed" autocomplete="name" maxlength="80" />
-        <small style="color:var(--ink-soft); font-size:11.5px; margin-top:4px; display:block;">🔒 Protected: Only 1 submission allowed from this device.</small>
+        <small style="color:var(--ink-soft); font-size:11.5px; margin-top:4px; display:block;">
+          ⚠️ <b>Notice:</b> Submissions are logged by student name and session identifier. Make sure all pages are attached before sending, as resubmissions require teacher reset.
+        </small>
       </div>
 
       <div id="tasks-container"></div>
@@ -115,7 +117,6 @@
   const urlParams = new URLSearchParams(window.location.search);
   const bundleCode = urlParams.get('bundle') || urlParams.get('code');
   
-  // Resilient Hardware + Storage Device Token
   function getOrCreateDeviceId() {
     let stored = localStorage.getItem('mimir_device_token');
     if (stored) return stored;

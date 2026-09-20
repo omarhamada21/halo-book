@@ -33,10 +33,21 @@ const app = express();
 app.set('trust proxy', 1);
 
 const port = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'mimir-marking-secret-key-2026-eduplanet';
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 
+// Refuse startup if JWT_SECRET is unset in production; generate ephemeral secret in dev
+const JWT_SECRET = (() => {
+  if (process.env.JWT_SECRET) {
+    return process.env.JWT_SECRET;
+  }
+  if (isProduction) {
+    throw new Error('FATAL CONFIGURATION ERROR: JWT_SECRET environment variable is missing in production. App startup aborted.');
+  }
+  console.warn('[SECURITY NOTICE] JWT_SECRET not set. Using an ephemeral development secret generated from crypto.randomBytes.');
+  return crypto.randomBytes(32).toString('hex');
+})();
+
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const googleOAuthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // Root & Admin Configuration
@@ -63,7 +74,7 @@ function isStrongPassword(password) {
          /[^A-Za-z0-9]/.test(password);
 }
 
-// In-Memory Rate Limiting Guard
+// In-Memory Rate Limiting Guard with Proxy IP Resolution
 const rateLimitMap = new Map();
 function getClientIp(req) {
   const forwarded = req.headers['x-forwarded-for'];
@@ -95,7 +106,7 @@ function rateLimit({ windowMs = 60 * 1000, max = 30 } = {}) {
   };
 }
 
-// Periodic cleanup of rate limit cache
+// Periodic cleanup of expired rate limiter entries
 setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of rateLimitMap.entries()) {
@@ -202,6 +213,7 @@ async function initDatabase() {
 }
 initDatabase();
 
+// Auto-purges past assignments and student submissions 48 hours after deadline expiration
 async function cleanExpiredAssignments() {
   try {
     const assignmentsRes = await db.execute('SELECT id, deadline FROM assignments WHERE deadline IS NOT NULL');
@@ -240,7 +252,7 @@ const upload = multer({
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Auth Middleware
+// Verifies JWT credentials and ensures DB role permissions match root/admin configuration
 async function authenticateToken(req, res, next) {
   const token = req.cookies.halo_token || (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
 
@@ -376,6 +388,7 @@ function calculateTextSimilarity(text1, text2) {
   return { score, sharedPhrases: shared };
 }
 
+// Calls Gemini with multi-model fallback and transient error retries
 async function callGemini(inputPayload) {
   const models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
   let lastErr;
@@ -585,11 +598,28 @@ app.post('/api/admin/users/:id/role', authenticateToken, requireAdmin, async (re
   res.json({ success: true, message: `Role updated to ${role}.` });
 });
 
+// Admin Password Reset with Server-Side Validation
 app.post('/api/admin/users/:id/reset-password', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { newPassword } = req.body;
-  const hashedPassword = await bcrypt.hash(newPassword.trim(), 10);
-  await db.execute({ sql: 'UPDATE users SET password = ? WHERE id = ?', args: [hashedPassword, Number(id)] });
+
+  if (!newPassword || typeof newPassword !== 'string' || !newPassword.trim()) {
+    return res.status(400).json({ error: 'Please provide a valid new password.' });
+  }
+
+  const cleanPassword = newPassword.trim();
+  if (!isStrongPassword(cleanPassword)) {
+    return res.status(400).json({ 
+      error: 'Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.' 
+    });
+  }
+
+  const hashedPassword = await bcrypt.hash(cleanPassword, 10);
+  await db.execute({ 
+    sql: 'UPDATE users SET password = ? WHERE id = ?', 
+    args: [hashedPassword, Number(id)] 
+  });
+  
   res.json({ success: true });
 });
 
@@ -953,11 +983,14 @@ app.post('/api/assignments/:code/update-deadline', authenticateToken, requireApp
   }
 });
 
+// DELETE a single student submission strictly by numeric ID
 app.delete('/api/assignments/:code/submissions/:submissionId', authenticateToken, requireApprovedUser, async (req, res) => {
   const { code, submissionId } = req.params;
   const numId = parseInt(submissionId, 10);
-  const cleanNumId = isNaN(numId) ? -1 : numId;
-  const targetName = decodeURIComponent(submissionId).trim().toLowerCase();
+
+  if (isNaN(numId) || numId <= 0) {
+    return res.status(400).json({ success: false, error: 'Invalid submission ID format. Numeric ID is required.' });
+  }
 
   try {
     const isElevated = ['root', 'admin'].includes(req.user.role);
@@ -974,29 +1007,27 @@ app.delete('/api/assignments/:code/submissions/:submissionId', authenticateToken
     const assignmentId = assignResult.rows[0].id;
 
     const subResult = await db.execute({
-      sql: `SELECT id, student_name, device_id FROM submissions 
-            WHERE assignment_id = ? 
-              AND (id = ? OR LOWER(TRIM(student_name)) = ?)`,
-      args: [assignmentId, cleanNumId, targetName]
+      sql: 'SELECT id, student_name FROM submissions WHERE assignment_id = ? AND id = ?',
+      args: [assignmentId, numId]
     });
 
     if (!subResult.rows || subResult.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Submission not found in database.' });
+      return res.status(404).json({ success: false, error: 'Submission record not found for this assignment.' });
     }
 
-    const targetSubId = subResult.rows[0].id;
     const studentName = subResult.rows[0].student_name;
 
     await db.execute({
       sql: 'DELETE FROM submissions WHERE id = ?',
-      args: [targetSubId]
+      args: [numId]
     });
 
     return res.json({ 
       success: true, 
-      message: `Submission for "${studentName}" permanently deleted. Student can now resubmit.` 
+      message: `Submission for "${studentName}" (ID: ${numId}) permanently deleted. Student can now resubmit.` 
     });
   } catch (err) {
+    console.error('Error deleting submission by ID:', err);
     return res.status(500).json({ success: false, error: 'Failed to remove submission.' });
   }
 });
@@ -1227,6 +1258,20 @@ Respond ONLY with valid JSON matching the schema.`;
             similarityDetails = `${comp.score}% match with ${row.student_name}: "${comp.sharedPhrases.join('", "')}"`;
           }
         }
+      }
+
+      // Check for concurrent device/network submission bursts (5-minute soft audit flag)
+      const recentAuditCheck = await db.execute({
+        sql: `SELECT student_name FROM submissions 
+              WHERE assignment_id = ? 
+                AND (device_id = ? OR created_at >= datetime('now', '-5 minutes'))
+              LIMIT 1`,
+        args: [assignment.id, deviceIdInput || '']
+      });
+
+      if (recentAuditCheck.rows.length > 0) {
+        const priorName = recentAuditCheck.rows[0].student_name;
+        similarityDetails += ` | Audit Note: Recent network/device submission detected (${priorName}).`;
       }
 
       const finalName = studentNameInput || parsedFeedback.student_name || 'Student';

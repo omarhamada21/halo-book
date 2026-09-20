@@ -521,7 +521,7 @@
         </select>
       </div>
       <div style="margin-top:6px;">
-        <button type="button" onclick="clearEditDeadlineInputs()" style="background:none; border:none; color:#DC2626; font-size:11.5px; font-weight:500; cursor:pointer; padding:0;">Remove deadline (Open indefinitely)</button>
+        <button type="button" onclick="clearEditDeadlineInputs()" style="background:none; border:none; color:#DC2626; font-size:11.5px; font-weight:500; cursor:padding:0;">Remove deadline (Open indefinitely)</button>
       </div>
     </div>
 
@@ -945,7 +945,6 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
   const summaryTbody = document.getElementById(modePrefix === 'portal' ? 'portal-summary-table-body' : 'summary-table-body');
   const resultsContainer = document.getElementById(modePrefix === 'portal' ? 'portal-results-list' : 'results');
 
-  // 1. Remember which student cards are currently expanded before clearing the DOM
   const openCardIndices = new Set();
   resultsContainer.querySelectorAll('.result-body.open').forEach(el => {
     const card = el.closest('.result-card');
@@ -999,7 +998,6 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
     `;
     summaryTbody.appendChild(tr);
 
-    // 2. Restore open state if this card was previously expanded
     const isOpen = openCardIndices.has(String(idx));
 
     const card = document.createElement('div');
@@ -1164,12 +1162,10 @@ async function loadTeacherAssignments() {
   }
 }
 
-// Helper to determine combined package group + task name
 function getFullActiveTitle() {
   const assignmentObj = allAssignmentsMap[activeCode];
   const groupName = assignmentObj ? (assignmentObj.group_title || '').trim() : '';
   
-  // Look up title from currently selected tab button if active, fallback to object title
   const activeTabBtn = document.querySelector('#bundle-task-tabs button.primary');
   let taskName = activeTabBtn ? activeTabBtn.textContent.trim() : (assignmentObj ? (assignmentObj.title || '').trim() : '');
 
@@ -1186,7 +1182,6 @@ function switchActiveTaskTab(taskCode, taskTitle) {
     allAssignmentsMap[taskCode].title = taskTitle;
   }
 
-  // Update tab styles
   document.querySelectorAll('#bundle-task-tabs button').forEach(btn => {
     btn.classList.toggle('primary', btn.textContent.trim() === taskTitle.trim());
   });
@@ -1333,7 +1328,6 @@ function startLivePolling() {
   livePollTimer = setInterval(fetchLiveSubmissions, 10000);
 }
 
-// Automatically pause polling when teacher tabs away to conserve battery and bandwidth
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     if (livePollTimer) {
@@ -1352,7 +1346,6 @@ let isPollingActive = false;
 async function fetchLiveSubmissions() {
   if (!activeCode || isPollingActive) return;
 
-  // If the teacher is actively editing a mark or feedback line, pause polling
   const activeEl = document.activeElement;
   if (activeEl && (activeEl.isContentEditable || activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
     return;
@@ -1419,9 +1412,13 @@ function printReport(type) {
   }, 250);
 }
 
-// Remove single student submission and permit resubmission
+// Remove single student submission strictly by numeric ID
 async function deleteStudentSubmission(subId, studentName) {
-  if (!activeCode || !subId) return;
+  const numericId = parseInt(subId, 10);
+  if (!activeCode || isNaN(numericId) || numericId <= 0) {
+    alert('Unable to identify submission record ID.');
+    return;
+  }
 
   const confirmed = await showConfirmModal(
     `Delete submission for "${studentName}"? This removes their evaluation and unlocks them to submit their paper again.`,
@@ -1430,7 +1427,9 @@ async function deleteStudentSubmission(subId, studentName) {
   if (!confirmed) return;
 
   try {
-    const res = await fetch(`/api/assignments/${activeCode}/submissions/${subId}`, { method: 'DELETE' });
+    const res = await fetch(`/api/assignments/${encodeURIComponent(activeCode)}/submissions/${numericId}`, { 
+      method: 'DELETE' 
+    });
     const d = await res.json();
     if (d.success) {
       showToast(d.message);
@@ -2146,11 +2145,6 @@ async function loadAdminUsers() {
             : `<button class="admin-btn" style="padding:3px 7px; font-size:11px;" onclick="toggleUserRole(${u.id}, 'admin')">Make Admin</button>`
             ) : ''}
             ${!isRoot && !isSelf ? `<button class="btn-delete" onclick="deleteUser(${u.id}, '${escapeHtml(u.email).replace(/'/g, "\\'")}')">Delete</button>` : ''}
-            ${!isRoot && !isSelf ? (u.role === 'admin' 
-                ? `<button class="admin-btn" style="padding:3px 7px; font-size:11px;" onclick="toggleUserRole(${u.id}, 'teacher')">Demote</button>` 
-                : `<button class="admin-btn" style="padding:3px 7px; font-size:11px;" onclick="toggleUserRole(${u.id}, 'admin')">Make Admin</button>`
-              ) : ''}
-            ${!isRoot && !isSelf ? `<button class="btn-delete" onclick="deleteUser(${u.id}, '${u.email}')">Delete</button>` : ''}
           </td>
         `;
         tbody.appendChild(tr);
@@ -2289,7 +2283,12 @@ async function deleteUser(userId, userEmail) {
 
 function escapeHtml(str) {
   if (!str) return '';
-  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 </script>
 </body>
