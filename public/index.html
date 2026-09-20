@@ -7,8 +7,6 @@
 <link rel="icon" type="image/jpeg" href="/mimir.jpg">
 <link rel="shortcut icon" type="image/jpeg" href="/mimir.jpg">
 <link rel="apple-touch-icon" href="/mimir.jpg">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.autotable.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
@@ -917,8 +915,8 @@ function recalculateTotal(idx, modePrefix = 'portal') {
   let matchesFound = false;
 
   lines.forEach(line => {
-    const text = line.innerText;
-    const match = text.match(/(\d+)\s*\/\s*(\d+)/);
+    const text = line.innerText.trim();
+    const match = text.match(/[:\s](\d+)\s*\/\s*(\d+)(?:\s|$)/) || text.match(/^[-•*]?\s*.*?(\d+)\s*\/\s*(\d+)$/);
     if (match) {
       totalEarned += parseInt(match[1], 10);
       totalPossible += parseInt(match[2], 10);
@@ -926,7 +924,7 @@ function recalculateTotal(idx, modePrefix = 'portal') {
     }
   });
 
-  if (matchesFound) {
+  if (matchesFound && totalPossible > 0) {
     const newTotal = `${totalEarned}/${totalPossible}`;
     const dataset = modePrefix === 'portal' ? portalSubmissions : manualResults;
     if (dataset[idx]) dataset[idx].total_score = newTotal;
@@ -1321,10 +1319,34 @@ function startLivePolling() {
   livePollTimer = setInterval(fetchLiveSubmissions, 10000);
 }
 
+// Automatically pause polling when teacher tabs away to conserve battery and bandwidth
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (livePollTimer) {
+      clearInterval(livePollTimer);
+      livePollTimer = null;
+    }
+  } else {
+    if (activeCode) {
+      startLivePolling();
+    }
+  }
+});
+
+let isPollingActive = false;
+
 async function fetchLiveSubmissions() {
-  if (!activeCode) return;
+  if (!activeCode || isPollingActive) return;
+
+  // If the teacher is actively editing a mark or feedback line, pause polling
+  const activeEl = document.activeElement;
+  if (activeEl && (activeEl.isContentEditable || activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+    return;
+  }
+
+  isPollingActive = true;
   try {
-    const res = await fetch(`/api/assignments/${activeCode}/submissions`);
+    const res = await fetch(`/api/assignments/${encodeURIComponent(activeCode)}/submissions`);
     const d = await res.json();
     if (d.success) {
       portalSubmissions = d.submissions || [];
@@ -1338,6 +1360,8 @@ async function fetchLiveSubmissions() {
     }
   } catch (e) {
     console.warn('Live poll sync notice');
+  } finally {
+    isPollingActive = false;
   }
 }
 

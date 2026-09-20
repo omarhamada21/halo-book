@@ -12,9 +12,7 @@ import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import { createClient } from '@libsql/client';
 import crypto from 'crypto';
-import puppeteer from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
-
+import { OAuth2Client } from 'google-auth-library';
 
 const require = createRequire(import.meta.url);
 
@@ -39,6 +37,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'mimir-marking-secret-key-2026-edup
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 
+const googleOAuthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+
 // Root & Admin Configuration
 const ROOT_EMAIL = (process.env.ROOT_EMAIL || 'ohamada2117@gmail.com').toLowerCase().trim();
 const ADMIN_EMAILS = (process.env.ADMIN_EMAIL || '')
@@ -57,14 +57,53 @@ function isAdminEmail(email) {
 
 function isStrongPassword(password) {
   if (!password || password.length < 8) return false;
-  const hasNumber = /[0-9]/.test(password);
-  const hasUpper = /[A-Z]/.test(password);
-  const hasLower = /[a-z]/.test(password);
-  const hasSpecial = /[^A-Za-z0-9]/.test(password);
-  return hasNumber && hasUpper && hasLower && hasSpecial;
+  return /[0-9]/.test(password) &&
+         /[A-Z]/.test(password) &&
+         /[a-z]/.test(password) &&
+         /[^A-Za-z0-9]/.test(password);
 }
 
-// Database Configuration
+// In-Memory Rate Limiting Guard
+const rateLimitMap = new Map();
+function getClientIp(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.ip || req.socket.remoteAddress || 'unknown';
+}
+
+function rateLimit({ windowMs = 60 * 1000, max = 30 } = {}) {
+  return (req, res, next) => {
+    const ip = getClientIp(req);
+    const now = Date.now();
+    const entry = rateLimitMap.get(ip) || { count: 0, resetTime: now + windowMs };
+
+    if (now > entry.resetTime) {
+      entry.count = 1;
+      entry.resetTime = now + windowMs;
+    } else {
+      entry.count += 1;
+    }
+
+    rateLimitMap.set(ip, entry);
+
+    if (entry.count > max) {
+      return res.status(429).json({ error: 'Too many requests. Please slow down and try again shortly.' });
+    }
+    next();
+  };
+}
+
+// Periodic cleanup of rate limit cache
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap.entries()) {
+    if (now > entry.resetTime) rateLimitMap.delete(ip);
+  }
+}, 5 * 60 * 1000);
+
+// Database Initialization
 const tursoUrl = process.env.TURSO_DATABASE_URL || 'file:mimirmarking.db';
 const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || '';
 
@@ -126,34 +165,33 @@ async function initDatabase() {
         FOREIGN KEY (assignment_id) REFERENCES assignments(id)
       );
     `);
+
     await db.execute(`
-    CREATE TABLE IF NOT EXISTS submission_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      student_name TEXT NOT NULL,
-      assignment_code TEXT,
-      assignment_title TEXT,
-      teacher_name TEXT,
-      submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-    
-  const autoMigrations = [
-  'ALTER TABLE assignments ADD COLUMN bundle_code TEXT;',
-  'ALTER TABLE assignments ADD COLUMN group_title TEXT;',
-  'ALTER TABLE submissions ADD COLUMN teacher_name TEXT;',
-  'ALTER TABLE submissions ADD COLUMN device_id TEXT;',
-  'ALTER TABLE submissions ADD COLUMN essay_text TEXT;',
-  'ALTER TABLE submissions ADD COLUMN similarity_score INTEGER DEFAULT 0;',
-  'ALTER TABLE submissions ADD COLUMN similarity_details TEXT;',
-  'ALTER TABLE submissions ADD COLUMN ai_score INTEGER DEFAULT 0;',
-  'ALTER TABLE submissions ADD COLUMN ai_details TEXT;',
-  'ALTER TABLE submissions ADD COLUMN web_score INTEGER DEFAULT 0;'
-];
+      CREATE TABLE IF NOT EXISTS submission_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_name TEXT NOT NULL,
+        assignment_code TEXT,
+        assignment_title TEXT,
+        teacher_name TEXT,
+        submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    const autoMigrations = [
+      'ALTER TABLE assignments ADD COLUMN bundle_code TEXT;',
+      'ALTER TABLE assignments ADD COLUMN group_title TEXT;',
+      'ALTER TABLE submissions ADD COLUMN teacher_name TEXT;',
+      'ALTER TABLE submissions ADD COLUMN device_id TEXT;',
+      'ALTER TABLE submissions ADD COLUMN essay_text TEXT;',
+      'ALTER TABLE submissions ADD COLUMN similarity_score INTEGER DEFAULT 0;',
+      'ALTER TABLE submissions ADD COLUMN similarity_details TEXT;',
+      'ALTER TABLE submissions ADD COLUMN ai_score INTEGER DEFAULT 0;',
+      'ALTER TABLE submissions ADD COLUMN ai_details TEXT;',
+      'ALTER TABLE submissions ADD COLUMN web_score INTEGER DEFAULT 0;'
+    ];
 
     for (const sql of autoMigrations) {
-      try {
-        await db.execute(sql);
-      } catch (e) {}
+      try { await db.execute(sql); } catch (_) {}
     }
 
     console.log('Connected to Database successfully.');
@@ -164,7 +202,6 @@ async function initDatabase() {
 }
 initDatabase();
 
-// Auto-delete records 2 days after assignment deadline
 async function cleanExpiredAssignments() {
   try {
     const assignmentsRes = await db.execute('SELECT id, deadline FROM assignments WHERE deadline IS NOT NULL');
@@ -185,11 +222,11 @@ async function cleanExpiredAssignments() {
     console.error('[Auto-Cleanup Notice]:', err.message);
   }
 }
-
 setInterval(cleanExpiredAssignments, 60 * 60 * 1000);
 
+// Middleware
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '30mb' }));
 app.use(cookieParser());
 
 const ai = new GoogleGenAI({
@@ -203,6 +240,7 @@ const upload = multer({
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Auth Middleware
 async function authenticateToken(req, res, next) {
   const token = req.cookies.halo_token || (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
 
@@ -304,7 +342,6 @@ async function extractText(file) {
   return file.buffer.toString('utf-8');
 }
 
-// Tri-gram Similarity Check
 function calculateTextSimilarity(text1, text2) {
   if (!text1 || !text2) return { score: 0, sharedPhrases: [] };
   
@@ -339,56 +376,52 @@ function calculateTextSimilarity(text1, text2) {
   return { score, sharedPhrases: shared };
 }
 
-// Model Caller via Interactions API
 async function callGemini(inputPayload) {
-  const models = ['gemini-3.6-flash', 'gemini-3.7-flash'];
+  const models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
   let lastErr;
 
   for (const modelName of models) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const interaction = await ai.interactions.create({
+        const response = await ai.models.generateContent({
           model: modelName,
-          input: inputPayload,
-          response_format: [
-            {
-              type: 'text',
-              mime_type: 'application/json',
-              schema: {
-                type: 'object',
-                properties: {
-                  student_name: { type: 'string' },
-                  extracted_essay: { type: 'string' },
-                  total_score: { type: 'string' },
-                  category_breakdown: { type: 'string' },
-                  mistakes: { type: 'string' },
-                  weaknesses: { type: 'string' },
-                  ai_probability_score: { type: 'integer' },
-                  ai_detection_notes: { type: 'string' },
-                  web_similarity_score: { type: 'integer' }
-                },
-                required: [
-                  'student_name',
-                  'extracted_essay',
-                  'total_score',
-                  'category_breakdown',
-                  'mistakes',
-                  'weaknesses',
-                  'ai_probability_score',
-                  'ai_detection_notes',
-                  'web_similarity_score'
-                ]
-              }
+          contents: inputPayload,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: 'OBJECT',
+              properties: {
+                student_name: { type: 'STRING' },
+                extracted_essay: { type: 'STRING' },
+                total_score: { type: 'STRING' },
+                category_breakdown: { type: 'STRING' },
+                mistakes: { type: 'STRING' },
+                weaknesses: { type: 'STRING' },
+                ai_probability_score: { type: 'INTEGER' },
+                ai_detection_notes: { type: 'STRING' },
+                web_similarity_score: { type: 'INTEGER' }
+              },
+              required: [
+                'student_name',
+                'extracted_essay',
+                'total_score',
+                'category_breakdown',
+                'mistakes',
+                'weaknesses',
+                'ai_probability_score',
+                'ai_detection_notes',
+                'web_similarity_score'
+              ]
             }
-          ]
+          }
         });
-        return interaction.output_text;
+        return response.text;
       } catch (err) {
         const errMsg = err.message || '';
         console.warn(`[${modelName} attempt ${attempt + 1}] Notice: ${errMsg}`);
         lastErr = err;
         
-        if (errMsg.includes('500') || errMsg.includes('503') || errMsg.includes('high demand')) {
+        if (errMsg.includes('500') || errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('quota')) {
           await delay(800 * (attempt + 1));
           continue;
         }
@@ -402,7 +435,7 @@ async function callGemini(inputPayload) {
 // ----------------- AUTH ROUTES -----------------
 app.get('/api/auth/config', (req, res) => res.json({ googleClientId: GOOGLE_CLIENT_ID }));
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }), async (req, res) => {
   try {
     const { name, email, password } = req.body;
     if (!name || !email || !password) return res.status(400).json({ error: 'Please provide all required fields.' });
@@ -415,8 +448,8 @@ app.post('/api/auth/register', async (req, res) => {
     const checkUser = await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [cleanEmail] });
     if (checkUser.rows.length > 0) return res.status(400).json({ error: 'An account with this email already exists.' });
 
-    let initialRole = isRootUser(cleanEmail) ? 'root' : isAdminEmail(cleanEmail) ? 'admin' : 'teacher';
-    let initialStatus = ['root', 'admin'].includes(initialRole) ? 'approved' : 'pending';
+    const initialRole = isRootUser(cleanEmail) ? 'root' : isAdminEmail(cleanEmail) ? 'admin' : 'teacher';
+    const initialStatus = ['root', 'admin'].includes(initialRole) ? 'approved' : 'pending';
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const insert = await db.execute({
@@ -437,7 +470,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 15 }), async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Please provide email and password.' });
@@ -476,13 +509,21 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.post('/api/auth/google', async (req, res) => {
+// Secure Google OAuth Verification
+app.post('/api/auth/google', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }), async (req, res) => {
   try {
     const { credential } = req.body;
-    const base64Url = credential.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(Buffer.from(base64, 'base64').toString('utf-8').split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
-    const payload = JSON.parse(jsonPayload);
+    if (!credential) return res.status(400).json({ error: 'Missing credential token.' });
+
+    const ticket = await googleOAuthClient.verifyIdToken({
+      idToken: credential,
+      audience: GOOGLE_CLIENT_ID
+    });
+
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email) {
+      return res.status(401).json({ error: 'Invalid Google credential.' });
+    }
 
     const email = payload.email.toLowerCase().trim();
     const name = payload.name || email.split('@')[0];
@@ -491,8 +532,8 @@ app.post('/api/auth/google', async (req, res) => {
     let user = existingResult.rows[0];
 
     if (!user) {
-      let initialRole = isRootUser(email) ? 'root' : isAdminEmail(email) ? 'admin' : 'teacher';
-      let initialStatus = ['root', 'admin'].includes(initialRole) ? 'approved' : 'pending';
+      const initialRole = isRootUser(email) ? 'root' : isAdminEmail(email) ? 'admin' : 'teacher';
+      const initialStatus = ['root', 'admin'].includes(initialRole) ? 'approved' : 'pending';
       const insert = await db.execute({
         sql: 'INSERT INTO users (name, email, password, google_id, status, role) VALUES (?, ?, ?, ?, ?, ?)',
         args: [name, email, 'GOOGLE_AUTH_ACCOUNT', payload.sub || '', initialStatus, initialRole]
@@ -509,7 +550,8 @@ app.post('/api/auth/google', async (req, res) => {
     res.cookie('halo_token', token, { httpOnly: true, secure: isProduction, sameSite: 'lax', path: '/', maxAge: 7 * 24 * 60 * 60 * 1000 });
     return res.json({ success: true, user: { name: user.name, email: user.email, status: user.status, role: user.role } });
   } catch (error) {
-    return res.status(500).json({ error: 'Google sign-in failed.' });
+    console.error('Google Verification Error:', error.message);
+    return res.status(401).json({ error: 'Google authentication signature verification failed.' });
   }
 });
 
@@ -566,7 +608,6 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 // ----------------- ASSIGNMENTS & EVALUATIONS -----------------
-// Multi-Task Assignment Bundle Creation
 app.post(
   '/api/assignments/create-bundle',
   authenticateToken,
@@ -596,7 +637,6 @@ app.post(
         const taskCode = crypto.randomBytes(4).toString('hex');
         const schemeFiles = (req.files || []).filter(f => f.fieldname === `scheme_${i}`);
 
-        // Safely resolve the title without crashing on empty/missing inputs
         const resolvedTitle = (task.title && task.title.trim()) ? task.title.trim() : `Task ${i + 1}`;
         let extractedSchemeText = task.schemeText || '';
         const cachedSchemePayload = [];
@@ -608,18 +648,20 @@ app.post(
               extractedSchemeText += `\n[Rubric Content]:\n${pdfTxt}\n`;
             } else {
               cachedSchemePayload.push({
-                type: 'document',
-                mime_type: 'application/pdf',
-                data: sFile.buffer.toString('base64')
+                inlineData: {
+                  mimeType: 'application/pdf',
+                  data: sFile.buffer.toString('base64')
+                }
               });
             }
           } else if (isImage(sFile)) {
             let mimeType = sFile.mimetype || 'image/png';
             if (!mimeType.startsWith('image/')) mimeType = 'image/png';
             cachedSchemePayload.push({
-              type: 'image',
-              mime_type: mimeType,
-              data: sFile.buffer.toString('base64')
+              inlineData: {
+                mimeType,
+                data: sFile.buffer.toString('base64')
+              }
             });
           } else {
             const txt = await extractText(sFile);
@@ -660,7 +702,6 @@ app.post(
   }
 );
 
-// Add a new task to an existing bundle package with rubric support
 app.post('/api/assignments/bundle/:bundleCode/tasks', authenticateToken, requireApprovedUser, upload.any(), async (req, res) => {
   try {
     const { bundleCode } = req.params;
@@ -697,18 +738,20 @@ app.post('/api/assignments/bundle/:bundleCode/tasks', authenticateToken, require
           extractedSchemeText += `\n[Rubric Content]:\n${pdfTxt}\n`;
         } else {
           cachedSchemePayload.push({
-            type: 'document',
-            mime_type: 'application/pdf',
-            data: sFile.buffer.toString('base64')
+            inlineData: {
+              mimeType: 'application/pdf',
+              data: sFile.buffer.toString('base64')
+            }
           });
         }
       } else if (isImage(sFile)) {
         let mimeType = sFile.mimetype || 'image/png';
         if (!mimeType.startsWith('image/')) mimeType = 'image/png';
         cachedSchemePayload.push({
-          type: 'image',
-          mime_type: mimeType,
-          data: sFile.buffer.toString('base64')
+          inlineData: {
+            mimeType,
+            data: sFile.buffer.toString('base64')
+          }
         });
       } else {
         const txt = await extractText(sFile);
@@ -740,7 +783,6 @@ app.post('/api/assignments/bundle/:bundleCode/tasks', authenticateToken, require
   }
 });
 
-// Rename a single task inside a bundle package
 app.patch('/api/assignments/tasks/:code/rename', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
@@ -751,7 +793,6 @@ app.patch('/api/assignments/tasks/:code/rename', authenticateToken, requireAppro
     }
 
     const isElevated = ['root', 'admin'].includes(req.user.role);
-
     const check = await db.execute({
       sql: 'SELECT id FROM assignments WHERE code = ?' + (isElevated ? '' : ' AND teacher_id = ?'),
       args: isElevated ? [code] : [code, req.user.id]
@@ -768,12 +809,10 @@ app.patch('/api/assignments/tasks/:code/rename', authenticateToken, requireAppro
 
     res.json({ success: true, message: 'Task renamed successfully.', title: title.trim() });
   } catch (err) {
-    console.error('Rename Task Error:', err);
     res.status(500).json({ success: false, error: 'Failed to rename task.' });
   }
 });
 
-// Delete a single task from a bundle package
 app.delete('/api/assignments/tasks/:code', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
@@ -802,12 +841,10 @@ app.delete('/api/assignments/tasks/:code', authenticateToken, requireApprovedUse
 
     res.json({ success: true, message: 'Task removed successfully.' });
   } catch (err) {
-    console.error('Delete Task Error:', err);
     res.status(500).json({ success: false, error: 'Failed to delete task.' });
   }
 });
 
-// Public Bundle Resolution Endpoint
 app.get('/api/public/bundle/:bundleCode', async (req, res) => {
   try {
     const { bundleCode } = req.params;
@@ -844,76 +881,6 @@ app.get('/api/public/bundle/:bundleCode', async (req, res) => {
   }
 });
 
-app.post(
-  '/api/assignments/create',
-  authenticateToken,
-  requireApprovedUser,
-  upload.fields([{ name: 'scheme', maxCount: 20 }]),
-  async (req, res) => {
-    try {
-      const { title, deadline, schemeText } = req.body;
-      if (!title || !title.trim()) return res.status(400).json({ error: 'Please provide an assignment title.' });
-
-      const schemeFiles = (req.files && req.files['scheme']) || [];
-      const cachedSchemePayload = [];
-      let extractedSchemeText = schemeText || '';
-
-      for (const sFile of schemeFiles) {
-        if (isPdf(sFile)) {
-          const pdfTxt = await extractText(sFile);
-          if (pdfTxt && pdfTxt.trim()) {
-            extractedSchemeText += `\n[Rubric Document Content]:\n${pdfTxt}\n`;
-          } else {
-            cachedSchemePayload.push({
-              type: 'document',
-              mime_type: 'application/pdf',
-              data: sFile.buffer.toString('base64')
-            });
-          }
-        } else if (isImage(sFile)) {
-          let mimeType = sFile.mimetype || 'image/png';
-          if (!mimeType.startsWith('image/')) mimeType = 'image/png';
-          cachedSchemePayload.push({
-            type: 'image',
-            mime_type: mimeType,
-            data: sFile.buffer.toString('base64')
-          });
-        } else {
-          const txt = await extractText(sFile);
-          if (txt.trim()) {
-            extractedSchemeText += `\n[Rubric File: ${sFile.originalname}]\n${txt}\n`;
-          }
-        }
-      }
-
-      const code = crypto.randomBytes(4).toString('hex');
-      let deadlineVal = deadline && deadline.trim() ? deadline.trim() : null;
-
-      await db.execute({
-        sql: `INSERT INTO assignments (code, teacher_id, title, deadline, scheme_text, scheme_files_json) 
-              VALUES (?, ?, ?, ?, ?, ?)`,
-        args: [
-          code,
-          req.user.id,
-          title.trim(),
-          deadlineVal,
-          extractedSchemeText,
-          JSON.stringify(cachedSchemePayload)
-        ]
-      });
-
-      return res.json({
-        success: true,
-        code,
-        link: `${req.protocol}://${req.get('host')}/submit.html?code=${code}`
-      });
-    } catch (err) {
-      console.error('Assignment Creation Error:', err);
-      return res.status(500).json({ error: err.message || 'Failed to create assignment link.' });
-    }
-  }
-);
-
 app.get('/api/assignments', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const result = await db.execute({
@@ -928,7 +895,6 @@ app.get('/api/assignments', authenticateToken, requireApprovedUser, async (req, 
   }
 });
 
-// Teacher Submissions Fetch
 app.get('/api/assignments/:code/submissions', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
@@ -983,12 +949,10 @@ app.post('/api/assignments/:code/update-deadline', authenticateToken, requireApp
       deadline: deadlineVal
     });
   } catch (err) {
-    console.error('Update Deadline Error:', err);
     res.status(500).json({ error: 'Failed to update deadline.' });
   }
 });
 
-// DELETE a single student submission (clears from reports & unlocks student)
 app.delete('/api/assignments/:code/submissions/:submissionId', authenticateToken, requireApprovedUser, async (req, res) => {
   const { code, submissionId } = req.params;
   const numId = parseInt(submissionId, 10);
@@ -1033,12 +997,10 @@ app.delete('/api/assignments/:code/submissions/:submissionId', authenticateToken
       message: `Submission for "${studentName}" permanently deleted. Student can now resubmit.` 
     });
   } catch (err) {
-    console.error('Error removing student submission:', err);
     return res.status(500).json({ success: false, error: 'Failed to remove submission.' });
   }
 });
 
-// GET permanent audit logs for an assignment
 app.get('/api/assignments/:code/logs', authenticateToken, requireApprovedUser, async (req, res) => {
   const { code } = req.params;
   try {
@@ -1052,12 +1014,10 @@ app.get('/api/assignments/:code/logs', authenticateToken, requireApprovedUser, a
 
     res.json({ success: true, logs: result.rows || [] });
   } catch (err) {
-    console.error('Error fetching logs:', err);
     res.status(500).json({ success: false, error: 'Failed to fetch submission logs.' });
   }
 });
 
-// Delete single assignment or bundle
 app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
@@ -1089,49 +1049,9 @@ app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, asy
       await db.execute({ sql: 'DELETE FROM assignments WHERE id = ?', args: [id] });
     }
 
-    return res.json({
-      success: true,
-      message: `Assignment successfully deleted from the database.`
-    });
+    return res.json({ success: true, message: `Assignment successfully deleted from the database.` });
   } catch (err) {
-    console.error('Delete Assignment Error:', err);
     return res.status(500).json({ success: false, error: 'Failed to delete assignment.' });
-  }
-});
-
-app.get('/api/public/assignment/:code', async (req, res) => {
-  try {
-    const { code } = req.params;
-    const result = await db.execute({
-      sql: `SELECT a.code, a.title, a.deadline, u.name as teacher_name 
-            FROM assignments a JOIN users u ON a.teacher_id = u.id 
-            WHERE a.code = ?`,
-      args: [code]
-    });
-
-    const assignment = result.rows[0];
-    if (!assignment) return res.status(404).json({ error: 'Invalid or expired assignment link.' });
-
-    let isPastDeadline = false;
-    if (assignment.deadline) {
-      const ddlTime = new Date(assignment.deadline).getTime();
-      if (!isNaN(ddlTime)) {
-        isPastDeadline = Date.now() > ddlTime;
-      }
-    }
-
-    res.json({
-      success: true,
-      assignment: {
-        code: assignment.code,
-        title: assignment.title,
-        deadline: assignment.deadline,
-        teacherName: assignment.teacher_name,
-        isPastDeadline
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Error loading assignment.' });
   }
 });
 
@@ -1150,14 +1070,12 @@ app.get('/api/public/assignment/:code/status', async (req, res) => {
     }
 
     const assignmentId = assignResult.rows[0].id;
-
     const subCheck = await db.execute({
       sql: 'SELECT id FROM submissions WHERE assignment_id = ? AND device_id = ?',
       args: [assignmentId, deviceId || '']
     });
 
-    const hasSubmitted = subCheck.rows.length > 0;
-    return res.json({ success: true, hasSubmitted });
+    return res.json({ success: true, hasSubmitted: subCheck.rows.length > 0 });
   } catch (err) {
     return res.status(500).json({ error: 'Status check failed.' });
   }
@@ -1166,6 +1084,7 @@ app.get('/api/public/assignment/:code/status', async (req, res) => {
 // Student Public Upload
 app.post(
   '/api/public/submit/:code',
+  rateLimit({ windowMs: 60 * 1000, max: 10 }),
   upload.fields([{ name: 'pages', maxCount: 20 }]),
   async (req, res) => {
     try {
@@ -1197,7 +1116,7 @@ app.post(
 
       if (deviceIdInput) {
         const deviceCheck = await db.execute({
-          sql: 'SELECT id, student_name FROM submissions WHERE assignment_id = ? AND device_id = ?',
+          sql: 'SELECT id FROM submissions WHERE assignment_id = ? AND device_id = ?',
           args: [assignment.id, deviceIdInput]
         });
 
@@ -1216,7 +1135,7 @@ app.post(
       const cachedSchemePayload = JSON.parse(assignment.scheme_files_json || '[]');
       const inputPayload = [...cachedSchemePayload];
 
-     let promptText = `You are a professional teacher evaluating a student writing assessment.
+      let promptText = `You are a professional teacher evaluating a student writing assessment.
 Examine the student's attached work strictly against the provided marking scheme rubric.
 
 CRITICAL SCORING & MULTI-PAGE RULES:
@@ -1249,15 +1168,17 @@ Respond ONLY with valid JSON matching the schema.`;
           let mimeType = file.mimetype || 'image/png';
           if (!mimeType.startsWith('image/')) mimeType = 'image/png';
           inputPayload.push({
-            type: 'image',
-            mime_type: mimeType,
-            data: file.buffer.toString('base64')
+            inlineData: {
+              mimeType,
+              data: file.buffer.toString('base64')
+            }
           });
         } else if (isPdf(file)) {
           inputPayload.push({
-            type: 'document',
-            mime_type: 'application/pdf',
-            data: file.buffer.toString('base64')
+            inlineData: {
+              mimeType: 'application/pdf',
+              data: file.buffer.toString('base64')
+            }
           });
         } else {
           const essayText = await extractText(file);
@@ -1266,7 +1187,7 @@ Respond ONLY with valid JSON matching the schema.`;
       }
 
       promptText += `\n\nSTUDENT WORK: ${files.length} attached document/image page(s).`;
-      inputPayload.push({ type: 'text', text: promptText });
+      inputPayload.push(promptText);
 
       let parsedFeedback = null;
       try {
@@ -1338,12 +1259,7 @@ Respond ONLY with valid JSON matching the schema.`;
         await db.execute({
           sql: `INSERT INTO submission_logs (student_name, assignment_code, assignment_title, teacher_name, submitted_at)
                 VALUES (?, ?, ?, ?, datetime('now'))`,
-          args: [
-            finalName,
-            assignment.code,
-            assignment.title,
-            teacherName || 'Teacher'
-          ]
+          args: [finalName, assignment.code, assignment.title, teacherName || 'Teacher']
         });
       } catch (logErr) {
         console.error('Audit log notice:', logErr.message);
@@ -1373,7 +1289,7 @@ app.post(
   async (req, res) => {
     try {
       const schemeFiles = (req.files && req.files['scheme']) || [];
-      let extraNotes = req.body.schemeText || '';
+      const extraNotes = req.body.schemeText || '';
 
       if (schemeFiles.length === 0 && !extraNotes.trim()) {
         return res.status(400).json({ error: 'Please provide at least one marking scheme file or text criteria.' });
@@ -1408,18 +1324,20 @@ app.post(
             allSchemeText += `\n[Rubric Document Content]:\n${pdfTxt}\n`;
           } else {
             cachedSchemePayload.push({
-              type: 'document',
-              mime_type: 'application/pdf',
-              data: sFile.buffer.toString('base64')
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: sFile.buffer.toString('base64')
+              }
             });
           }
         } else if (isImage(sFile)) {
           let mimeType = sFile.mimetype || 'image/png';
           if (!mimeType.startsWith('image/')) mimeType = 'image/png';
           cachedSchemePayload.push({
-            type: 'image',
-            mime_type: mimeType,
-            data: sFile.buffer.toString('base64')
+            inlineData: {
+              mimeType,
+              data: sFile.buffer.toString('base64')
+            }
           });
         } else {
           const txt = await extractText(sFile);
@@ -1474,15 +1392,17 @@ Respond ONLY with valid JSON matching the schema.`;
             let mimeType = file.mimetype || 'image/png';
             if (!mimeType.startsWith('image/')) mimeType = 'image/png';
             inputPayload.push({
-              type: 'image',
-              mime_type: mimeType,
-              data: file.buffer.toString('base64')
+              inlineData: {
+                mimeType,
+                data: file.buffer.toString('base64')
+              }
             });
           } else if (isPdf(file)) {
             inputPayload.push({
-              type: 'document',
-              mime_type: 'application/pdf',
-              data: file.buffer.toString('base64')
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: file.buffer.toString('base64')
+              }
             });
           } else {
             const essayText = await extractText(file);
@@ -1491,7 +1411,7 @@ Respond ONLY with valid JSON matching the schema.`;
         }
 
         promptText += `\n\nSTUDENT WORK: ${job.files.length} attached document/image page(s).`;
-        inputPayload.push({ type: 'text', text: promptText });
+        inputPayload.push(promptText);
 
         try {
           const rawOutput = await callGemini(inputPayload);
@@ -1553,82 +1473,6 @@ Respond ONLY with valid JSON matching the schema.`;
     }
   }
 );
-
-// Server-side Puppeteer PDF generator (Fixed ETXTBSY concurrency & timeout)
-let activePuppeteerJob = Promise.resolve();
-
-app.post('/api/export/pdf', authenticateToken, requireApprovedUser, async (req, res) => {
-  const { htmlContent, filename } = req.body;
-  if (!htmlContent) return res.status(400).json({ error: 'Missing HTML content' });
-
-  // Queue requests sequentially so @sparticuz/chromium never collides on /tmp/chromium (prevents ETXTBSY)
-  activePuppeteerJob = activePuppeteerJob.then(async () => {
-    let browser;
-    try {
-      const isLocal = process.platform === 'win32';
-
-      browser = await puppeteer.launch({
-        args: isLocal
-          ? ['--no-sandbox', '--disable-setuid-sandbox']
-          : [
-              ...chromium.args,
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-gpu',
-              '--single-process',
-              '--no-zygote'
-            ],
-        defaultViewport: chromium.defaultViewport,
-        executablePath: isLocal
-          ? (process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')
-          : await chromium.executablePath(),
-        headless: chromium.headless
-      });
-
-      const page = await browser.newPage();
-
-      // domcontentloaded avoids hanging forever on Render loopback
-      await page.setContent(htmlContent, {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000
-      });
-
-      await delay(300);
-
-      const pdfBuffer = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: {
-          top: '12mm',
-          bottom: '12mm',
-          left: '12mm',
-          right: '12mm'
-        }
-      });
-
-      await browser.close();
-
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename || 'Report.pdf'}"`);
-      return res.send(pdfBuffer);
-    } catch (err) {
-      if (browser) {
-        try { await browser.close(); } catch (_) {}
-      }
-      console.error('Puppeteer PDF compilation error:', err);
-      if (!res.headersSent) {
-        return res.status(500).json({ error: err.message || 'Server PDF compilation failed.' });
-      }
-    }
-  }).catch((queueErr) => {
-    console.error('Puppeteer Queue error:', queueErr);
-    if (!res.headersSent) {
-      return res.status(500).json({ error: 'Server busy generating another report. Please retry in a moment.' });
-    }
-  });
-});
-
 
 // Static assets
 const publicDir = path.resolve(__dirname, 'public');
