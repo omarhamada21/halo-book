@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Login - MIMIR MARKING</title>
-<link rel="icon" type="image/png" href="/mimir.jpg">
-<link rel="shortcut icon" type="image/png" href="/mimir.jpg">
+<link rel="icon" type="image/jpeg" href="/mimir.jpg">
+<link rel="shortcut icon" type="image/jpeg" href="/mimir.jpg">
 <link rel="apple-touch-icon" href="/mimir.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -134,9 +134,9 @@
 
 <div class="auth-box">
   <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-  <img src="/mimir.jpg" alt="Mimir" style="width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--pen); object-fit: cover; object-position: top center;">
-  <div class="eyebrow" style="margin: 0;">Mimir Marking</div>
-</div>
+    <img src="/mimir.jpg" alt="Mimir" style="width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--pen); object-fit: cover; object-position: top center;">
+    <div class="eyebrow" style="margin: 0;">Mimir Marking</div>
+  </div>
   <h1 id="auth-title">Sign In to Dashboard</h1>
 
   <div class="tabs" id="tab-container">
@@ -147,12 +147,12 @@
   <form id="auth-form">
     <div class="form-group" id="name-group" style="display:none;">
       <label for="name">Full Name</label>
-      <input type="text" id="name" placeholder="e.g. Mr. Ahmed Hassan">
+      <input type="text" id="name" placeholder="e.g. Mr. Ahmed Hassan" autocomplete="name">
     </div>
 
     <div class="form-group">
       <label for="email">Email Address</label>
-      <input type="email" id="email" placeholder="teacher@school.com" required>
+      <input type="email" id="email" placeholder="teacher@school.com" required autocomplete="email">
     </div>
 
     <div class="form-group" id="password-group">
@@ -216,7 +216,6 @@ const authMsg = document.getElementById('auth-msg');
 const tabContainer = document.getElementById('tab-container');
 const forgotLinkWrap = document.getElementById('forgot-link-wrap');
 const googleSection = document.getElementById('google-section');
-
 const passwordInput = document.getElementById('password');
 const regPasswordMeter = document.getElementById('reg-password-meter');
 
@@ -230,7 +229,6 @@ function evaluatePassword(pwd) {
   };
 
   let passedCount = 0;
-
   for (const [key, passed] of Object.entries(rules)) {
     const el = document.getElementById(`rule-${key}`);
     if (el) {
@@ -247,8 +245,7 @@ function evaluatePassword(pwd) {
 
   const fillEl = document.getElementById('reg-meter-fill');
   const textEl = document.getElementById('reg-strength-text');
-
-  let strengthPct = (passedCount / 5) * 100;
+  const strengthPct = (passedCount / 5) * 100;
   fillEl.style.width = `${strengthPct}%`;
 
   if (passedCount <= 2) {
@@ -269,9 +266,7 @@ function evaluatePassword(pwd) {
 }
 
 passwordInput.addEventListener('input', (e) => {
-  if (mode === 'register') {
-    evaluatePassword(e.target.value);
-  }
+  if (mode === 'register') evaluatePassword(e.target.value);
 });
 
 function switchMode(newMode) {
@@ -292,6 +287,7 @@ function switchMode(newMode) {
     regPasswordMeter.style.display = 'block';
     authTitle.textContent = 'Create Teacher Account';
     submitBtn.textContent = 'Create Account';
+    passwordInput.setAttribute('autocomplete', 'new-password');
     evaluatePassword(passwordInput.value);
   } else if (mode === 'login') {
     document.getElementById('tab-login').classList.add('active');
@@ -302,6 +298,7 @@ function switchMode(newMode) {
     regPasswordMeter.style.display = 'none';
     authTitle.textContent = 'Sign In to Dashboard';
     submitBtn.textContent = 'Sign In';
+    passwordInput.setAttribute('autocomplete', 'current-password');
   } else if (mode === 'forgot') {
     authTitle.textContent = 'Password Recovery';
   }
@@ -311,10 +308,12 @@ window.handleGoogleCredentialResponse = async function(response) {
   authMsg.className = 'msg success';
   authMsg.style.display = 'block';
   authMsg.textContent = 'Verifying credentials...';
+  submitBtn.disabled = true;
 
   if (!response || !response.credential) {
     authMsg.className = 'msg error';
     authMsg.textContent = 'Google did not return a valid credential token.';
+    submitBtn.disabled = false;
     return;
   }
 
@@ -326,7 +325,6 @@ window.handleGoogleCredentialResponse = async function(response) {
     });
 
     const data = await res.json();
-
     if (data.success) {
       authMsg.className = 'msg success';
       authMsg.textContent = 'Google sign-in successful! Redirecting...';
@@ -334,10 +332,12 @@ window.handleGoogleCredentialResponse = async function(response) {
     } else {
       authMsg.className = 'msg error';
       authMsg.textContent = data.error || 'Google Sign-In failed on server.';
+      submitBtn.disabled = false;
     }
   } catch (err) {
     authMsg.className = 'msg error';
     authMsg.textContent = 'Network connection error during Google authentication.';
+    submitBtn.disabled = false;
   }
 };
 
@@ -403,7 +403,7 @@ authForm.addEventListener('submit', async (e) => {
     if (data.success) {
       authMsg.className = 'msg success';
       authMsg.textContent = mode === 'register' ? 'Account created! Redirecting...' : 'Success! Logging in...';
-      setTimeout(() => { window.location.replace('/index.html'); }, 800);
+      setTimeout(() => { window.location.replace('/index.html'); }, 600);
     } else {
       authMsg.className = 'msg error';
       authMsg.textContent = data.error || 'Authentication failed.';

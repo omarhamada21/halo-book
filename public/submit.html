@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Student Assignment Submission — Mimir Marking</title>
-<link rel="icon" type="image/png" href="/mimir.jpg">
-<link rel="shortcut icon" type="image/png" href="/mimir.jpg">
+<link rel="icon" type="image/jpeg" href="/mimir.jpg">
+<link rel="shortcut icon" type="image/jpeg" href="/mimir.jpg">
 <link rel="apple-touch-icon" href="/mimir.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -50,13 +50,14 @@
     width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px;
     font-size: 14px; background: #fff; outline: none; font-family: 'Inter', sans-serif;
   }
-  input[type="text"]:focus { border-color: var(--pen); }
+  input[type="text"]:focus { border-color: var(--pen); box-shadow: 0 0 0 2px var(--pen-soft); }
   
   .dropzone {
     border: 2px dashed var(--border); border-radius: 10px; padding: 20px 16px;
     text-align: center; cursor: pointer; background: #FAFBFD; transition: all 0.2s;
   }
   .dropzone:hover { border-color: var(--pen); background: var(--pen-soft); }
+  .dropzone.disabled { pointer-events: none; opacity: 0.6; }
   
   .page-preview { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
   .page-chip {
@@ -91,13 +92,12 @@
 
     <form id="student-form" onsubmit="handleStudentSubmit(event)">
       <div class="form-group">
-        <label>Your Full Name</label>
-        <input type="text" id="student-name" required placeholder="e.g. Fares Ahmed" />
+        <label for="student-name">Your Full Name</label>
+        <input type="text" id="student-name" required placeholder="e.g. Fares Ahmed" autocomplete="name" maxlength="80" />
         <small style="color:var(--ink-soft); font-size:11.5px; margin-top:4px; display:block;">🔒 Protected: Only 1 submission allowed from this device.</small>
       </div>
 
-      <div id="tasks-container">
-        </div>
+      <div id="tasks-container"></div>
 
       <button type="submit" class="btn-submit" id="submit-btn">🚀 Submit All Tasks to Teacher</button>
     </form>
@@ -115,13 +115,18 @@
   const urlParams = new URLSearchParams(window.location.search);
   const bundleCode = urlParams.get('bundle') || urlParams.get('code');
   
+  // Resilient Hardware + Storage Device Token
   function getOrCreateDeviceId() {
-    let deviceId = localStorage.getItem('mimir_device_token');
-    if (!deviceId) {
-      deviceId = 'dev_' + crypto.randomUUID();
-      localStorage.setItem('mimir_device_token', deviceId);
-    }
-    return deviceId;
+    let stored = localStorage.getItem('mimir_device_token');
+    if (stored) return stored;
+
+    const screenData = `${screen.width}x${screen.height}x${screen.colorDepth}`;
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    const raw = `${screenData}_${timezone}_${navigator.language}_${crypto.randomUUID()}`;
+    stored = 'dev_' + btoa(raw).replace(/[^a-zA-Z0-9]/g, '').slice(0, 32);
+    
+    try { localStorage.setItem('mimir_device_token', stored); } catch (_) {}
+    return stored;
   }
   const clientDeviceId = getOrCreateDeviceId();
 
@@ -137,6 +142,16 @@
     });
   }
 
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   if (!bundleCode) {
     document.getElementById('assign-title').textContent = 'Invalid Assignment Link';
     document.getElementById('student-form').style.display = 'none';
@@ -146,7 +161,7 @@
 
   async function loadAssignmentBundle() {
     try {
-      const res = await fetch(`/api/public/bundle/${bundleCode}`);
+      const res = await fetch(`/api/public/bundle/${encodeURIComponent(bundleCode)}`);
       const d = await res.json();
 
       if (!d.success) {
@@ -159,7 +174,7 @@
       document.getElementById('assign-title').textContent = bundleTasks.length > 1 
         ? `Multi-Task Homework Assignment (${bundleTasks.length} Tasks)` 
         : bundleTasks[0].title;
-      document.getElementById('assign-teacher').textContent = `Teacher: ${d.teacherName}`;
+      document.getElementById('assign-teacher').textContent = `Teacher: ${d.teacherName || 'Teacher'}`;
 
       if (d.deadline) {
         const dl = new Date(d.deadline);
@@ -188,7 +203,7 @@
     for (const t of bundleTasks) {
       taskFilesMap[t.code] = [];
       try {
-        const r = await fetch(`/api/public/assignment/${t.code}/status?deviceId=${encodeURIComponent(clientDeviceId)}`);
+        const r = await fetch(`/api/public/assignment/${encodeURIComponent(t.code)}/status?deviceId=${encodeURIComponent(clientDeviceId)}`);
         const st = await r.json();
         taskLockMap[t.code] = !!(st && st.hasSubmitted);
       } catch (e) {
@@ -219,13 +234,13 @@
 
           ${isDone ? `
             <div style="padding: 10px; background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 6px; font-size: 13px; color: #065F46;">
-              Your work for this task has been recorded.
+              Your work for this task has already been recorded.
             </div>
           ` : `
-            <div class="dropzone" onclick="document.getElementById('file-input-${t.code}').click()">
+            <div class="dropzone" id="dz-${t.code}" onclick="document.getElementById('file-input-${t.code}').click()">
               <div style="font-size: 24px; margin-bottom: 4px;">📷</div>
               <b>Tap to take photo or select pages for this task</b>
-              <div style="font-size: 11.5px; color: var(--ink-soft); margin-top: 2px;">Supports camera photos, PNG, JPG, or PDF</div>
+              <div style="font-size: 11.5px; color: var(--ink-soft); margin-top: 2px;">Supports camera photos, PNG, JPG, or PDF (up to 20 pages)</div>
             </div>
             <input type="file" id="file-input-${t.code}" accept="image/*,.pdf" multiple style="display: none;" onchange="handleTaskFiles('${t.code}', event)" />
             <div id="preview-${t.code}" class="page-preview"></div>
@@ -237,7 +252,10 @@
 
   function handleTaskFiles(taskCode, e) {
     if (!taskFilesMap[taskCode]) taskFilesMap[taskCode] = [];
-    for (const f of e.target.files) taskFilesMap[taskCode].push(f);
+    for (const f of e.target.files) {
+      if (taskFilesMap[taskCode].length >= 20) break;
+      taskFilesMap[taskCode].push(f);
+    }
     renderPreviews(taskCode);
     e.target.value = '';
   }
@@ -261,8 +279,15 @@
 
   async function handleStudentSubmit(e) {
     e.preventDefault();
-    const name = document.getElementById('student-name').value.trim();
+    const nameInput = document.getElementById('student-name');
+    const name = nameInput.value.trim();
     const btn = document.getElementById('submit-btn');
+
+    if (!name) {
+      alert('Please enter your name.');
+      nameInput.focus();
+      return;
+    }
 
     const pending = bundleTasks.filter(t => !taskLockMap[t.code]);
     for (const t of pending) {
@@ -274,6 +299,7 @@
 
     btn.disabled = true;
     btn.textContent = 'Uploading and grading submissions...';
+    document.querySelectorAll('.dropzone').forEach(d => d.classList.add('disabled'));
 
     try {
       for (const t of pending) {
@@ -284,12 +310,13 @@
           formData.append('pages', f);
         }
 
-        const res = await fetch(`/api/public/submit/${t.code}`, {
+        const res = await fetch(`/api/public/submit/${encodeURIComponent(t.code)}`, {
           method: 'POST',
           body: formData
         });
         const d = await res.json();
         if (!d.success) throw new Error(d.error || `Failed to evaluate ${t.title}`);
+        taskLockMap[t.code] = true;
       }
 
       document.getElementById('submission-form-card').style.display = 'none';
@@ -299,12 +326,8 @@
       alert(err.message || 'Submission error. Please check your connection and retry.');
       btn.disabled = false;
       btn.textContent = '🚀 Submit All Tasks to Teacher';
+      document.querySelectorAll('.dropzone').forEach(d => d.classList.remove('disabled'));
     }
-  }
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 </script>
 </body>
