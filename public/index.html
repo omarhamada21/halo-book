@@ -2126,7 +2126,12 @@ async function loadAdminUsers() {
           <td>
             ${!isRoot && u.status !== 'approved' ? `<button class="btn-approve" onclick="setUserStatus(${u.id}, 'approved')">Approve</button>` : ''}
             ${!isRoot && u.status === 'approved' && u.role !== 'admin' ? `<button class="btn-reject" onclick="setUserStatus(${u.id}, 'rejected')">Revoke</button>` : ''}
-            <button class="admin-btn" style="padding:3px 7px; font-size:11px; font-weight:600;" onclick="openAdminResetModal(${u.id}, '${u.email}')">🔑 Set Password</button>
+            <button class="admin-btn" style="padding:3px 7px; font-size:11px; font-weight:600;" onclick="openAdminResetModal(${u.id}, '${escapeHtml(u.email).replace(/'/g, "\\'")}')">🔑 Set Password</button>
+            ${!isRoot && !isSelf ? (u.role === 'admin' 
+           ? `<button class="admin-btn" style="padding:3px 7px; font-size:11px;" onclick="toggleUserRole(${u.id}, 'teacher')">Demote</button>` 
+            : `<button class="admin-btn" style="padding:3px 7px; font-size:11px;" onclick="toggleUserRole(${u.id}, 'admin')">Make Admin</button>`
+            ) : ''}
+            ${!isRoot && !isSelf ? `<button class="btn-delete" onclick="deleteUser(${u.id}, '${escapeHtml(u.email).replace(/'/g, "\\'")}')">Delete</button>` : ''}
             ${!isRoot && !isSelf ? (u.role === 'admin' 
                 ? `<button class="admin-btn" style="padding:3px 7px; font-size:11px;" onclick="toggleUserRole(${u.id}, 'teacher')">Demote</button>` 
                 : `<button class="admin-btn" style="padding:3px 7px; font-size:11px;" onclick="toggleUserRole(${u.id}, 'admin')">Make Admin</button>`
