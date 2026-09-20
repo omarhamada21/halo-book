@@ -1,420 +1,1232 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MIMIR MARKING — Smart Marking System</title>
-<link rel="icon" type="image/jpeg" href="/mimir.jpg">
-<link rel="shortcut icon" type="image/jpeg" href="/mimir.jpg">
-<link rel="apple-touch-icon" href="/mimir.jpg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MIMIR MARKING — Smart Marking System</title>
+  <link rel="icon" type="image/jpeg" href="/mimir.jpg">
+  <link rel="shortcut icon" type="image/jpeg" href="/mimir.jpg">
+  <link rel="apple-touch-icon" href="/mimir.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
 
-<style>
-  :root{
-    --ink:#16233F; --ink-soft:#4A5670; --paper:#E3E9F6;
-    --paper-line:#CBD6ED; --card:#FBFCFE; --pen:#1D3A66;
-    --pen-soft:#DDE3EE; --border:#C2CEE7;
-  }
-  *{box-sizing:border-box;}
-  body{ margin:0; background:var(--paper); color:var(--ink); font-family:'Inter',sans-serif; }
-  .wrap{max-width:960px;margin:0 auto;padding:40px 32px 48px;}
-  
-  .top-nav {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 28px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--border);
-  }
-  .brand-group { display: flex; align-items: center; gap: 12px; }
-  .mimir-logo-avatar {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    object-fit: cover;
-    object-position: top center;
-    border: 2px solid var(--pen);
-    display: block;
-    flex-shrink: 0;
-  }
-  .brand-text-wrap { display: flex; flex-direction: column; }
-  .brand-title { font-family: 'Source Serif 4', serif; font-size: 18px; font-weight: 700; color: var(--ink); line-height: 1.1; }
-  .brand-sub { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--pen); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-top: 2px; }
-  .user-badge { display: flex; align-items: center; gap: 12px; font-size: 13.5px; font-weight: 500; }
-  .logout-btn, .admin-btn {
-    background: var(--card); border: 1px solid var(--border); border-radius: 6px;
-    padding: 6px 12px; font-size: 12.5px; cursor: pointer; color: var(--ink); font-weight: 500; transition: all 0.2s;
-  }
-  .logout-btn:hover { border-color: #9B1C1C; color: #9B1C1C; }
-  .admin-btn:hover { border-color: var(--pen); color: var(--pen); background: var(--pen-soft); }
-
-  .pending-banner {
-    background: #FEF08A; border: 1px solid #EAB308; color: #713F12;
-    padding: 14px 18px; border-radius: 8px; font-size: 13.5px; margin-bottom: 24px;
-    display: none; line-height: 1.5;
-  }
-
-  .mode-switch {
-    display: flex; gap: 8px; margin-bottom: 24px; background: var(--pen-soft); padding: 4px; border-radius: 8px;
-  }
-  .mode-btn {
-    flex: 1; border: none; background: transparent; padding: 10px; font-size: 13.5px; font-weight: 600;
-    cursor: pointer; border-radius: 6px; color: var(--ink-soft); transition: all 0.2s;
-  }
-  .mode-btn.active { background: #fff; color: var(--pen); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-
-  header{margin-bottom:30px;}
-  h1{ font-family:'Source Serif 4',serif; font-weight:600; font-size:32px; margin:0 0 8px; }
-  .sub{color:var(--ink-soft);font-size:15px;line-height:1.6;max-width:580px;margin:0;}
-
-  .step{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:28px; margin-bottom:20px; }
-  .step-head{display:flex;align-items:baseline;gap:12px;margin-bottom:18px;}
-  .step-num{ font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--pen); background:var(--pen-soft); width:26px;height:26px; border-radius:50%; display:flex;align-items:center;justify-content:center; flex-shrink:0; }
-  .step-title{font-family:'Source Serif 4',serif;font-size:19px;font-weight:600;margin:0;}
-  .step-desc{color:var(--ink-soft);font-size:13.5px;margin:2px 0 0 38px;}
-  
-  .dropzone{ margin-left:0; border:1.5px dashed var(--border); border-radius:8px; padding:16px 14px; text-align:center; cursor:pointer; background: var(--card); transition: all 0.2s ease; }
-  .dropzone:hover, .dropzone.drag { border-color:var(--pen); background:var(--pen-soft); }
-  input[type=file]{display:none;}
-  textarea{ margin-left:0; margin-top:8px; width:100%; min-height:60px; border:1px solid var(--border); border-radius:8px; padding:10px; font-family:'Inter',sans-serif; font-size:13px; color:var(--ink); background:var(--card); resize:vertical; }
-  
-  .badge-grid { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-  .file-chip { background:var(--pen-soft); border:1px solid var(--border); border-radius:6px; padding:4px 8px; font-size:12px; font-family:'IBM Plex Mono',monospace; display:flex; align-items:center; gap:6px; color:var(--pen); }
-  .file-chip-remove { cursor:pointer; color:#DC2626; border:none; background:none; font-weight:bold; font-size:13px; padding:0 2px; }
-
-  .picker-12h-wrap {
-    display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px;
-  }
-  .picker-12h-wrap select, .picker-12h-wrap input[type="date"] {
-    padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px;
-    font-family: 'Inter', sans-serif; font-size: 13.5px; background: #fff; outline: none;
-  }
-  .picker-12h-wrap select:focus, .picker-12h-wrap input[type="date"]:focus {
-    border-color: var(--pen); box-shadow: 0 0 0 2px var(--pen-soft);
-  }
-
-  .student-list{margin-left:38px; display:flex; flex-direction:column; gap:12px; margin-top:16px;}
-  .student-card{ border:1px solid var(--border); border-radius:8px; padding:14px; background:var(--card); display:flex; flex-direction:column; gap:10px; }
-  .student-card-head{ display:flex; align-items:center; gap:10px; }
-  .student-name-input{ font-family:'Inter',sans-serif; font-size:14px; font-weight:600; color:var(--ink); border:1px solid transparent; padding:4px 8px; border-radius:4px; flex:1; outline:none; }
-  .student-name-input:focus{ border-color:var(--pen); background:#fff; }
-  .page-badges{ display:flex; flex-wrap:wrap; gap:6px; margin-left:4px; }
-  .page-badge{ background:var(--pen-soft); border:1px solid var(--border); border-radius:4px; padding:3px 8px; font-size:12px; font-family:'IBM Plex Mono',monospace; display:flex; align-items:center; gap:6px; color:var(--pen); }
-  .page-remove{ cursor:pointer; color:#DC2626; border:none; background:none; font-weight:bold; font-size:13px; padding:0 2px; }
-  .add-page-btn{ background:#fff; border:1px dashed var(--border); border-radius:4px; padding:3px 10px; font-size:11.5px; font-weight:500; color:var(--pen); cursor:pointer; }
-  .add-page-btn:hover{ border-color:var(--pen); background:var(--pen-soft); }
-  .student-remove{ cursor:pointer; color:var(--ink-soft); border:none; background:none; font-size:18px; padding:2px 6px; }
-  .student-remove:hover{ color:#DC2626; }
-  .student-count{margin-left:38px;font-size:12.5px;color:var(--ink-soft);margin-top:12px;font-family:'IBM Plex Mono',monospace;}
-
-  button.primary{ margin-left:38px; background:var(--ink); color:#fff; border:none; border-radius:7px; padding:11px 22px; font-size:14px; font-weight:500; cursor:pointer; margin-top:16px; }
-  button.primary:disabled{background:#B7B3A6;cursor:not-allowed;}
-  button.ghost{ background:transparent;border:1px solid var(--border);color:var(--ink-soft); border-radius:7px;padding:8px 14px;font-size:13px;cursor:pointer; font-weight:500; transition: all 0.2s ease; }
-  button.ghost:hover{ border-color:var(--pen); color:var(--pen); background:var(--pen-soft); }
-  button.ghost-feedback{ border-color:#86EFAC; color:#065F46; background:#F0FDF4; }
-  button.ghost-feedback:hover{ border-color:#059669; color:#064E3B; background:#DCFCE7; }
-  button.ghost-danger{ border-color:#FCA5A5; color:#DC2626; background:#FEF2F2; }
-  button.ghost-danger:hover{ border-color:#DC2626; color:#991B1B; background:#FEE2E2; }
-
-  .link-box {
-    margin-top: 14px; margin-bottom: 20px; background: #F0FDF4; border: 1px solid #86EFAC;
-    border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  }
-  .link-text { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #065F46; word-break: break-all; font-weight: 500; }
-
-  .progress-wrap{margin-left:38px;margin-top:16px;}
-  .progress-bar{height:5px;background:var(--paper-line);border-radius:3px;overflow:hidden;}
-  .progress-fill{height:100%;background:var(--pen);width:0%;transition:width .3s;}
-  .progress-label{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink-soft);margin-top:6px;}
-
-  .results{margin-left:38px;display:flex;flex-direction:column;gap:10px;margin-top:8px;}
-  .result-card{border:1px solid var(--border);border-radius:8px;background:var(--card);overflow:hidden;}
-  .result-head{ display:flex;align-items:center;gap:14px;padding:13px 16px;cursor:pointer; }
-  .badge{ width:40px;height:40px;border-radius:50%; border:2px solid var(--pen); color:var(--pen); font-family:'IBM Plex Mono',monospace; font-size:13px;font-weight:500; display:flex;align-items:center;justify-content:center; flex-shrink:0; }
-  .result-name{font-weight:500;font-size:14.5px;flex:1;}
-  .result-score{font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--ink-soft);}
-  .result-body{ max-height:0;overflow:hidden;transition:max-height .2s ease; border-top:1px solid var(--paper-line); }
-  .result-body.open{max-height:1600px;}
-  .result-body-inner{padding:14px 16px;font-size:13.5px;line-height:1.65;color:var(--ink-soft);}
-  
-  .line-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-  .line-item-wrap { display: flex; align-items: center; background: #f8fafc; border: 1px solid var(--border); border-radius: 6px; }
-  .line-item-wrap:focus-within { background: #fff; border-color: var(--pen); box-shadow: 0 0 0 2px var(--pen-soft); }
-  .line-item { padding: 6px 10px; font-size: 13.5px; line-height: 1.5; outline: none; flex: 1; word-break: break-word; }
-  .line-delete-btn { border: none; background: transparent; color: var(--ink-soft); font-size: 14px; cursor: pointer; padding: 6px 10px; }
-  .line-delete-btn:hover { color: #DC2626; }
-  
-  .editable-field { outline: none; padding: 2px 4px; border-radius: 4px; border: 1px dashed transparent; }
-  .editable-field:hover { border-color: var(--pen); background: rgba(29, 58, 102, 0.05); }
-  .editable-field:focus { background: #fff; border-color: var(--pen); box-shadow: inset 0 0 0 1px var(--pen); }
-
-  .fb-section{margin-bottom:14px;}
-  .fb-label{font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;color:var(--pen);margin-bottom:6px;font-weight:600;display:flex;justify-content:space-between; align-items:center;}
-  .edit-hint{font-size:10px;color:var(--ink-soft);font-weight:normal;text-transform:none;}
-  .empty{margin-left:38px;color:var(--ink-soft);font-size:13.5px;}
-  .toolbar{margin-left:38px;display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
-
-  .section-add-btn { background: #fff; border: 1px dashed var(--border); color: var(--pen); border-radius: 4px; padding: 4px 10px; font-size: 11.5px; font-weight: 500; cursor: pointer; font-family: 'Inter', sans-serif; display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; }
-  .section-add-btn:hover { background: var(--pen-soft); border-color: var(--pen); }
-  .section-add-btn.mistake-theme { border-color: #FCA5A5; color: #DC2626; }
-  .section-add-btn.mistake-theme:hover { background: #FEF2F2; border-color: #DC2626; }
-  .section-add-btn.practice-theme { border-color: #86EFAC; color: #059669; }
-  .section-add-btn.practice-theme:hover { background: #F0FDF4; border-color: #059669; }
-  .table-add-btn { background: #fff; border: 1px dashed #CBD6ED; color: var(--pen); border-radius: 4px; padding: 2px 6px; font-size: 10.5px; font-weight: 500; cursor: pointer; margin-top: 4px; }
-  .table-add-btn:hover { background: var(--pen-soft); border-color: var(--pen); }
-
-  .integrity-pills { display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap; }
-  .pill-badge {
-    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; padding: 2px 6px;
-    border-radius: 4px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;
-  }
-  .pill-green { background: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; }
-  .pill-amber { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
-  .pill-red { background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; }
-
-  .admin-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
-  .admin-box { background: #fff; max-width: 820px; width: 100%; max-height: 80vh; border-radius: 10px; padding: 24px; display: flex; flex-direction: column; overflow-y: auto; }
-  .admin-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
-  .admin-table th, .admin-table td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
-  .admin-table th { background: var(--pen-soft); }
-  .btn-approve { background: #059669; color:#fff; border:none; border-radius:4px; padding:4px 8px; cursor:pointer; font-size:12px; }
-  .btn-reject { background: #D97706; color:#fff; border:none; border-radius:4px; padding:4px 8px; cursor:pointer; font-size:12px; margin-left:4px; }
-  .btn-delete { background: #DC2626; color:#fff; border:none; border-radius:4px; padding:4px 8px; cursor:pointer; font-size:12px; margin-left:4px; }
-  .role-root { color: #6D28D9; font-weight: 700; background: #EDE9FE; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
-  .role-admin { color: #1D3A66; font-weight: 600; background: var(--pen-soft); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
-  .role-teacher { color: #4B5563; font-weight: 500; font-size: 11px; }
-
-  .summary-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-  .summary-table th, .summary-table td { border: 1px solid #ccc; padding: 10px 12px; text-align: left; font-size: 12.5px; vertical-align: top; }
-  .summary-table th { background: #f2f4f8; font-family: 'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase; }
-
-  .print-summary { display: block; margin-top: 10px; }
-  .print-title { font-family:'Source Serif 4',serif; font-size: 22px; font-weight: 600; margin-bottom: 4px; }
-  .print-sub { font-size: 13px; color: #555; margin-bottom: 16px; }
-
-  footer { margin-top: 40px; text-align: center; font-size: 12px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; border-top: 1px solid var(--border); padding-top: 20px; }
-
-  /* Web Print Styles */
-  @media print {
-    body { background: #fff !important; color: #000 !important; }
-    
-    .top-nav, .pending-banner, .admin-modal, header, .mode-switch,
-    .no-print, button, .toolbar, .dropzone, textarea, input, select,
-    .progress-wrap, .empty, .student-list, .student-count, .edit-hint,
-    #custom-modal-overlay, #custom-toast, .section-add-btn, .table-add-btn,
-    .line-delete-btn, .badge-grid, #admin-reset-modal, #deadline-edit-modal, .link-box,
-    .step-head, .step-desc, .form-group-creation, footer,
-    .integrity-pills, .fb-integrity-box,
-    #past-assignments-select,
-    select,
-    label {
-      display: none !important;
+  <style>
+    :root {
+      --ink: #16233F;
+      --ink-soft: #4A5670;
+      --paper: #E3E9F6;
+      --paper-line: #CBD6ED;
+      --card: #FBFCFE;
+      --pen: #1D3A66;
+      --pen-soft: #DDE3EE;
+      --border: #C2CEE7;
     }
 
-    .wrap { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
-
-    .step { border: none !important; padding: 0 !important; background: transparent !important; margin: 0 !important; }
-    .step.form-group-creation { display: none !important; }
-    
-    .print-summary { display: block !important; width: 100% !important; page-break-after: always; }
-    .summary-table { width: 100% !important; border-collapse: collapse !important; }
-    .summary-table th, .summary-table td { border: 1px solid #777 !important; padding: 8px 10px !important; }
-    
-    .line-item-wrap { border: none !important; background: transparent !important; }
-    .line-item { border: none !important; padding: 1px 0 !important; background: transparent !important; }
-
-    .results { display: block !important; margin-left: 0 !important; }
-    .result-card { border: none !important; page-break-before: always; page-break-inside: avoid; margin-bottom: 20px; }
-    .result-head { cursor: default !important; padding: 0 0 10px 0 !important; }
-    .result-body { max-height: none !important; border-top: none !important; display: block !important; }
-    .result-body-inner { padding: 0 !important; }
-
-    body.print-feedback-only .col-score-breakdown,
-    body.print-feedback-only .summary-score-tag,
-    body.print-feedback-only .card-score-badge,
-    body.print-feedback-only .card-score-text,
-    body.print-feedback-only .fb-score-section {
-      display: none !important;
+    * {
+      box-sizing: border-box;
     }
-    body.print-feedback-only .summary-col-name { width: 28% !important; }
-    body.print-feedback-only .summary-col-mistakes { width: 72% !important; }
 
-    body.printing-manual #portal-section { display: none !important; }
-    body.printing-portal #manual-section { display: none !important; }
-  }
-</style>
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: 'Inter', sans-serif;
+    }
+
+    .wrap {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 40px 32px 48px;
+    }
+
+    .top-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 28px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .mimir-logo-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      object-fit: cover;
+      object-position: top center;
+      border: 2px solid var(--pen);
+      display: block;
+      flex-shrink: 0;
+    }
+
+    .brand-text-wrap {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brand-title {
+      font-family: 'Source Serif 4', serif;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--ink);
+      line-height: 1.1;
+    }
+
+    .brand-sub {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--pen);
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    .user-badge {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13.5px;
+      font-weight: 500;
+    }
+
+    .logout-btn,
+    .admin-btn {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12.5px;
+      cursor: pointer;
+      color: var(--ink);
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .logout-btn:hover {
+      border-color: #9B1C1C;
+      color: #9B1C1C;
+    }
+
+    .admin-btn:hover {
+      border-color: var(--pen);
+      color: var(--pen);
+      background: var(--pen-soft);
+    }
+
+    .pending-banner {
+      background: #FEF08A;
+      border: 1px solid #EAB308;
+      color: #713F12;
+      padding: 14px 18px;
+      border-radius: 8px;
+      font-size: 13.5px;
+      margin-bottom: 24px;
+      display: none;
+      line-height: 1.5;
+    }
+
+    .mode-switch {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+      background: var(--pen-soft);
+      padding: 4px;
+      border-radius: 8px;
+    }
+
+    .mode-btn {
+      flex: 1;
+      border: none;
+      background: transparent;
+      padding: 10px;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 6px;
+      color: var(--ink-soft);
+      transition: all 0.2s;
+    }
+
+    .mode-btn.active {
+      background: #fff;
+      color: var(--pen);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    header {
+      margin-bottom: 30px;
+    }
+
+    h1 {
+      font-family: 'Source Serif 4', serif;
+      font-weight: 600;
+      font-size: 32px;
+      margin: 0 0 8px;
+    }
+
+    .sub {
+      color: var(--ink-soft);
+      font-size: 15px;
+      line-height: 1.6;
+      max-width: 580px;
+      margin: 0;
+    }
+
+    .step {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 28px;
+      margin-bottom: 20px;
+    }
+
+    .step-head {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .step-num {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px;
+      color: var(--pen);
+      background: var(--pen-soft);
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .step-title {
+      font-family: 'Source Serif 4', serif;
+      font-size: 19px;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .step-desc {
+      color: var(--ink-soft);
+      font-size: 13.5px;
+      margin: 2px 0 0 38px;
+    }
+
+    .dropzone {
+      margin-left: 0;
+      border: 1.5px dashed var(--border);
+      border-radius: 8px;
+      padding: 16px 14px;
+      text-align: center;
+      cursor: pointer;
+      background: var(--card);
+      transition: all 0.2s ease;
+    }
+
+    .dropzone:hover,
+    .dropzone.drag {
+      border-color: var(--pen);
+      background: var(--pen-soft);
+    }
+
+    input[type=file] {
+      display: none;
+    }
+
+    textarea {
+      margin-left: 0;
+      margin-top: 8px;
+      width: 100%;
+      min-height: 60px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      color: var(--ink);
+      background: var(--card);
+      resize: vertical;
+    }
+
+    .badge-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .file-chip {
+      background: var(--pen-soft);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      font-family: 'IBM Plex Mono', monospace;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--pen);
+    }
+
+    .file-chip-remove {
+      cursor: pointer;
+      color: #DC2626;
+      border: none;
+      background: none;
+      font-weight: bold;
+      font-size: 13px;
+      padding: 0 2px;
+    }
+
+    .picker-12h-wrap {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .picker-12h-wrap select,
+    .picker-12h-wrap input[type="date"] {
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: 'Inter', sans-serif;
+      font-size: 13.5px;
+      background: #fff;
+      outline: none;
+    }
+
+    .picker-12h-wrap select:focus,
+    .picker-12h-wrap input[type="date"]:focus {
+      border-color: var(--pen);
+      box-shadow: 0 0 0 2px var(--pen-soft);
+    }
+
+    .student-list {
+      margin-left: 38px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .student-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      background: var(--card);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .student-card-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .student-name-input {
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+      border: 1px solid transparent;
+      padding: 4px 8px;
+      border-radius: 4px;
+      flex: 1;
+      outline: none;
+    }
+
+    .student-name-input:focus {
+      border-color: var(--pen);
+      background: #fff;
+    }
+
+    .page-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-left: 4px;
+    }
+
+    .page-badge {
+      background: var(--pen-soft);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-family: 'IBM Plex Mono', monospace;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--pen);
+    }
+
+    .page-remove {
+      cursor: pointer;
+      color: #DC2626;
+      border: none;
+      background: none;
+      font-weight: bold;
+      font-size: 13px;
+      padding: 0 2px;
+    }
+
+    .add-page-btn {
+      background: #fff;
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+      padding: 3px 10px;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--pen);
+      cursor: pointer;
+    }
+
+    .add-page-btn:hover {
+      border-color: var(--pen);
+      background: var(--pen-soft);
+    }
+
+    .student-remove {
+      cursor: pointer;
+      color: var(--ink-soft);
+      border: none;
+      background: none;
+      font-size: 18px;
+      padding: 2px 6px;
+    }
+
+    .student-remove:hover {
+      color: #DC2626;
+    }
+
+    .student-count {
+      margin-left: 38px;
+      font-size: 12.5px;
+      color: var(--ink-soft);
+      margin-top: 12px;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    button.primary {
+      margin-left: 38px;
+      background: var(--ink);
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      padding: 11px 22px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-top: 16px;
+    }
+
+    button.primary:disabled {
+      background: #B7B3A6;
+      cursor: not-allowed;
+    }
+
+    button.ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--ink-soft);
+      border-radius: 7px;
+      padding: 8px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    button.ghost:hover {
+      border-color: var(--pen);
+      color: var(--pen);
+      background: var(--pen-soft);
+    }
+
+    button.ghost-feedback {
+      border-color: #86EFAC;
+      color: #065F46;
+      background: #F0FDF4;
+    }
+
+    button.ghost-feedback:hover {
+      border-color: #059669;
+      color: #064E3B;
+      background: #DCFCE7;
+    }
+
+    button.ghost-danger {
+      border-color: #FCA5A5;
+      color: #DC2626;
+      background: #FEF2F2;
+    }
+
+    button.ghost-danger:hover {
+      border-color: #DC2626;
+      color: #991B1B;
+      background: #FEE2E2;
+    }
+
+    .link-box {
+      margin-top: 14px;
+      margin-bottom: 20px;
+      background: #F0FDF4;
+      border: 1px solid #86EFAC;
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .link-text {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px;
+      color: #065F46;
+      word-break: break-all;
+      font-weight: 500;
+    }
+
+    .progress-wrap {
+      margin-left: 38px;
+      margin-top: 16px;
+    }
+
+    .progress-bar {
+      height: 5px;
+      background: var(--paper-line);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--pen);
+      width: 0%;
+      transition: width .3s;
+    }
+
+    .progress-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11.5px;
+      color: var(--ink-soft);
+      margin-top: 6px;
+    }
+
+    .results {
+      margin-left: 38px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .result-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+      overflow: hidden;
+    }
+
+    .result-head {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 13px 16px;
+      cursor: pointer;
+    }
+
+    .badge {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 2px solid var(--pen);
+      color: var(--pen);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .result-name {
+      font-weight: 500;
+      font-size: 14.5px;
+      flex: 1;
+    }
+
+    .result-score {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12.5px;
+      color: var(--ink-soft);
+    }
+
+    .result-body {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height .2s ease;
+      border-top: 1px solid var(--paper-line);
+    }
+
+    .result-body.open {
+      max-height: 1600px;
+    }
+
+    .result-body-inner {
+      padding: 14px 16px;
+      font-size: 13.5px;
+      line-height: 1.65;
+      color: var(--ink-soft);
+    }
+
+    .line-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .line-item-wrap {
+      display: flex;
+      align-items: center;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    .line-item-wrap:focus-within {
+      background: #fff;
+      border-color: var(--pen);
+      box-shadow: 0 0 0 2px var(--pen-soft);
+    }
+
+    .line-item {
+      padding: 6px 10px;
+      font-size: 13.5px;
+      line-height: 1.5;
+      outline: none;
+      flex: 1;
+      word-break: break-word;
+    }
+
+    .line-delete-btn {
+      border: none;
+      background: transparent;
+      color: var(--ink-soft);
+      font-size: 14px;
+      cursor: pointer;
+      padding: 6px 10px;
+    }
+
+    .line-delete-btn:hover {
+      color: #DC2626;
+    }
+
+    .editable-field {
+      outline: none;
+      padding: 2px 4px;
+      border-radius: 4px;
+      border: 1px dashed transparent;
+    }
+
+    .editable-field:hover {
+      border-color: var(--pen);
+      background: rgba(29, 58, 102, 0.05);
+    }
+
+    .editable-field:focus {
+      background: #fff;
+      border-color: var(--pen);
+      box-shadow: inset 0 0 0 1px var(--pen);
+    }
+
+    .fb-section {
+      margin-bottom: 14px;
+    }
+
+    .fb-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10.5px;
+      text-transform: uppercase;
+      color: var(--pen);
+      margin-bottom: 6px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .edit-hint {
+      font-size: 10px;
+      color: var(--ink-soft);
+      font-weight: normal;
+      text-transform: none;
+    }
+
+    .empty {
+      margin-left: 38px;
+      color: var(--ink-soft);
+      font-size: 13.5px;
+    }
+
+    .toolbar {
+      margin-left: 38px;
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .section-add-btn {
+      background: #fff;
+      border: 1px dashed var(--border);
+      color: var(--pen);
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    .section-add-btn:hover {
+      background: var(--pen-soft);
+      border-color: var(--pen);
+    }
+
+    .section-add-btn.mistake-theme {
+      border-color: #FCA5A5;
+      color: #DC2626;
+    }
+
+    .section-add-btn.mistake-theme:hover {
+      background: #FEF2F2;
+      border-color: #DC2626;
+    }
+
+    .section-add-btn.practice-theme {
+      border-color: #86EFAC;
+      color: #059669;
+    }
+
+    .section-add-btn.practice-theme:hover {
+      background: #F0FDF4;
+      border-color: #059669;
+    }
+
+    .table-add-btn {
+      background: #fff;
+      border: 1px dashed #CBD6ED;
+      color: var(--pen);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 10.5px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+
+    .table-add-btn:hover {
+      background: var(--pen-soft);
+      border-color: var(--pen);
+    }
+
+    .integrity-pills {
+      display: flex;
+      gap: 5px;
+      margin-top: 4px;
+      flex-wrap: wrap;
+    }
+
+    .pill-badge {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10.5px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .pill-green {
+      background: #ECFDF5;
+      color: #065F46;
+      border: 1px solid #A7F3D0;
+    }
+
+    .pill-amber {
+      background: #FEF3C7;
+      color: #92400E;
+      border: 1px solid #FDE68A;
+    }
+
+    .pill-red {
+      background: #FEE2E2;
+      color: #991B1B;
+      border: 1px solid #FCA5A5;
+    }
+
+    .admin-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 20px;
+    }
+
+    .admin-box {
+      background: #fff;
+      max-width: 820px;
+      width: 100%;
+      max-height: 80vh;
+      border-radius: 10px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .admin-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      font-size: 13px;
+    }
+
+    .admin-table th,
+    .admin-table td {
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      text-align: left;
+    }
+
+    .admin-table th {
+      background: var(--pen-soft);
+    }
+
+    .btn-approve {
+      background: #059669;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .btn-reject {
+      background: #D97706;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 12px;
+      margin-left: 4px;
+    }
+
+    .btn-delete {
+      background: #DC2626;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 12px;
+      margin-left: 4px;
+    }
+
+    .role-root {
+      color: #6D28D9;
+      font-weight: 700;
+      background: #EDE9FE;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    .role-admin {
+      color: #1D3A66;
+      font-weight: 600;
+      background: var(--pen-soft);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    .role-teacher {
+      color: #4B5563;
+      font-weight: 500;
+      font-size: 11px;
+    }
+
+    .summary-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    .summary-table th,
+    .summary-table td {
+      border: 1px solid #ccc;
+      padding: 10px 12px;
+      text-align: left;
+      font-size: 12.5px;
+      vertical-align: top;
+    }
+
+    .summary-table th {
+      background: #f2f4f8;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+
+    .print-summary {
+      display: block;
+      margin-top: 10px;
+    }
+
+    .print-title {
+      font-family: 'Source Serif 4', serif;
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .print-sub {
+      font-size: 13px;
+      color: #555;
+      margin-bottom: 16px;
+    }
+
+    footer {
+      margin-top: 40px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--ink-soft);
+      font-family: 'IBM Plex Mono', monospace;
+      border-top: 1px solid var(--border);
+      padding-top: 20px;
+    }
+
+    /* Web Print Styles */
+    @media print {
+      body {
+        background: #fff !important;
+        color: #000 !important;
+      }
+
+      .top-nav,
+      .pending-banner,
+      .admin-modal,
+      header,
+      .mode-switch,
+      .no-print,
+      button,
+      .toolbar,
+      .dropzone,
+      textarea,
+      input,
+      select,
+      .progress-wrap,
+      .empty,
+      .student-list,
+      .student-count,
+      .edit-hint,
+      #custom-modal-overlay,
+      #custom-toast,
+      .section-add-btn,
+      .table-add-btn,
+      .line-delete-btn,
+      .badge-grid,
+      #admin-reset-modal,
+      #deadline-edit-modal,
+      .link-box,
+      .step-head,
+      .step-desc,
+      .form-group-creation,
+      footer,
+      .integrity-pills,
+      .fb-integrity-box,
+      #past-assignments-select,
+      select,
+      label {
+        display: none !important;
+      }
+
+      .wrap {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+
+      .step {
+        border: none !important;
+        padding: 0 !important;
+        background: transparent !important;
+        margin: 0 !important;
+      }
+
+      .step.form-group-creation {
+        display: none !important;
+      }
+
+      .print-summary {
+        display: block !important;
+        width: 100% !important;
+        page-break-after: always;
+      }
+
+      .summary-table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+      }
+
+      .summary-table th,
+      .summary-table td {
+        border: 1px solid #777 !important;
+        padding: 8px 10px !important;
+      }
+
+      .line-item-wrap {
+        border: none !important;
+        background: transparent !important;
+      }
+
+      .line-item {
+        border: none !important;
+        padding: 1px 0 !important;
+        background: transparent !important;
+      }
+
+      .results {
+        display: block !important;
+        margin-left: 0 !important;
+      }
+
+      .result-card {
+        border: none !important;
+        page-break-before: always;
+        page-break-inside: avoid;
+        margin-bottom: 20px;
+      }
+
+      .result-head {
+        cursor: default !important;
+        padding: 0 0 10px 0 !important;
+      }
+
+      .result-body {
+        max-height: none !important;
+        border-top: none !important;
+        display: block !important;
+      }
+
+      .result-body-inner {
+        padding: 0 !important;
+      }
+
+      body.print-feedback-only .col-score-breakdown,
+      body.print-feedback-only .summary-score-tag,
+      body.print-feedback-only .card-score-badge,
+      body.print-feedback-only .card-score-text,
+      body.print-feedback-only .fb-score-section {
+        display: none !important;
+      }
+
+      body.print-feedback-only .summary-col-name {
+        width: 28% !important;
+      }
+
+      body.print-feedback-only .summary-col-mistakes {
+        width: 72% !important;
+      }
+
+      body.printing-manual #portal-section {
+        display: none !important;
+      }
+
+      body.printing-portal #manual-section {
+        display: none !important;
+      }
+    }
+  </style>
 </head>
+
 <body>
-<div class="wrap">
-  <div class="top-nav">
-    <div class="brand-group">
-      <img src="/mimir.jpg" alt="Mimir" class="mimir-logo-avatar">
-      <div class="brand-text-wrap">
-        <span class="brand-title">Mimir Marking</span>
-        <span class="brand-sub">Smart Marking System</span>
-      </div>
-    </div>
-    <div class="user-badge">
-      <span id="user-display">Loading...</span>
-      <button class="admin-btn" id="admin-panel-btn" style="display:none;" onclick="openAdminModal()">⚙️ Authorize Users</button>
-      <button class="logout-btn" id="logout-btn" onclick="logout()">Log Out</button>
-    </div>
-  </div>
-
-  <div class="pending-banner" id="pending-banner">
-    ⚠️ <b>Account Pending Approval:</b> Your account is registered, but requires administrator authorization before you can grade exams.
-  </div>
-
-  <header>
-    <h1>Class Assessment & Marking System</h1>
-    <p class="sub">Set up student submission portals with instant AI feedback, or manually upload student batches for one-pass evaluation.</p>
-  </header>
-
-  <div class="mode-switch">
-    <button class="mode-btn active" id="btn-mode-portal" onclick="switchMode('portal')">🔗 Student Submission Portal (Live)</button>
-    <button class="mode-btn" id="btn-mode-manual" onclick="switchMode('manual')">📂 Manual Batch Upload</button>
-  </div>
-
-  <div id="portal-section">
-    <div class="step form-group-creation">
-      <div class="step-head"><div class="step-num">1</div><h2 class="step-title">Create Assignment & Generate Student Link</h2></div>
-      <p class="step-desc">Set assignment details, attach the rubric/scheme, and share the generated link with your students.</p>
-
-    <div style="margin-left: 38px; margin-top: 16px;">
-        <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Bundle / Group Name (Shown in your dropdown list)</label>
-        <input type="text" id="bundle-group-title-input" placeholder="e.g. Unit 2 Homework Package" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 14px;" />
-
-        <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Submission Deadline (12-Hour AM/PM — Cairo Time)</label>
-        <div class="picker-12h-wrap">
-          <input type="date" id="portal-date" style="flex: 2; min-width: 140px;" />
-          <select id="portal-hour" style="flex: 1;">
-            <option value="12">12</option><option value="01">01</option><option value="02">02</option>
-            <option value="03">03</option><option value="04">04</option><option value="05">05</option>
-            <option value="06">06</option><option value="07">07</option><option value="08">08</option>
-            <option value="09">09</option><option value="10">10</option><option value="11" selected>11</option>
-          </select>
-          <select id="portal-minute" style="flex: 1;">
-            <option value="00">00</option><option value="15">15</option><option value="30">30</option>
-            <option value="45">45</option><option value="59" selected>59</option>
-          </select>
-          <select id="portal-ampm" style="flex: 1;">
-            <option value="AM">AM</option>
-            <option value="PM" selected>PM</option>
-          </select>
+  <div class="wrap">
+    <div class="top-nav">
+      <div class="brand-group">
+        <img src="/mimir.jpg" alt="Mimir" class="mimir-logo-avatar">
+        <div class="brand-text-wrap">
+          <span class="brand-title">Mimir Marking</span>
+          <span class="brand-sub">Smart Marking System</span>
         </div>
-
-        <div id="tasks-repeater-container" style="margin-top: 16px;"></div>
-
-        <button type="button" class="ghost" onclick="addNewTaskField()" style="margin-top: 8px; width: 100%; border-style: dashed; padding: 10px; font-weight: 600;">
-          ➕ Add Another Homework / Task
-        </button>
       </div>
-
-      <button class="primary" onclick="createAssignmentLink()">🔗 Generate Student Submission Link</button>
-
-      <div style="margin-left: 38px; margin-top: 24px; border-top: 1px solid var(--paper-line); padding-top: 16px;">
-        <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">📂 Or View Past Assignment Submissions:</label>
-        <select id="past-assignments-select" onchange="loadSelectedAssignment(this.value)" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: #fff;">
-          <option value="">-- Select an assignment to view live marks --</option>
-        </select>
+      <div class="user-badge">
+        <span id="user-display">Loading...</span>
+        <button class="admin-btn" id="admin-panel-btn" style="display:none;" onclick="openAdminModal()">⚙️ Authorize
+          Users</button>
+        <button class="logout-btn" id="logout-btn" onclick="logout()">Log Out</button>
       </div>
     </div>
 
-    <div class="step" id="portal-results-card" style="display: none;">
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;" class="no-print">
-        <div>
-          <h2 class="step-title" id="live-portal-title" style="margin-bottom: 4px;">Live Submissions</h2>
-          <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
-            <span style="font-size: 12.5px; color: var(--ink-soft);" id="live-portal-deadline-sub"></span>
-            <button type="button" class="ghost" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;" onclick="openDeadlineEditModal()">✏️ Edit Deadline</button>
-            <button type="button" class="ghost" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;" onclick="openBundleManagerModal()">⚙️ Manage Package Tasks</button>
-            <button type="button" class="ghost ghost-danger" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;" onclick="deleteActiveAssignment()">🗑️ Delete Form</button>
+    <div class="pending-banner" id="pending-banner">
+      ⚠️ <b>Account Pending Approval:</b> Your account is registered, but requires administrator authorization before
+      you can grade exams.
+    </div>
+
+    <header>
+      <h1>Class Assessment & Marking System</h1>
+      <p class="sub">Set up student submission portals with instant AI feedback, or manually upload student batches for
+        one-pass evaluation.</p>
+    </header>
+
+    <div class="mode-switch">
+      <button class="mode-btn active" id="btn-mode-portal" onclick="switchMode('portal')">🔗 Student Submission Portal
+        (Live)</button>
+      <button class="mode-btn" id="btn-mode-manual" onclick="switchMode('manual')">📂 Manual Batch Upload</button>
+    </div>
+
+    <div id="portal-section">
+      <div class="step form-group-creation">
+        <div class="step-head">
+          <div class="step-num">1</div>
+          <h2 class="step-title">Create Assignment & Generate Student Link</h2>
+        </div>
+        <p class="step-desc">Set assignment details, attach the rubric/scheme, and share the generated link with your
+          students.</p>
+
+        <div style="margin-left: 38px; margin-top: 16px;">
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Bundle / Group Name
+            (Shown in your dropdown list)</label>
+          <input type="text" id="bundle-group-title-input" placeholder="e.g. Unit 2 Homework Package"
+            style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 14px;" />
+
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Submission Deadline
+            (12-Hour AM/PM — Cairo Time)</label>
+          <div class="picker-12h-wrap">
+            <input type="date" id="portal-date" style="flex: 2; min-width: 140px;" />
+            <select id="portal-hour" style="flex: 1;">
+              <option value="12">12</option>
+              <option value="01">01</option>
+              <option value="02">02</option>
+              <option value="03">03</option>
+              <option value="04">04</option>
+              <option value="05">05</option>
+              <option value="06">06</option>
+              <option value="07">07</option>
+              <option value="08">08</option>
+              <option value="09">09</option>
+              <option value="10">10</option>
+              <option value="11" selected>11</option>
+            </select>
+            <select id="portal-minute" style="flex: 1;">
+              <option value="00">00</option>
+              <option value="15">15</option>
+              <option value="30">30</option>
+              <option value="45">45</option>
+              <option value="59" selected>59</option>
+            </select>
+            <select id="portal-ampm" style="flex: 1;">
+              <option value="AM">AM</option>
+              <option value="PM" selected>PM</option>
+            </select>
           </div>
-          <div style="font-size: 12px; color: #059669; font-weight: 600; margin-top: 4px;">🟢 Live syncing — auto-updating as students submit</div>
-        </div>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button class="ghost" onclick="printReport('full')">📄 Full Report (With Marks)</button>
-          <button class="ghost ghost-feedback" onclick="printReport('feedback')">📝 Feedback Report (No Marks)</button>
-          <button class="ghost" onclick="toggleSubmissionLogsModal()" style="font-weight: 600;">🕒 View Submission Logs</button>
-        </div>
-      </div>
 
-      <div class="link-box no-print" id="generated-link-box" style="display: none;">
-        <div>
-          <div style="font-size: 11.5px; font-weight: bold; color: #065F46; text-transform: uppercase; margin-bottom: 2px;">Share with your class:</div>
-          <div class="link-text" id="generated-link-url"></div>
-        </div>
-        <button class="ghost" style="background:#fff; flex-shrink: 0;" onclick="copyLink()">📋 Copy Link</button>
-      </div>
+          <div id="tasks-repeater-container" style="margin-top: 16px;"></div>
 
-      <div id="bundle-task-tabs" style="display: none; gap: 8px; margin: 14px 0; border-bottom: 1px solid var(--border); padding-bottom: 8px;" class="no-print"></div>
-
-      <div class="print-summary" id="portal-print-summary">
-        <div class="print-title" id="portal-print-report-title">Class Evaluation Summary</div>
-        <div class="print-sub" id="portal-print-report-sub">Teacher: Teacher | Total Assessed: 0 Students</div>
-        <table class="summary-table">
-          <thead>
-            <tr>
-              <th style="width: 24%;" class="summary-col-name">Student Name</th>
-              <th style="width: 30%;" class="col-score-breakdown">Score Breakdown</th>
-              <th style="width: 46%;" class="summary-col-mistakes">Mistakes in Your Work</th>
-            </tr>
-          </thead>
-          <tbody id="portal-summary-table-body">
-            <tr><td colspan="3" style="text-align: center; color: var(--ink-soft); padding: 20px;">Waiting for students to submit work...</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="results" id="portal-results-list" style="margin-left: 0; margin-top: 20px;"></div>
-    </div>
-  </div>
-
-  <div id="manual-section" style="display: none;">
-    <div class="step form-group-creation">
-      <div class="step-head"><div class="step-num">1</div><h2 class="step-title">Marking Scheme / Rubric Papers</h2></div>
-      <p class="step-desc">Drag & drop rubric files/photos and/or paste extra instructions below.</p>
-      <div class="dropzone" id="scheme-dz">
-        <div><b>Drop rubric files or photos here</b> or click to browse</div>
-        <span style="font-size:11.5px; color:var(--ink-soft); display:block; margin-top:4px;">(Supports .pdf, .docx, .txt, .png, .jpg files)</span>
-      </div>
-      <input type="file" id="scheme-file" accept=".txt,.md,.pdf,.docx,.jpg,.jpeg,.png,.webp" multiple>
-      <div class="badge-grid" id="scheme-badge-grid"></div>
-      <textarea id="scheme-text" placeholder="Add extra comments, tips, or special notes here (e.g., Deduct 2 marks if late, focus heavily on punctuation, grade total out of 25)."></textarea>
-    </div>
-
-    <div class="step form-group-creation">
-      <div class="step-head"><div class="step-num">2</div><h2 class="step-title">Student Submissions</h2></div>
-      <p class="step-desc">Drag & drop essay files/photos or paste from clipboard (<b>Ctrl+V</b>). You can attach multiple photos/pages per student.</p>
-      <div class="dropzone" id="essay-dz">
-        <div><b>Drop new student papers or photos here</b> or click to browse</div>
-        <span style="font-size:11.5px; color:var(--ink-soft); display:block; margin-top:4px;">(Supports .pdf, .docx, .txt, .jpg, .png or Ctrl+V clipboard paste)</span>
-      </div>
-      <input type="file" id="essay-file" accept=".txt,.md,.pdf,.docx,.jpg,.jpeg,.png,.webp" multiple>
-      <input type="file" id="page-file-input" accept=".txt,.md,.pdf,.docx,.jpg,.jpeg,.png,.webp" multiple style="display:none;">
-
-      <div class="student-list" id="student-list"></div>
-      <div class="student-count" id="student-count"></div>
-    </div>
-
-    <div class="step">
-      <div class="step-head"><div class="step-num">3</div><h2 class="step-title">Mark and review</h2></div>
-      <button class="primary" id="mark-btn">Mark essays</button>
-      <div class="progress-wrap" id="progress-wrap" style="display:none;">
-        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
-        <div class="progress-label" id="progress-label"></div>
-      </div>
-      <div style="margin-top:20px;">
-        <div class="toolbar" id="toolbar" style="display:none;">
-          <button class="ghost" id="print-btn">📄 Full Report (With Marks)</button>
-          <button class="ghost ghost-feedback" id="print-feedback-btn">📝 Feedback Report (No Marks)</button>
+          <button type="button" class="ghost" onclick="addNewTaskField()"
+            style="margin-top: 8px; width: 100%; border-style: dashed; padding: 10px; font-weight: 600;">
+            ➕ Add Another Homework / Task
+          </button>
         </div>
 
-        <div class="print-summary" id="print-summary">
-          <div class="print-title" id="print-report-title">Class Evaluation Summary</div>
-          <div class="print-sub" id="manual-print-report-sub">Teacher: Teacher | Total Assessed: 0 Students</div>
+        <button class="primary" onclick="createAssignmentLink()">🔗 Generate Student Submission Link</button>
+
+        <div style="margin-left: 38px; margin-top: 24px; border-top: 1px solid var(--paper-line); padding-top: 16px;">
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">📂 Or View Past
+            Assignment Submissions:</label>
+          <select id="past-assignments-select" onchange="loadSelectedAssignment(this.value)"
+            style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: #fff;">
+            <option value="">-- Select an assignment to view live marks --</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="step" id="portal-results-card" style="display: none;">
+        <div
+          style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;"
+          class="no-print">
+          <div>
+            <h2 class="step-title" id="live-portal-title" style="margin-bottom: 4px;">Live Submissions</h2>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
+              <span style="font-size: 12.5px; color: var(--ink-soft);" id="live-portal-deadline-sub"></span>
+              <button type="button" class="ghost" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;"
+                onclick="openDeadlineEditModal()">✏️ Edit Deadline</button>
+              <button type="button" class="ghost" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;"
+                onclick="openBundleManagerModal()">⚙️ Manage Package Tasks</button>
+              <button type="button" class="ghost ghost-danger"
+                style="padding: 2px 8px; font-size: 11px; border-radius: 4px;" onclick="deleteActiveAssignment()">🗑️
+                Delete Form</button>
+            </div>
+            <div style="font-size: 12px; color: #059669; font-weight: 600; margin-top: 4px;">🟢 Live syncing —
+              auto-updating as students submit</div>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="ghost" onclick="printReport('full')">📄 Full Report (With Marks)</button>
+            <button class="ghost ghost-feedback" onclick="printReport('feedback')">📝 Feedback Report (No
+              Marks)</button>
+            <button class="ghost" onclick="toggleSubmissionLogsModal()" style="font-weight: 600;">🕒 View Submission
+              Logs</button>
+          </div>
+        </div>
+
+        <div class="link-box no-print" id="generated-link-box" style="display: none;">
+          <div>
+            <div
+              style="font-size: 11.5px; font-weight: bold; color: #065F46; text-transform: uppercase; margin-bottom: 2px;">
+              Share with your class:</div>
+            <div class="link-text" id="generated-link-url"></div>
+          </div>
+          <button class="ghost" style="background:#fff; flex-shrink: 0;" onclick="copyLink()">📋 Copy Link</button>
+        </div>
+
+        <div id="bundle-task-tabs"
+          style="display: none; gap: 8px; margin: 14px 0; border-bottom: 1px solid var(--border); padding-bottom: 8px;"
+          class="no-print"></div>
+
+        <div class="print-summary" id="portal-print-summary">
+          <div class="print-title" id="portal-print-report-title">Class Evaluation Summary</div>
+          <div class="print-sub" id="portal-print-report-sub">Teacher: Teacher | Total Assessed: 0 Students</div>
           <table class="summary-table">
             <thead>
               <tr>
@@ -423,1873 +1235,328 @@
                 <th style="width: 46%;" class="summary-col-mistakes">Mistakes in Your Work</th>
               </tr>
             </thead>
-            <tbody id="summary-table-body"></tbody>
+            <tbody id="portal-summary-table-body">
+              <tr>
+                <td colspan="3" style="text-align: center; color: var(--ink-soft); padding: 20px;">Waiting for students
+                  to submit work...</td>
+              </tr>
+            </tbody>
           </table>
         </div>
 
-        <div class="results" id="results"></div>
-        <div class="empty" id="empty-msg">No results yet — mark a set to see feedback here.</div>
+        <div class="results" id="portal-results-list" style="margin-left: 0; margin-top: 20px;"></div>
+      </div>
+    </div>
+
+    <div id="manual-section" style="display: none;">
+      <div class="step form-group-creation">
+        <div class="step-head">
+          <div class="step-num">1</div>
+          <h2 class="step-title">Marking Scheme / Rubric Papers</h2>
+        </div>
+        <p class="step-desc">Drag & drop rubric files/photos and/or paste extra instructions below.</p>
+        <div class="dropzone" id="scheme-dz">
+          <div><b>Drop rubric files or photos here</b> or click to browse</div>
+          <span style="font-size:11.5px; color:var(--ink-soft); display:block; margin-top:4px;">(Supports .pdf, .docx,
+            .txt, .png, .jpg files)</span>
+        </div>
+        <input type="file" id="scheme-file" accept=".txt,.md,.pdf,.docx,.jpg,.jpeg,.png,.webp" multiple>
+        <div class="badge-grid" id="scheme-badge-grid"></div>
+        <textarea id="scheme-text"
+          placeholder="Add extra comments, tips, or special notes here (e.g., Deduct 2 marks if late, focus heavily on punctuation, grade total out of 25)."></textarea>
+      </div>
+
+      <div class="step form-group-creation">
+        <div class="step-head">
+          <div class="step-num">2</div>
+          <h2 class="step-title">Student Submissions</h2>
+        </div>
+        <p class="step-desc">Drag & drop essay files/photos or paste from clipboard (<b>Ctrl+V</b>). You can attach
+          multiple photos/pages per student.</p>
+        <div class="dropzone" id="essay-dz">
+          <div><b>Drop new student papers or photos here</b> or click to browse</div>
+          <span style="font-size:11.5px; color:var(--ink-soft); display:block; margin-top:4px;">(Supports .pdf, .docx,
+            .txt, .jpg, .png or Ctrl+V clipboard paste)</span>
+        </div>
+        <input type="file" id="essay-file" accept=".txt,.md,.pdf,.docx,.jpg,.jpeg,.png,.webp" multiple>
+        <input type="file" id="page-file-input" accept=".txt,.md,.pdf,.docx,.jpg,.jpeg,.png,.webp" multiple
+          style="display:none;">
+
+        <div class="student-list" id="student-list"></div>
+        <div class="student-count" id="student-count"></div>
+      </div>
+
+      <div class="step">
+        <div class="step-head">
+          <div class="step-num">3</div>
+          <h2 class="step-title">Mark and review</h2>
+        </div>
+        <button class="primary" id="mark-btn">Mark essays</button>
+        <div class="progress-wrap" id="progress-wrap" style="display:none;">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+          <div class="progress-label" id="progress-label"></div>
+        </div>
+        <div style="margin-top:20px;">
+          <div class="toolbar" id="toolbar" style="display:none;">
+            <button class="ghost" id="print-btn">📄 Full Report (With Marks)</button>
+            <button class="ghost ghost-feedback" id="print-feedback-btn">📝 Feedback Report (No Marks)</button>
+          </div>
+
+          <div class="print-summary" id="print-summary">
+            <div class="print-title" id="print-report-title">Class Evaluation Summary</div>
+            <div class="print-sub" id="manual-print-report-sub">Teacher: Teacher | Total Assessed: 0 Students</div>
+            <table class="summary-table">
+              <thead>
+                <tr>
+                  <th style="width: 24%;" class="summary-col-name">Student Name</th>
+                  <th style="width: 30%;" class="col-score-breakdown">Score Breakdown</th>
+                  <th style="width: 46%;" class="summary-col-mistakes">Mistakes in Your Work</th>
+                </tr>
+              </thead>
+              <tbody id="summary-table-body"></tbody>
+            </table>
+          </div>
+
+          <div class="results" id="results"></div>
+          <div class="empty" id="empty-msg">No results yet — mark a set to see feedback here.</div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      &copy; 2026 EduPlanet Educational Services. All rights reserved.
+    </footer>
+  </div>
+
+  <div id="submission-logs-modal"
+    style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.55); backdrop-filter:blur(4px); z-index:10003; align-items:center; justify-content:center; padding:16px;">
+    <div
+      style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:760px; width:100%; max-height:80vh; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18); display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <div>
+          <h3 style="margin:0; font-family:'Source Serif 4',serif; font-size:20px; color:#16233F;">Submission Timestamp
+            Logs</h3>
+          <p style="margin:2px 0 0 0; font-size:12.5px; color:var(--ink-soft);">Permanent log of student names,
+            assessment titles, teachers, and submission timestamps.</p>
+        </div>
+        <button onclick="toggleSubmissionLogsModal()"
+          style="border:none; background:none; font-size:20px; cursor:pointer;">&times;</button>
+      </div>
+
+      <div style="overflow-y:auto; flex:1; margin-top:8px;">
+        <table class="admin-table" style="width:100%;">
+          <thead>
+            <tr>
+              <th>Student Name</th>
+              <th>Assessment Title</th>
+              <th>Teacher</th>
+              <th>Submission Date & Time (Cairo Time)</th>
+            </tr>
+          </thead>
+          <tbody id="submission-logs-tbody">
+            <tr>
+              <td colspan="4" style="text-align:center;">Loading logs...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+        <button onclick="toggleSubmissionLogsModal()"
+          style="background:#E3E9F6; color:#16233F; border:1px solid #C2CEE7; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Close</button>
       </div>
     </div>
   </div>
 
-  <footer>
-    &copy; 2026 EduPlanet Educational Services. All rights reserved.
-  </footer>
-</div>
-
-<div id="submission-logs-modal" style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.55); backdrop-filter:blur(4px); z-index:10003; align-items:center; justify-content:center; padding:16px;">
-  <div style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:760px; width:100%; max-height:80vh; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18); display:flex; flex-direction:column;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-      <div>
-        <h3 style="margin:0; font-family:'Source Serif 4',serif; font-size:20px; color:#16233F;">Submission Timestamp Logs</h3>
-        <p style="margin:2px 0 0 0; font-size:12.5px; color:var(--ink-soft);">Permanent log of student names, assessment titles, teachers, and submission timestamps.</p>
+  <div id="bundle-manager-modal"
+    style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.55); backdrop-filter:blur(4px); z-index:10004; align-items:center; justify-content:center; padding:16px;">
+    <div
+      style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:640px; width:100%; max-height:85vh; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18); display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="margin:0; font-family:'Source Serif 4',serif; font-size:20px; color:#16233F;">Manage Package Tasks
+        </h3>
+        <button onclick="closeBundleManagerModal()"
+          style="border:none; background:none; font-size:20px; cursor:pointer;">&times;</button>
       </div>
-      <button onclick="toggleSubmissionLogsModal()" style="border:none; background:none; font-size:20px; cursor:pointer;">&times;</button>
-    </div>
+      <div id="bundle-tasks-list-container"
+        style="overflow-y:auto; flex:1; margin:10px 0; display:flex; flex-direction:column; gap:10px; max-height: 240px;">
+      </div>
 
-    <div style="overflow-y:auto; flex:1; margin-top:8px;">
-      <table class="admin-table" style="width:100%;">
+      <div style="border-top:1px solid var(--border); padding-top:14px; margin-top:10px;">
+        <h4 style="margin:0 0 8px; font-size:14px; font-family:'Source Serif 4',serif;">Add New Task to Package</h4>
+        <input type="text" id="new-subtask-title" placeholder="Task Name (e.g., Reading Comprehension)"
+          style="width:100%; padding:9px 10px; border:1px solid var(--border); border-radius:6px; margin-bottom:8px; font-size:13px; background:#fff;" />
+
+        <input type="file" id="new-subtask-scheme-file" multiple style="display:none;"
+          onchange="handleNewSubtaskFiles(event)" accept="image/*,.pdf,.docx,.txt" />
+        <div class="dropzone" onclick="document.getElementById('new-subtask-scheme-file').click()"
+          style="padding:12px; background:#fff; margin-bottom:8px;">
+          <div style="font-size:12px;"><b>Attach Rubric / Answer Key</b> (PDF, DOCX, Images)</div>
+        </div>
+        <div class="badge-grid" id="new-subtask-badges" style="margin-bottom:8px;"></div>
+
+        <textarea id="new-subtask-scheme-text" placeholder="Extra teacher instructions or rubric criteria..."
+          style="min-height:50px; font-size:12.5px; background:#fff; margin-bottom:10px;"></textarea>
+
+        <button type="button" class="primary" style="margin-left:0; padding:9px 16px; font-size:13px; width:100%;"
+          onclick="addNewSubTaskToBundle()">+ Add Task to Package</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="deadline-edit-modal"
+    style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.55); backdrop-filter:blur(4px); z-index:10002; align-items:center; justify-content:center; padding:16px;">
+    <div
+      style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:420px; width:100%; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18);">
+      <div
+        style="font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; color:var(--pen); letter-spacing:0.08em; margin-bottom:4px;">
+        Assignment Settings</div>
+      <h3 style="margin:0 0 10px; font-size:18px; font-family:'Source Serif 4',serif; color:#16233F;">Edit Assignment
+        Deadline</h3>
+      <p style="margin:0 0 16px; font-size:13px; color:var(--ink-soft); line-height: 1.4;">Select a new date and 12-hour
+        AM/PM time (Cairo Time).</p>
+
+      <div style="margin-bottom:18px;">
+        <label style="display:block; font-size:12.5px; font-weight:600; margin-bottom:6px;">New Deadline Date &
+          Time</label>
+        <div class="picker-12h-wrap">
+          <input type="date" id="edit-date" style="flex: 2; min-width: 140px;" />
+          <select id="edit-hour" style="flex: 1;">
+            <option value="12">12</option>
+            <option value="01">01</option>
+            <option value="02">02</option>
+            <option value="03">03</option>
+            <option value="04">04</option>
+            <option value="05">05</option>
+            <option value="06">06</option>
+            <option value="07">07</option>
+            <option value="08">08</option>
+            <option value="09">09</option>
+            <option value="10">10</option>
+            <option value="11" selected>11</option>
+          </select>
+          <select id="edit-minute" style="flex: 1;">
+            <option value="00">00</option>
+            <option value="15">15</option>
+            <option value="30">30</option>
+            <option value="45">45</option>
+            <option value="59" selected>59</option>
+          </select>
+          <select id="edit-ampm" style="flex: 1;">
+            <option value="AM">AM</option>
+            <option value="PM" selected>PM</option>
+          </select>
+        </div>
+        <div style="margin-top:6px;">
+          <button type="button" onclick="clearEditDeadlineInputs()"
+            style="background:none; border:none; color:#DC2626; font-size:11.5px; font-weight:500; cursor:pointer;">Remove
+            deadline (Open indefinitely)</button>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button onclick="closeDeadlineEditModal()"
+          style="background:#E3E9F6; color:#16233F; border:1px solid #C2CEE7; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Cancel</button>
+        <button id="save-deadline-btn" onclick="saveAssignmentDeadline()"
+          style="background:var(--pen); color:#fff; border:none; padding:8px 16px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Save
+          Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="admin-modal" id="admin-modal">
+    <div class="admin-box">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="margin:0; font-family:'Source Serif 4',serif; font-size:20px;">User Authorization Management</h3>
+        <button onclick="closeAdminModal()"
+          style="border:none; background:none; font-size:18px; cursor:pointer;">&times;</button>
+      </div>
+      <p style="font-size:13px; color:var(--ink-soft); margin:6px 0 14px;">Authorize teacher accounts, promote admins,
+        or reset passwords directly.</p>
+      <table class="admin-table">
         <thead>
           <tr>
-            <th>Student Name</th>
-            <th>Assessment Title</th>
-            <th>Teacher</th>
-            <th>Submission Date & Time (Cairo Time)</th>
+            <th>Name / Email</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Actions</th>
           </tr>
         </thead>
-        <tbody id="submission-logs-tbody">
-          <tr><td colspan="4" style="text-align:center;">Loading logs...</td></tr>
-        </tbody>
+        <tbody id="admin-users-list"></tbody>
       </table>
     </div>
-
-    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
-      <button onclick="toggleSubmissionLogsModal()" style="background:#E3E9F6; color:#16233F; border:1px solid #C2CEE7; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Close</button>
-    </div>
   </div>
-</div>
 
-<div id="bundle-manager-modal" style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.55); backdrop-filter:blur(4px); z-index:10004; align-items:center; justify-content:center; padding:16px;">
-  <div style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:640px; width:100%; max-height:85vh; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18); display:flex; flex-direction:column;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-      <h3 style="margin:0; font-family:'Source Serif 4',serif; font-size:20px; color:#16233F;">Manage Package Tasks</h3>
-      <button onclick="closeBundleManagerModal()" style="border:none; background:none; font-size:20px; cursor:pointer;">&times;</button>
-    </div>
-    <div id="bundle-tasks-list-container" style="overflow-y:auto; flex:1; margin:10px 0; display:flex; flex-direction:column; gap:10px; max-height: 240px;"></div>
-    
-    <div style="border-top:1px solid var(--border); padding-top:14px; margin-top:10px;">
-      <h4 style="margin:0 0 8px; font-size:14px; font-family:'Source Serif 4',serif;">Add New Task to Package</h4>
-      <input type="text" id="new-subtask-title" placeholder="Task Name (e.g., Reading Comprehension)" style="width:100%; padding:9px 10px; border:1px solid var(--border); border-radius:6px; margin-bottom:8px; font-size:13px; background:#fff;" />
-      
-      <input type="file" id="new-subtask-scheme-file" multiple style="display:none;" onchange="handleNewSubtaskFiles(event)" accept="image/*,.pdf,.docx,.txt" />
-      <div class="dropzone" onclick="document.getElementById('new-subtask-scheme-file').click()" style="padding:12px; background:#fff; margin-bottom:8px;">
-        <div style="font-size:12px;"><b>Attach Rubric / Answer Key</b> (PDF, DOCX, Images)</div>
-      </div>
-      <div class="badge-grid" id="new-subtask-badges" style="margin-bottom:8px;"></div>
-
-      <textarea id="new-subtask-scheme-text" placeholder="Extra teacher instructions or rubric criteria..." style="min-height:50px; font-size:12.5px; background:#fff; margin-bottom:10px;"></textarea>
-      
-      <button type="button" class="primary" style="margin-left:0; padding:9px 16px; font-size:13px; width:100%;" onclick="addNewSubTaskToBundle()">+ Add Task to Package</button>
-    </div>
-  </div>
-</div>
-
-<div id="deadline-edit-modal" style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.55); backdrop-filter:blur(4px); z-index:10002; align-items:center; justify-content:center; padding:16px;">
-  <div style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:420px; width:100%; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18);">
-    <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; color:var(--pen); letter-spacing:0.08em; margin-bottom:4px;">Assignment Settings</div>
-    <h3 style="margin:0 0 10px; font-size:18px; font-family:'Source Serif 4',serif; color:#16233F;">Edit Assignment Deadline</h3>
-    <p style="margin:0 0 16px; font-size:13px; color:var(--ink-soft); line-height: 1.4;">Select a new date and 12-hour AM/PM time (Cairo Time).</p>
-    
-    <div style="margin-bottom:18px;">
-      <label style="display:block; font-size:12.5px; font-weight:600; margin-bottom:6px;">New Deadline Date & Time</label>
-      <div class="picker-12h-wrap">
-        <input type="date" id="edit-date" style="flex: 2; min-width: 140px;" />
-        <select id="edit-hour" style="flex: 1;">
-          <option value="12">12</option><option value="01">01</option><option value="02">02</option>
-          <option value="03">03</option><option value="04">04</option><option value="05">05</option>
-          <option value="06">06</option><option value="07">07</option><option value="08">08</option>
-          <option value="09">09</option><option value="10">10</option><option value="11" selected>11</option>
-        </select>
-        <select id="edit-minute" style="flex: 1;">
-          <option value="00">00</option><option value="15">15</option><option value="30">30</option>
-          <option value="45">45</option><option value="59" selected>59</option>
-        </select>
-        <select id="edit-ampm" style="flex: 1;">
-          <option value="AM">AM</option>
-          <option value="PM" selected>PM</option>
-        </select>
-      </div>
-      <div style="margin-top:6px;">
-        <button type="button" onclick="clearEditDeadlineInputs()" style="background:none; border:none; color:#DC2626; font-size:11.5px; font-weight:500; cursor:padding:0;">Remove deadline (Open indefinitely)</button>
-      </div>
-    </div>
-
-    <div style="display:flex; justify-content:flex-end; gap:10px;">
-      <button onclick="closeDeadlineEditModal()" style="background:#E3E9F6; color:#16233F; border:1px solid #C2CEE7; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Cancel</button>
-      <button id="save-deadline-btn" onclick="saveAssignmentDeadline()" style="background:var(--pen); color:#fff; border:none; padding:8px 16px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Save Changes</button>
-    </div>
-  </div>
-</div>
-
-<div class="admin-modal" id="admin-modal">
-  <div class="admin-box">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <h3 style="margin:0; font-family:'Source Serif 4',serif; font-size:20px;">User Authorization Management</h3>
-      <button onclick="closeAdminModal()" style="border:none; background:none; font-size:18px; cursor:pointer;">&times;</button>
-    </div>
-    <p style="font-size:13px; color:var(--ink-soft); margin:6px 0 14px;">Authorize teacher accounts, promote admins, or reset passwords directly.</p>
-    <table class="admin-table">
-      <thead>
-        <tr>
-          <th>Name / Email</th>
-          <th>Role</th>
-          <th>Status</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody id="admin-users-list"></tbody>
-    </table>
-  </div>
-</div>
-
-<div id="admin-reset-modal" style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.55); backdrop-filter:blur(4px); z-index:10001; align-items:center; justify-content:center; padding:16px;">
-  <div style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:440px; width:100%; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18);">
-    <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; color:var(--pen); letter-spacing:0.08em; margin-bottom:4px;">Admin Control</div>
-    <h3 style="margin:0 0 6px; font-size:18px; font-family:'Source Serif 4',serif; color:#16233F;">Set User Password</h3>
-    <p style="margin:0 0 16px; font-size:13px; color:var(--ink-soft);">Setting temporary password for: <b id="reset-modal-target-email" style="color:var(--ink);"></b></p>
-    
-    <div style="margin-bottom:14px;">
-      <label style="display:block; font-size:12.5px; font-weight:600; margin-bottom:6px;">New Temporary Password</label>
-      <div style="display:flex; gap:8px;">
-        <input type="text" id="admin-temp-pass-input" style="flex:1; padding:8px 12px; border:1px solid var(--border); border-radius:6px; font-family:'IBM Plex Mono',monospace; font-size:14px;" placeholder="Min 8 characters">
-        <button type="button" onclick="generateRandomAdminPass()" style="background:var(--pen-soft); color:var(--pen); border:1px solid var(--border); border-radius:6px; padding:0 10px; font-size:12px; font-weight:500; cursor:pointer;">Generate</button>
-      </div>
-    </div>
-
-    <div id="admin-reset-modal-msg" style="display:none; font-size:12.5px; padding:8px 10px; border-radius:6px; margin-bottom:14px;"></div>
-
-    <div style="display:flex; justify-content:flex-end; gap:10px;">
-      <button onclick="closeAdminResetModal()" style="background:#E3E9F6; color:#16233F; border:1px solid #C2CEE7; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Cancel</button>
-      <button id="admin-confirm-reset-btn" onclick="executeAdminPasswordReset()" style="background:var(--pen); color:#fff; border:none; padding:8px 16px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Save & Update</button>
-    </div>
-  </div>
-</div>
-
-<div id="custom-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.45); backdrop-filter:blur(3px); z-index:10005; align-items:center; justify-content:center; padding:16px;">
-  <div style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:400px; width:100%; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.15);">
-    <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; color:#DC2626; letter-spacing:0.08em; margin-bottom:6px;">Confirm Action</div>
-    <h3 id="custom-modal-title" style="margin:0 0 10px; font-size:18px; font-family:'Source Serif 4',serif; color:#16233F;">Confirm Deletion</h3>
-    <p id="custom-modal-message" style="margin:0 0 20px; font-size:13.5px; color:#4A5670; line-height:1.5;"></p>
-    <div style="display:flex; justify-content:flex-end; gap:10px;">
-      <button id="custom-modal-cancel" style="background:#E3E9F6; color:#16233F; border:1px solid #C2CEE7; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Cancel</button>
-      <button id="custom-modal-confirm" style="background:#DC2626; color:#fff; border:none; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Delete</button>
-    </div>
-  </div>
-</div>
-
-<div id="custom-toast" style="display:none; position:fixed; bottom:24px; right:24px; background:#064E3B; color:#ECFDF5; border:1px solid #059669; padding:12px 18px; border-radius:8px; font-size:13.5px; font-weight:500; box-shadow:0 6px 20px rgba(0,0,0,0.18); z-index:10006; align-items:center; gap:8px;">
-  <span style="font-size:16px;">✓</span>
-  <span id="custom-toast-text">Action completed successfully.</span>
-</div>
-
-<script>
-let currentUser = null;
-let activeResetUserId = null;
-let activeResetUserEmail = '';
-let activeCode = '';
-let livePollTimer = null;
-let portalSchemeFiles = [];
-let portalSubmissions = [];
-let allAssignmentsMap = {};
-let currentBundleTasks = [];
-let taskDefinitions = [
-  { title: '', schemeFiles: [], schemeText: '' }
-];
-
-let newSubtaskSchemeFiles = [];
-
-function renderTaskDefinitions() {
-  const container = document.getElementById('tasks-repeater-container');
-  if (!container) return;
-
-  container.innerHTML = taskDefinitions.map((t, idx) => `
-    <div style="margin-bottom: 16px; border: 1px solid var(--border); background: #FAFBFD; padding: 16px; border-radius: 8px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-        <span style="font-weight: 600; font-size: 13.5px; color: var(--pen); font-family: 'Source Serif 4', serif;">Task #${idx + 1}</span>
-        ${taskDefinitions.length > 1 ? `
-          <button type="button" onclick="removeTaskDefinition(${idx})" style="color: #DC2626; border: none; background: none; font-weight: 600; cursor: pointer; font-size: 12px;">&times; Remove Task</button>
-        ` : ''}
-      </div>
-      
-      <label style="display:block; font-size: 12.5px; font-weight: 600; margin-bottom: 4px;">Task Name</label>
-      <input type="text" id="task-title-${idx}" value="${escapeHtml(t.title || '')}" oninput="syncTaskTitle(${idx}, this.value)" placeholder="e.g. Essay or Grammar Test" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13.5px; margin-bottom: 10px; background: #fff;" />
-
-      <label style="display:block; font-size: 12.5px; font-weight: 600; margin-bottom: 4px;">Marking Scheme / Rubric Files</label>
-      <input type="file" id="task-scheme-file-${idx}" multiple style="display:none;" onchange="handleTaskSchemeFiles(${idx}, event)" accept="image/*,.pdf,.docx,.txt" />
-      <div class="dropzone" onclick="document.getElementById('task-scheme-file-${idx}').click()" style="margin-left: 0; padding: 14px 12px; background: #fff;">
-        <div style="font-size: 12.5px;"><b>Attach Rubric / Answer Key</b> (PDF, DOCX, Images)</div>
-      </div>
-      <div class="badge-grid" id="task-scheme-badges-${idx}" style="margin-left: 0; margin-bottom: 10px;">
-        ${(t.schemeFiles || []).map((f, fIdx) => `
-          <div class="file-chip">
-            <span>📋 ${escapeHtml(f.name)}</span>
-            <button class="file-chip-remove" onclick="removeTaskSchemeFile(${idx},${fIdx})">&times;</button>
-          </div>
-        `).join('')}
-      </div>
-
-      <label style="display:block; font-size: 12.5px; font-weight: 600; margin-bottom: 4px;">Rubric Notes & Criteria (Optional)</label>
-      <textarea id="task-scheme-text-${idx}" oninput="syncTaskNotes(${idx}, this.value)" placeholder="Extra teacher instructions or criteria..." style="margin-left: 0; width: 100%; min-height: 60px; padding: 8px 10px; font-size: 13px; background: #fff;">${escapeHtml(t.schemeText || '')}</textarea>
-    </div>
-  `).join('');
-}
-
-function syncTaskTitle(idx, val) {
-  if (taskDefinitions[idx]) {
-    taskDefinitions[idx].title = val;
-  }
-}
-
-function syncTaskNotes(idx, val) {
-  if (taskDefinitions[idx]) {
-    taskDefinitions[idx].schemeText = val;
-  }
-}
-
-function handleTaskSchemeFiles(taskIdx, e) {
-  if (!taskDefinitions[taskIdx].schemeFiles) taskDefinitions[taskIdx].schemeFiles = [];
-  for (const f of e.target.files) taskDefinitions[taskIdx].schemeFiles.push(f);
-  renderTaskDefinitions();
-}
-
-function removeTaskSchemeFile(taskIdx, fileIdx) {
-  taskDefinitions[taskIdx].schemeFiles.splice(fileIdx, 1);
-  renderTaskDefinitions();
-}
-
-function addNewTaskField() {
-  taskDefinitions.push({
-    title: '',
-    schemeFiles: [],
-    schemeText: ''
-  });
-  renderTaskDefinitions();
-}
-
-function removeTaskDefinition(idx) {
-  if (taskDefinitions.length <= 1) return;
-  taskDefinitions.splice(idx, 1);
-  renderTaskDefinitions();
-}
-
-let schemeFilesList = [];
-let studentSubmissions = [];
-let manualResults = [];
-let targetStudentForAddPage = null;
-
-function showToast(message) {
-  const toast = document.getElementById('custom-toast');
-  const text = document.getElementById('custom-toast-text');
-  text.textContent = message;
-  toast.style.display = 'flex';
-  setTimeout(() => { toast.style.display = 'none'; }, 3500);
-}
-
-function showConfirmModal(message, title = 'Confirm Deletion') {
-  return new Promise((resolve) => {
-    const overlay = document.getElementById('custom-modal-overlay');
-    const titleEl = document.getElementById('custom-modal-title');
-    const msgEl = document.getElementById('custom-modal-message');
-    const confirmBtn = document.getElementById('custom-modal-confirm');
-    const cancelBtn = document.getElementById('custom-modal-cancel');
-
-    if (titleEl) titleEl.textContent = title;
-    msgEl.textContent = message;
-    overlay.style.display = 'flex';
-
-    function cleanup(result) {
-      overlay.style.display = 'none';
-      confirmBtn.onclick = null;
-      cancelBtn.onclick = null;
-      resolve(result);
-    }
-    confirmBtn.onclick = () => cleanup(true);
-    cancelBtn.onclick = () => cleanup(false);
-  });
-}
-
-function setMinDateOnly() {
-  const today = new Date().toISOString().split('T')[0];
-  const creationDate = document.getElementById('portal-date');
-  const editDate = document.getElementById('edit-date');
-  if (creationDate) creationDate.min = today;
-  if (editDate) editDate.min = today;
-}
-
-function getIsoFrom12h(dateId, hourId, minId, ampmId) {
-  const dateVal = document.getElementById(dateId).value;
-  if (!dateVal) return null;
-
-  let hour = parseInt(document.getElementById(hourId).value, 10);
-  const min = document.getElementById(minId).value;
-  const ampm = document.getElementById(ampmId).value;
-
-  if (ampm === 'PM' && hour < 12) hour += 12;
-  if (ampm === 'AM' && hour === 12) hour = 0;
-
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${dateVal}T${pad(hour)}:${min}:00+03:00`;
-}
-
-function formatDeadlineString(isoStr) {
-  if (!isoStr) return 'No Deadline';
-  try {
-    const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return 'No Deadline';
-    
-    return 'Due: ' + new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Africa/Cairo',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    }).format(d);
-  } catch (e) {
-    return 'Due: ' + isoStr;
-  }
-}
-
-function getIntegrityPill(label, score) {
-  const s = parseInt(score, 10) || 0;
-  if (s >= 50) return `<span class="pill-badge pill-red">⚠️ ${label}: ${s}%</span>`;
-  if (s >= 25) return `<span class="pill-badge pill-amber">${label}: ${s}%</span>`;
-  return `<span class="pill-badge pill-green">${label}: ${s}%</span>`;
-}
-
-// Authentication Check
-fetch('/api/auth/me')
-  .then(res => res.json())
-  .then(data => {
-    if (data.success && data.user) {
-      currentUser = data.user;
-      let displayRole = 'Teacher';
-      if (data.user.role === 'root') displayRole = 'Root User';
-      else if (data.user.role === 'admin') displayRole = 'Admin';
-
-      document.getElementById('user-display').textContent = `👤 ${data.user.name} (${displayRole})`;
-      
-      if (['root', 'admin'].includes(data.user.role)) {
-        document.getElementById('admin-panel-btn').style.display = 'inline-block';
-      }
-
-      if (data.user.status !== 'approved' && !['root', 'admin'].includes(data.user.role)) {
-        document.getElementById('pending-banner').style.display = 'block';
-        document.getElementById('mark-btn').disabled = true;
-      }
-      setMinDateOnly();
-      renderTaskDefinitions();
-      loadTeacherAssignments();
-    } else {
-      window.location.replace('/login.html');
-    }
-  })
-  .catch(() => { window.location.replace('/login.html'); });
-
-function logout() {
-  fetch('/api/auth/logout', { method: 'POST' }).then(() => window.location.replace('/login.html'));
-}
-
-function switchMode(mode) {
-  const btnPortal = document.getElementById('btn-mode-portal');
-  const btnManual = document.getElementById('btn-mode-manual');
-  const secPortal = document.getElementById('portal-section');
-  const secManual = document.getElementById('manual-section');
-
-  if (mode === 'portal') {
-    btnPortal.classList.add('active');
-    btnManual.classList.remove('active');
-    secPortal.style.display = 'block';
-    secManual.style.display = 'none';
-  } else {
-    btnManual.classList.add('active');
-    btnPortal.classList.remove('active');
-    secManual.style.display = 'block';
-    secPortal.style.display = 'none';
-  }
-}
-
-// ==================== SHARED RENDERING LOGIC ====================
-function renderLineList(rawText, idx, fieldName, modePrefix = 'portal') {
-  if (!rawText) return `<div class="line-item-wrap"><div class="line-item editable-line" contenteditable="true" data-idx="${idx}" data-field="${fieldName}" data-mode="${modePrefix}">- None</div><button class="line-delete-btn no-print" onclick="deleteLineItem(this, ${idx}, '${fieldName}', '${modePrefix}')" title="Delete item">&times;</button></div>`;
-  
-  const lines = rawText.split(/\n|(?=- Section)|(?=- Question)|(?=- Q\d)/g)
-    .map(line => line.trim())
-    .filter(line => line.length > 0);
-
-  if (lines.length === 0) {
-    return `<div class="line-item-wrap"><div class="line-item editable-line" contenteditable="true" data-idx="${idx}" data-field="${fieldName}" data-mode="${modePrefix}">- None</div><button class="line-delete-btn no-print" onclick="deleteLineItem(this, ${idx}, '${fieldName}', '${modePrefix}')" title="Delete item">&times;</button></div>`;
-  }
-
-  return lines.map(line => {
-    const formatted = line.startsWith('-') ? line : `- ${line}`;
-    return `
-      <div class="line-item-wrap">
-        <div contenteditable="true" class="line-item editable-line" data-idx="${idx}" data-field="${fieldName}" data-mode="${modePrefix}">${formatted}</div>
-        <button class="line-delete-btn no-print" onclick="deleteLineItem(this, ${idx}, '${fieldName}', '${modePrefix}')" title="Delete item">&times;</button>
-      </div>
-    `;
-  }).join('');
-}
-
-window.deleteLineItem = function(btn, idx, fieldName, modePrefix = 'portal') {
-  const wrap = btn.closest('.line-item-wrap');
-  if (wrap) {
-    wrap.remove();
-    if (fieldName === 'category_breakdown') recalculateTotal(idx, modePrefix);
-  }
-};
-
-window.addNewSectionLine = function(idx, fieldName, defaultPrefix = '- ', modePrefix = 'portal') {
-  let containerId = `${modePrefix}-${fieldName === 'category_breakdown' ? 'bd' : fieldName === 'mistakes' ? 'm' : 'w'}-container-${idx}`;
-  let summaryContainerId = `${modePrefix}-summary-${fieldName === 'category_breakdown' ? 'bd' : 'm'}-container-${idx}`;
-
-  const container = document.getElementById(containerId);
-  const summaryContainer = (fieldName === 'mistakes' || fieldName === 'category_breakdown') ? document.getElementById(summaryContainerId) : null;
-
-  function createWrap() {
-    const wrap = document.createElement('div');
-    wrap.className = 'line-item-wrap';
-
-    const newLine = document.createElement('div');
-    newLine.className = 'line-item editable-line';
-    newLine.contentEditable = 'true';
-    newLine.dataset.idx = idx;
-    newLine.dataset.field = fieldName;
-    newLine.dataset.mode = modePrefix;
-    newLine.textContent = defaultPrefix;
-
-    newLine.addEventListener('input', () => {
-      if (fieldName === 'category_breakdown') recalculateTotal(idx, modePrefix);
-    });
-
-    const delBtn = document.createElement('button');
-    delBtn.className = 'line-delete-btn no-print';
-    delBtn.innerHTML = '&times;';
-    delBtn.title = 'Delete item';
-    delBtn.onclick = function() { deleteLineItem(delBtn, idx, fieldName, modePrefix); };
-
-    wrap.appendChild(newLine);
-    wrap.appendChild(delBtn);
-    return { wrap, newLine };
-  }
-
-  if (container) {
-    const { wrap, newLine } = createWrap();
-    container.appendChild(wrap);
-    newLine.focus();
-
-    const range = document.createRange();
-    const sel = window.getSelection();
-    range.selectNodeContents(newLine);
-    range.collapse(false);
-    sel.removeAllRanges();
-    sel.addRange(range);
-  }
-
-  if (summaryContainer) {
-    const { wrap } = createWrap();
-    summaryContainer.appendChild(wrap);
-  }
-};
-
-function recalculateTotal(idx, modePrefix = 'portal') {
-  const container = document.getElementById(`${modePrefix}-bd-container-${idx}`);
-  if (!container) return;
-
-  const lines = container.querySelectorAll('.line-item');
-  let totalEarned = 0;
-  let totalPossible = 0;
-  let matchesFound = false;
-
-  lines.forEach(line => {
-    const text = line.innerText.trim();
-    const match = text.match(/[:\s](\d+)\s*\/\s*(\d+)(?:\s|$)/) || text.match(/^[-•*]?\s*.*?(\d+)\s*\/\s*(\d+)$/);
-    if (match) {
-      totalEarned += parseInt(match[1], 10);
-      totalPossible += parseInt(match[2], 10);
-      matchesFound = true;
-    }
-  });
-
-  if (matchesFound && totalPossible > 0) {
-    const newTotal = `${totalEarned}/${totalPossible}`;
-    const dataset = modePrefix === 'portal' ? portalSubmissions : manualResults;
-    if (dataset[idx]) dataset[idx].total_score = newTotal;
-
-    const cardScore = document.getElementById(`${modePrefix}-card-score-${idx}`);
-    const badge = document.getElementById(`${modePrefix}-badge-${idx}`);
-    const summaryTotal = document.getElementById(`${modePrefix}-summary-total-${idx}`);
-    const totalEl = document.getElementById(`${modePrefix}-total-score-val-${idx}`);
-
-    if (cardScore) cardScore.innerText = newTotal;
-    if (badge) badge.innerText = `${totalEarned}`;
-    if (summaryTotal) summaryTotal.innerText = newTotal;
-    if (totalEl) totalEl.innerText = newTotal;
-  }
-}
-
-function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
-  const summaryTbody = document.getElementById(modePrefix === 'portal' ? 'portal-summary-table-body' : 'summary-table-body');
-  const resultsContainer = document.getElementById(modePrefix === 'portal' ? 'portal-results-list' : 'results');
-
-  const openCardIndices = new Set();
-  resultsContainer.querySelectorAll('.result-body.open').forEach(el => {
-    const card = el.closest('.result-card');
-    const head = card ? card.querySelector('.result-head') : null;
-    if (head && head.dataset.idx !== undefined) {
-      openCardIndices.add(head.dataset.idx);
-    }
-  });
-
-  summaryTbody.innerHTML = '';
-  resultsContainer.innerHTML = '';
-
-  if (!dataList || !dataList.length) {
-    summaryTbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--ink-soft); padding:20px;">No student submissions available yet.</td></tr>';
-    return;
-  }
-
-  dataList.forEach((r, idx) => {
-    const displayName = r.name || r.student_name || 'Student';
-    const totalScoreVal = r.total_score || '—';
-
-    const peerPill = getIntegrityPill('Peer Copy', r.similarity_score);
-    const aiPill = getIntegrityPill('AI Match', r.ai_score);
-    const webPill = r.web_score && r.web_score > 25 ? `<span class="pill-badge pill-amber">Web: ${r.web_score}%</span>` : '';
-
-    const tr = document.createElement('tr');
-    tr.id = `${modePrefix}-summary-tr-${idx}`;
-    tr.innerHTML = `
-      <td class="summary-col-name">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div>
-            <b contenteditable="true" class="editable-field" data-idx="${idx}" data-field="name" data-mode="${modePrefix}">${displayName}</b><br>
-            <div class="integrity-pills no-print">${peerPill} ${aiPill} ${webPill}</div>
-          </div>
-          ${modePrefix === 'portal' && r.id ? `
-            <button class="line-delete-btn no-print" onclick="deleteStudentSubmission('${r.id}', '${escapeHtml(displayName)}')" title="Delete submission & allow student to resubmit" style="font-size: 15px; color: #DC2626; padding: 2px 4px; cursor: pointer;">🗑️</button>
-          ` : ''}
-        </div>
-        <small class="summary-score-tag" style="color:var(--pen); font-family:'IBM Plex Mono',monospace; margin-top:2px; display:inline-block;">
-          Total: <span contenteditable="true" class="editable-field" id="${modePrefix}-summary-total-${idx}" data-idx="${idx}" data-field="total_score" data-mode="${modePrefix}">${totalScoreVal}</span> (${r.pageCount || 1} page${r.pageCount > 1 ? 's' : ''})
-        </small>
-      </td>
-      <td class="col-score-breakdown">
-        <div class="line-list" id="${modePrefix}-summary-bd-container-${idx}">${renderLineList(r.category_breakdown, idx, 'category_breakdown', modePrefix)}</div>
-        <button class="table-add-btn no-print" onclick="addNewSectionLine(${idx}, 'category_breakdown', '- Section: 0/10', '${modePrefix}')">+ Add Section</button>
-      </td>
-      <td class="summary-col-mistakes">
-        <div class="line-list" id="${modePrefix}-summary-m-container-${idx}">${renderLineList(r.mistakes, idx, 'mistakes', modePrefix)}</div>
-        <button class="table-add-btn no-print" onclick="addNewSectionLine(${idx}, 'mistakes', '- ', '${modePrefix}')">+ Add Mistake</button>
-      </td>
-    `;
-    summaryTbody.appendChild(tr);
-
-    const isOpen = openCardIndices.has(String(idx));
-
-    const card = document.createElement('div');
-    card.className = 'result-card';
-    card.innerHTML = `
-      <div class="result-head" data-idx="${idx}" data-mode="${modePrefix}">
-        <div class="badge card-score-badge" id="${modePrefix}-badge-${idx}">${totalScoreVal.split('/')[0]}</div>
-        <div class="result-name" id="${modePrefix}-card-name-${idx}">
-          ${displayName} 
-          <span style="font-size:12px; font-weight:normal; color:var(--ink-soft);">(${r.pageCount || 1} page${r.pageCount > 1 ? 's' : ''})</span>
-          <div class="integrity-pills" style="margin-top: 3px;">${peerPill} ${aiPill}</div>
-        </div>
-        <div class="result-score card-score-text" id="${modePrefix}-card-score-${idx}">${totalScoreVal}</div>
-      </div>
-      <div class="result-body ${isOpen ? 'open' : ''}" id="${modePrefix}-body-${idx}">
-        <div class="result-body-inner">
-          <div class="fb-section fb-integrity-box no-print" style="background:#F8FAFC; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:14px;">
-            <div class="fb-label">🛡️ Academic Integrity & Similarity Audit <span class="edit-hint">(Visible to Teacher Only)</span></div>
-            <div style="font-size:12px; color:var(--ink-soft); line-height:1.6;">
-              <div>• <b>Classmate Overlap:</b> ${r.similarity_score || 0}% match — <i>${escapeHtml(r.similarity_details || 'No duplicate passages found among classmates.')}</i></div>
-              <div>• <b>AI-Generation Risk:</b> ${r.ai_score || 0}% — <i>${escapeHtml(r.ai_details || 'Writing matches natural student cadence.')}</i></div>
-              <div>• <b>Web Source Plagiarism:</b> ${r.web_score || 0}% similarity to public archives</div>
-            </div>
-          </div>
-
-          <div class="fb-section fb-score-section">
-            <div class="fb-label">
-              <span>Score Breakdown by Category <span class="edit-hint">(Edit marks below to auto-update total)</span></span>
-            </div>
-            <div class="line-list" id="${modePrefix}-bd-container-${idx}">${renderLineList(r.category_breakdown, idx, 'category_breakdown', modePrefix)}</div>
-            <button class="section-add-btn no-print" onclick="addNewSectionLine(${idx}, 'category_breakdown', '- Section: 0/10', '${modePrefix}')">+ Add Category</button>
-          </div>
-
-          <div class="fb-section fb-score-section">
-            <div class="fb-label">Total Score</div>
-            <b id="${modePrefix}-total-score-val-${idx}">${totalScoreVal}</b>
-          </div>
-
-          <div class="fb-section">
-            <div class="fb-label">
-              <span>Mistakes in Your Work <span class="edit-hint">(Click text to edit or ✕ to remove)</span></span>
-            </div>
-            <div class="line-list" id="${modePrefix}-m-container-${idx}">${renderLineList(r.mistakes, idx, 'mistakes', modePrefix)}</div>
-            <button class="section-add-btn mistake-theme no-print" onclick="addNewSectionLine(${idx}, 'mistakes', '- ', '${modePrefix}')">+ Add Mistake</button>
-          </div>
-
-          <div class="fb-section">
-            <div class="fb-label">
-              <span>What to Practice Next <span class="edit-hint">(Click text to edit or ✕ to remove)</span></span>
-            </div>
-            <div class="line-list" id="${modePrefix}-w-container-${idx}">${renderLineList(r.weaknesses, idx, 'weaknesses', modePrefix)}</div>
-            <button class="section-add-btn practice-theme no-print" onclick="addNewSectionLine(${idx}, 'weaknesses', '- ', '${modePrefix}')">+ Add Recommendation</button>
-          </div>
+  <div id="admin-reset-modal"
+    style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.55); backdrop-filter:blur(4px); z-index:10001; align-items:center; justify-content:center; padding:16px;">
+    <div
+      style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:440px; width:100%; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18);">
+      <div
+        style="font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; color:var(--pen); letter-spacing:0.08em; margin-bottom:4px;">
+        Admin Control</div>
+      <h3 style="margin:0 0 6px; font-size:18px; font-family:'Source Serif 4',serif; color:#16233F;">Set User Password
+      </h3>
+      <p style="margin:0 0 16px; font-size:13px; color:var(--ink-soft);">Setting temporary password for: <b
+          id="reset-modal-target-email" style="color:var(--ink);"></b></p>
+
+      <div style="margin-bottom:14px;">
+        <label style="display:block; font-size:12.5px; font-weight:600; margin-bottom:6px;">New Temporary
+          Password</label>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="admin-temp-pass-input"
+            style="flex:1; padding:8px 12px; border:1px solid var(--border); border-radius:6px; font-family:'IBM Plex Mono',monospace; font-size:14px;"
+            placeholder="Min 8 characters">
+          <button type="button" onclick="generateRandomAdminPass()"
+            style="background:var(--pen-soft); color:var(--pen); border:1px solid var(--border); border-radius:6px; padding:0 10px; font-size:12px; font-weight:500; cursor:pointer;">Generate</button>
         </div>
       </div>
-    `;
-    resultsContainer.appendChild(card);
-  });
 
-  document.querySelectorAll(`.editable-line[data-mode="${modePrefix}"]`).forEach(el => {
-    el.addEventListener('input', e => {
-      const idx = e.target.dataset.idx;
-      const field = e.target.dataset.field;
-      if (field === 'category_breakdown') recalculateTotal(idx, modePrefix);
-    });
-  });
+      <div id="admin-reset-modal-msg"
+        style="display:none; font-size:12.5px; padding:8px 10px; border-radius:6px; margin-bottom:14px;"></div>
 
-  document.querySelectorAll(`.editable-field[data-mode="${modePrefix}"]`).forEach(el => {
-    el.addEventListener('input', e => {
-      const idx = e.target.dataset.idx;
-      const field = e.target.dataset.field;
-      const newValue = e.target.innerText.trim();
-      const dataset = modePrefix === 'portal' ? portalSubmissions : manualResults;
-
-      if (dataset[idx]) {
-        if (field === 'name') {
-          dataset[idx].name = newValue;
-          dataset[idx].student_name = newValue;
-          const cardName = document.getElementById(`${modePrefix}-card-name-${idx}`);
-          if (cardName) cardName.innerHTML = `${newValue} <span style="font-size:12px; font-weight:normal; color:var(--ink-soft);">(${dataset[idx].pageCount || 1} page${dataset[idx].pageCount > 1 ? 's' : ''})</span>`;
-        } else if (field === 'total_score') {
-          dataset[idx].total_score = newValue;
-          const cardScore = document.getElementById(`${modePrefix}-card-score-${idx}`);
-          const totalScoreValEl = document.getElementById(`${modePrefix}-total-score-val-${idx}`);
-          const badge = document.getElementById(`${modePrefix}-badge-${idx}`);
-
-          if (cardScore) cardScore.innerText = newValue;
-          if (totalScoreValEl) totalScoreValEl.innerText = newValue;
-          if (badge) badge.innerText = newValue.split('/')[0] || newValue;
-        }
-      }
-    });
-  });
-
-  resultsContainer.querySelectorAll('.result-head').forEach(head => {
-    head.addEventListener('click', () => {
-      const idx = head.dataset.idx;
-      const mode = head.dataset.mode;
-      const body = document.getElementById(`${mode}-body-${idx}`);
-      if (body) body.classList.toggle('open');
-    });
-  });
-}
-
-// ==================== PORTAL LOGIC ====================
-function handlePortalSchemeFiles(e) {
-  for (const f of e.target.files) portalSchemeFiles.push(f);
-  renderPortalBadges();
-  e.target.value = '';
-}
-
-function renderPortalBadges() {
-  const grid = document.getElementById('portal-scheme-badges');
-  grid.innerHTML = portalSchemeFiles.map((f, i) => `
-    <div class="file-chip">
-      <span>📋 Page ${i + 1}: ${f.name}</span>
-      <button class="file-chip-remove" onclick="portalSchemeFiles.splice(${i}, 1); renderPortalBadges();">&times;</button>
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button onclick="closeAdminResetModal()"
+          style="background:#E3E9F6; color:#16233F; border:1px solid #C2CEE7; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Cancel</button>
+        <button id="admin-confirm-reset-btn" onclick="executeAdminPasswordReset()"
+          style="background:var(--pen); color:#fff; border:none; padding:8px 16px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Save
+          & Update</button>
+      </div>
     </div>
-  `).join('');
-}
+  </div>
 
-async function loadTeacherAssignments() {
-  try {
-    const res = await fetch('/api/assignments');
-    const d = await res.json();
-    if (d.success && d.assignments) {
-      allAssignmentsMap = {};
-      const select = document.getElementById('past-assignments-select');
-      
-      const bundlesMap = {};
-      d.assignments.forEach(a => {
-        const key = a.bundle_code || a.code;
-        if (!bundlesMap[key]) {
-          bundlesMap[key] = {
-            groupTitle: a.group_title || a.title,
-            deadline: a.deadline,
-            tasks: []
-          };
-        }
-        bundlesMap[key].tasks.push(a);
-        allAssignmentsMap[a.code] = a;
-      });
-
-      select.innerHTML = '<option value="">-- Select an assignment package --</option>' +
-        Object.entries(bundlesMap).map(([bKey, bundle]) => {
-          const firstTaskCode = bundle.tasks[0].code;
-          const totalSubs = bundle.tasks.reduce((acc, t) => acc + t.submission_count, 0);
-          const deadlineText = formatDeadlineString(bundle.deadline);
-          const displayLabel = bundle.tasks.length > 1 
-            ? `📦 ${bundle.groupTitle} (${bundle.tasks.length} tasks, ${totalSubs} submissions) — ${deadlineText}`
-            : `${bundle.groupTitle} (${totalSubs} submissions) — ${deadlineText}`;
-
-          return `<option value="${firstTaskCode}">${escapeHtml(displayLabel)}</option>`;
-        }).join('');
-
-      if (activeCode && allAssignmentsMap[activeCode]) {
-        select.value = activeCode;
-      }
-    }
-  } catch (e) {
-    console.error('Failed to load past assignments:', e);
-  }
-}
-
-function getFullActiveTitle() {
-  const assignmentObj = allAssignmentsMap[activeCode];
-  const groupName = assignmentObj ? (assignmentObj.group_title || '').trim() : '';
-  
-  const activeTabBtn = document.querySelector('#bundle-task-tabs button.primary');
-  let taskName = activeTabBtn ? activeTabBtn.textContent.trim() : (assignmentObj ? (assignmentObj.title || '').trim() : '');
-
-  if (groupName && taskName && groupName.toLowerCase() !== taskName.toLowerCase()) {
-    return `${groupName} — ${taskName}`;
-  }
-  return groupName || taskName || 'Assignment';
-}
-
-function switchActiveTaskTab(taskCode, taskTitle) {
-  activeCode = taskCode;
-  
-  if (allAssignmentsMap[taskCode]) {
-    allAssignmentsMap[taskCode].title = taskTitle;
-  }
-
-  document.querySelectorAll('#bundle-task-tabs button').forEach(btn => {
-    btn.classList.toggle('primary', btn.textContent.trim() === taskTitle.trim());
-  });
-
-  const fullTitle = getFullActiveTitle();
-  const liveTitle = document.getElementById('live-portal-title');
-  if (liveTitle) liveTitle.textContent = `Live Submissions: ${fullTitle}`;
-
-  const summaryTitle = document.getElementById('portal-print-report-title');
-  if (summaryTitle) summaryTitle.textContent = `Class Evaluation Summary: ${fullTitle}`;
-
-  fetchLiveSubmissions();
-}
-
-function loadSelectedAssignment(selectedCode) {
-  if (!selectedCode) return;
-  activeCode = selectedCode;
-
-  const fullDisplayTitle = getFullActiveTitle();
-  const assignmentObj = allAssignmentsMap[selectedCode];
-  const deadlineText = assignmentObj ? formatDeadlineString(assignmentObj.deadline) : 'No Deadline';
-  const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-  const studentCount = portalSubmissions ? portalSubmissions.length : 0;
-  const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
-
-  document.getElementById('live-portal-title').textContent = `Live Submissions: ${fullDisplayTitle}`;
-  document.getElementById('live-portal-deadline-sub').textContent = deadlineText;
-  document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${fullDisplayTitle}`;
-  document.getElementById('portal-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
-  document.getElementById('portal-results-card').style.display = 'block';
-
-  if (assignmentObj && assignmentObj.bundle_code) {
-    fetch(`/api/public/bundle/${assignmentObj.bundle_code}`)
-      .then(res => res.json())
-      .then(d => {
-        if (d.success && d.tasks) {
-          renderBundleTabs(d.tasks);
-        }
-      }).catch(() => {});
-  } else {
-    document.getElementById('bundle-task-tabs').style.display = 'none';
-  }
-
-  const linkParam = assignmentObj && assignmentObj.bundle_code ? `bundle=${assignmentObj.bundle_code}` : `code=${selectedCode}`;
-  const fullUrl = `${window.location.origin}/submit.html?${linkParam}`;
-  document.getElementById('generated-link-url').textContent = fullUrl;
-  document.getElementById('generated-link-box').style.display = 'flex';
-
-  startLivePolling();
-}
-
-async function createAssignmentLink() {
-  const groupTitleEl = document.getElementById('bundle-group-title-input');
-  const groupTitle = groupTitleEl ? groupTitleEl.value.trim() : '';
-  const deadlineIso = getIsoFrom12h('portal-date', 'portal-hour', 'portal-minute', 'portal-ampm');
-
-  if (deadlineIso) {
-    const ddlTime = new Date(deadlineIso).getTime();
-    if (!isNaN(ddlTime) && ddlTime < Date.now()) {
-      alert('The deadline cannot be set to a past date or time. Please select a future date/time.');
-      return;
-    }
-  }
-
-  const tasksPayload = [];
-  const formData = new FormData();
-  if (deadlineIso) formData.append('deadline', deadlineIso);
-  if (groupTitle) formData.append('groupTitle', groupTitle);
-
-  for (let i = 0; i < taskDefinitions.length; i++) {
-    const titleInput = document.getElementById(`task-title-${i}`);
-    const notesInput = document.getElementById(`task-scheme-text-${i}`);
-
-    const titleVal = (titleInput ? titleInput.value.trim() : '') || (taskDefinitions[i].title || '').trim() || `Task ${i + 1}`;
-    const notesVal = (notesInput ? notesInput.value.trim() : '') || (taskDefinitions[i].schemeText || '').trim();
-
-    tasksPayload.push({
-      title: titleVal,
-      schemeText: notesVal
-    });
-
-    const files = taskDefinitions[i].schemeFiles || [];
-    for (const f of files) {
-      formData.append(`scheme_${i}`, f);
-    }
-  }
-
-  formData.append('tasks', JSON.stringify(tasksPayload));
-
-  try {
-    const res = await fetch('/api/assignments/create-bundle', { method: 'POST', body: formData });
-    const d = await res.json();
-
-    if (d.success) {
-      activeCode = d.tasks[0].code;
-      const deadlineText = formatDeadlineString(deadlineIso);
-      const displayTitle = d.groupTitle || d.tasks[0].title;
-
-      document.getElementById('live-portal-title').textContent = `Live Submissions: ${displayTitle}`;
-      document.getElementById('live-portal-deadline-sub').textContent = deadlineText;
-      document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${displayTitle}`;
-      document.getElementById('portal-print-report-sub').textContent = `Teacher: ${currentUser?.name || 'Teacher'} | Total Assessed: 0 Students`;
-
-      document.getElementById('generated-link-url').textContent = d.link;
-      document.getElementById('generated-link-box').style.display = 'flex';
-      document.getElementById('portal-results-card').style.display = 'block';
-
-      renderBundleTabs(d.tasks);
-      startLivePolling();
-      loadTeacherAssignments();
-      showToast('Student link generated successfully!');
-    } else {
-      alert(d.error || 'Failed to create assignment bundle.');
-    }
-  } catch (err) {
-    alert('Connection error creating assignment.');
-  }
-}
-
-function renderBundleTabs(tasks) {
-  const tabsContainer = document.getElementById('bundle-task-tabs');
-  if (!tabsContainer || !tasks || tasks.length <= 1) {
-    if (tabsContainer) tabsContainer.style.display = 'none';
-    return;
-  }
-
-  tabsContainer.style.display = 'flex';
-  tabsContainer.innerHTML = tasks.map(t => `
-    <button type="button" class="ghost ${t.code === activeCode ? 'primary' : ''}" style="margin-left:0; padding:6px 12px; font-size:12.5px; font-weight:600;" onclick="switchActiveTaskTab('${t.code}', '${escapeHtml(t.title)}')">
-      ${escapeHtml(t.title)}
-    </button>
-  `).join('');
-}
-
-function copyLink() {
-  const url = document.getElementById('generated-link-url').textContent;
-  navigator.clipboard.writeText(url);
-  showToast('Link copied to clipboard!');
-}
-
-function startLivePolling() {
-  if (livePollTimer) clearInterval(livePollTimer);
-  fetchLiveSubmissions();
-  livePollTimer = setInterval(fetchLiveSubmissions, 10000);
-}
-
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    if (livePollTimer) {
-      clearInterval(livePollTimer);
-      livePollTimer = null;
-    }
-  } else {
-    if (activeCode) {
-      startLivePolling();
-    }
-  }
-});
-
-let isPollingActive = false;
-
-async function fetchLiveSubmissions() {
-  if (!activeCode || isPollingActive) return;
-
-  const activeEl = document.activeElement;
-  if (activeEl && (activeEl.isContentEditable || activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-    return;
-  }
-
-  isPollingActive = true;
-  try {
-    const res = await fetch(`/api/assignments/${encodeURIComponent(activeCode)}/submissions`);
-    const d = await res.json();
-    if (d.success) {
-      portalSubmissions = d.submissions || [];
-      renderCardsAndSummaryTable(portalSubmissions, 'portal');
-
-      const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-      const studentCount = portalSubmissions.length;
-      const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
-      const subEl = document.getElementById('portal-print-report-sub');
-      if (subEl) subEl.textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
-    }
-  } catch (e) {
-    console.warn('Live poll sync notice');
-  } finally {
-    isPollingActive = false;
-  }
-}
-
-// Native direct report printing with combined title
-function printReport(type) {
-  if (!portalSubmissions || portalSubmissions.length === 0) {
-    alert('No student submissions found to print.');
-    return;
-  }
-
-  const fullReportTitle = getFullActiveTitle();
-  const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-  const studentCount = portalSubmissions.length;
-  const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
-
-  document.querySelectorAll('#portal-results-list .result-body').forEach(b => b.classList.add('open'));
-  document.body.classList.add('printing-portal');
-  document.body.classList.remove('printing-manual');
-
-  const reportTitleEl = document.getElementById('portal-print-report-title');
-  const reportSubEl = document.getElementById('portal-print-report-sub');
-
-  if (type === 'feedback') {
-    document.body.classList.add('print-feedback-only');
-    if (reportTitleEl) reportTitleEl.textContent = `Student Feedback & Correction Report: ${fullReportTitle}`;
-  } else {
-    document.body.classList.remove('print-feedback-only');
-    if (reportTitleEl) reportTitleEl.textContent = `Class Evaluation Summary: ${fullReportTitle}`;
-  }
-
-  if (reportSubEl) {
-    reportSubEl.textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
-  }
-  
-  setTimeout(() => {
-    window.print();
-    setTimeout(() => { 
-      document.body.classList.remove('print-feedback-only');
-      document.body.classList.remove('printing-portal');
-    }, 1000);
-  }, 250);
-}
-
-// Remove single student submission strictly by numeric ID
-async function deleteStudentSubmission(subId, studentName) {
-  const numericId = parseInt(subId, 10);
-  if (!activeCode || isNaN(numericId) || numericId <= 0) {
-    alert('Unable to identify submission record ID.');
-    return;
-  }
-
-  const confirmed = await showConfirmModal(
-    `Delete submission for "${studentName}"? This removes their evaluation and unlocks them to submit their paper again.`,
-    'Remove Student Submission'
-  );
-  if (!confirmed) return;
-
-  try {
-    const res = await fetch(`/api/assignments/${encodeURIComponent(activeCode)}/submissions/${numericId}`, { 
-      method: 'DELETE' 
-    });
-    const d = await res.json();
-    if (d.success) {
-      showToast(d.message);
-      await fetchLiveSubmissions();
-      await loadTeacherAssignments();
-    } else {
-      alert(d.error || 'Failed to remove submission.');
-    }
-  } catch (err) {
-    alert('Network error while deleting submission.');
-  }
-}
-
-// Open and load submission timestamp audit logs
-async function toggleSubmissionLogsModal() {
-  const modal = document.getElementById('submission-logs-modal');
-  if (modal.style.display === 'flex') {
-    modal.style.display = 'none';
-    return;
-  }
-
-  if (!activeCode) {
-    alert('Please select or create an assignment first.');
-    return;
-  }
-
-  modal.style.display = 'flex';
-  const tbody = document.getElementById('submission-logs-tbody');
-  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:12px;">Loading timestamps...</td></tr>';
-
-  try {
-    const res = await fetch(`/api/assignments/${activeCode}/logs`);
-    const d = await res.json();
-    if (d.success && d.logs && d.logs.length > 0) {
-      tbody.innerHTML = d.logs.map(log => {
-        const dateObj = new Date(log.submitted_at);
-        const formattedDate = !isNaN(dateObj.getTime())
-          ? new Intl.DateTimeFormat('en-US', {
-              timeZone: 'Africa/Cairo',
-              dateStyle: 'medium',
-              timeStyle: 'short'
-            }).format(dateObj)
-          : log.submitted_at;
-
-        return `
-          <tr>
-            <td><b>${escapeHtml(log.student_name)}</b></td>
-            <td>${escapeHtml(log.assignment_title || '—')}</td>
-            <td>${escapeHtml(log.teacher_name || '—')}</td>
-            <td><code style="font-family:'IBM Plex Mono',monospace;">${formattedDate}</code></td>
-          </tr>
-        `;
-      }).join('');
-    } else {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#666; padding:14px;">No submission logs recorded yet.</td></tr>';
-    }
-  } catch (err) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#DC2626; padding:14px;">Failed to load logs.</td></tr>';
-  }
-}
-
-// Package Task Management Modal Logic
-function openBundleManagerModal() {
-  const assignmentObj = allAssignmentsMap[activeCode];
-  if (!assignmentObj || !assignmentObj.bundle_code) {
-    alert('This assignment is not part of a multi-task package.');
-    return;
-  }
-  activeBundleCode = assignmentObj.bundle_code;
-  newSubtaskSchemeFiles = [];
-  renderNewSubtaskBadges();
-  document.getElementById('new-subtask-title').value = '';
-  document.getElementById('new-subtask-scheme-text').value = '';
-  document.getElementById('bundle-manager-modal').style.display = 'flex';
-  loadBundleManagerTasks();
-}
-
-function closeBundleManagerModal() {
-  document.getElementById('bundle-manager-modal').style.display = 'none';
-}
-
-let activeBundleCode = null;
-
-function handleNewSubtaskFiles(e) {
-  for (const f of e.target.files) newSubtaskSchemeFiles.push(f);
-  renderNewSubtaskBadges();
-  e.target.value = '';
-}
-
-function renderNewSubtaskBadges() {
-  const grid = document.getElementById('new-subtask-badges');
-  if (!grid) return;
-  grid.innerHTML = newSubtaskSchemeFiles.map((f, i) => `
-    <div class="file-chip">
-      <span>📋 ${escapeHtml(f.name)}</span>
-      <button class="file-chip-remove" onclick="newSubtaskSchemeFiles.splice(${i}, 1); renderNewSubtaskBadges();">&times;</button>
+  <div id="custom-modal-overlay"
+    style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.45); backdrop-filter:blur(3px); z-index:10005; align-items:center; justify-content:center; padding:16px;">
+    <div
+      style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:400px; width:100%; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.15);">
+      <div
+        style="font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; color:#DC2626; letter-spacing:0.08em; margin-bottom:6px;">
+        Confirm Action</div>
+      <h3 id="custom-modal-title"
+        style="margin:0 0 10px; font-size:18px; font-family:'Source Serif 4',serif; color:#16233F;">Confirm Deletion
+      </h3>
+      <p id="custom-modal-message" style="margin:0 0 20px; font-size:13.5px; color:#4A5670; line-height:1.5;"></p>
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button id="custom-modal-cancel"
+          style="background:#E3E9F6; color:#16233F; border:1px solid #C2CEE7; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Cancel</button>
+        <button id="custom-modal-confirm"
+          style="background:#DC2626; color:#fff; border:none; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Delete</button>
+      </div>
     </div>
-  `).join('');
-}
-
-async function loadBundleManagerTasks() {
-  const container = document.getElementById('bundle-tasks-list-container');
-  container.innerHTML = 'Loading tasks...';
-  try {
-    const res = await fetch(`/api/public/bundle/${activeBundleCode}`);
-    const d = await res.json();
-    if (d.success && d.tasks) {
-      container.innerHTML = d.tasks.map(t => `
-        <div style="display:flex; justify-content:space-between; align-items:center; background:#F8FAFC; border:1px solid var(--border); padding:8px 12px; border-radius:6px; gap:8px;">
-          <input 
-            type="text" 
-            id="task-rename-input-${t.code}" 
-            value="${escapeHtml(t.title)}" 
-            style="flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:5px; font-size:13px; font-weight:600; color:var(--ink); background:#fff; outline:none;" 
-            onkeydown="if(event.key==='Enter') renameSubTask('${t.code}')"
-          />
-          <div style="display:flex; gap:6px; flex-shrink:0;">
-            <button type="button" class="ghost" style="padding:5px 9px; font-size:11.5px; border-radius:5px; font-weight:600;" onclick="renameSubTask('${t.code}')">💾 Save</button>
-            <button type="button" class="ghost ghost-danger" style="padding:5px 9px; font-size:11.5px; border-radius:5px;" onclick="deleteSubTask('${t.code}')">🗑️ Delete</button>
-          </div>
-        </div>
-      `).join('');
-    }
-  } catch (err) {
-    container.innerHTML = 'Failed to load package tasks.';
-  }
-}
-
-async function renameSubTask(taskCode) {
-  const input = document.getElementById(`task-rename-input-${taskCode}`);
-  if (!input) return;
-  const newTitle = input.value.trim();
-
-  if (!newTitle) {
-    alert('Task title cannot be empty.');
-    return;
-  }
-
-  try {
-    const res = await fetch(`/api/assignments/tasks/${taskCode}/rename`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: newTitle })
-    });
-    const d = await res.json();
-
-    if (d.success) {
-      showToast(d.message || 'Task renamed successfully!');
-
-      if (allAssignmentsMap[taskCode]) {
-        allAssignmentsMap[taskCode].title = newTitle;
-      }
-
-      await loadTeacherAssignments();
-
-      const assignmentObj = allAssignmentsMap[activeCode];
-      if (assignmentObj && assignmentObj.bundle_code) {
-        const bundleRes = await fetch(`/api/public/bundle/${assignmentObj.bundle_code}`);
-        const bundleData = await bundleRes.json();
-        if (bundleData.success && bundleData.tasks) {
-          renderBundleTabs(bundleData.tasks);
-          if (taskCode === activeCode) {
-            const fullTitle = getFullActiveTitle();
-            document.getElementById('live-portal-title').textContent = `Live Submissions: ${fullTitle}`;
-            document.getElementById('portal-print-report-title').textContent = `Class Evaluation Summary: ${fullTitle}`;
-          }
-        }
-      }
-    } else {
-      alert(d.error || 'Failed to rename task.');
-    }
-  } catch (err) {
-    alert('Connection error renaming task.');
-  }
-}
-
-async function deleteSubTask(taskCode) {
-  const confirmed = await showConfirmModal('Are you sure you want to delete this task and its submissions?', 'Delete Task');
-  if (!confirmed) return;
-
-  try {
-    const res = await fetch(`/api/assignments/tasks/${taskCode}`, { method: 'DELETE' });
-    const d = await res.json();
-    if (d.success) {
-      showToast(d.message);
-      
-      await loadBundleManagerTasks();
-      await loadTeacherAssignments();
-
-      const assignmentObj = allAssignmentsMap[activeCode];
-      if (assignmentObj && assignmentObj.bundle_code) {
-        const bundleRes = await fetch(`/api/public/bundle/${assignmentObj.bundle_code}`);
-        const bundleData = await bundleRes.json();
-        if (bundleData.success && bundleData.tasks) {
-          renderBundleTabs(bundleData.tasks);
-          
-          if (taskCode === activeCode && bundleData.tasks.length > 0) {
-            switchActiveTaskTab(bundleData.tasks[0].code, bundleData.tasks[0].title);
-          }
-        }
-      }
-    } else {
-      alert(d.error || 'Failed to delete task.');
-    }
-  } catch (err) {
-    alert('Connection error deleting task.');
-  }
-}
-
-async function addNewSubTaskToBundle() {
-  const input = document.getElementById('new-subtask-title');
-  const title = input.value.trim();
-  const schemeText = document.getElementById('new-subtask-scheme-text').value.trim();
-
-  if (!title) {
-    alert('Please enter a task name.');
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append('title', title);
-  formData.append('schemeText', schemeText);
-  newSubtaskSchemeFiles.forEach(f => formData.append('scheme', f));
-
-  try {
-    const res = await fetch(`/api/assignments/bundle/${activeBundleCode}/tasks`, {
-      method: 'POST',
-      body: formData
-    });
-    const d = await res.json();
-    if (d.success) {
-      input.value = '';
-      document.getElementById('new-subtask-scheme-text').value = '';
-      newSubtaskSchemeFiles = [];
-      renderNewSubtaskBadges();
-      showToast(d.message);
-      
-      loadBundleManagerTasks();
-      loadTeacherAssignments();
-
-      const assignmentObj = allAssignmentsMap[activeCode];
-      if (assignmentObj && assignmentObj.bundle_code) {
-        const bundleRes = await fetch(`/api/public/bundle/${assignmentObj.bundle_code}`);
-        const bundleData = await bundleRes.json();
-        if (bundleData.success && bundleData.tasks) {
-          renderBundleTabs(bundleData.tasks);
-          
-          if (d.code) {
-            switchActiveTaskTab(d.code, title);
-          }
-        }
-      }
-    } else {
-      alert(d.error || 'Failed to add task.');
-    }
-  } catch (err) {
-    alert('Connection error adding task.');
-  }
-}
-
-// ==================== DELETE ASSIGNMENT LOGIC ====================
-async function deleteActiveAssignment() {
-  if (!activeCode) return;
-  const assignment = allAssignmentsMap[activeCode];
-  const title = assignment ? assignment.group_title || assignment.title : 'this assignment';
-
-  const confirmed = await showConfirmModal(
-    `Are you sure you want to permanently delete "${title}"? This will delete all student submissions, marks, and feedback associated with this form from the database.`,
-    'Delete Assignment & Submissions'
-  );
-
-  if (!confirmed) return;
-
-  try {
-    const res = await fetch(`/api/assignments/${activeCode}`, { method: 'DELETE' });
-    const d = await res.json();
-
-    if (d.success) {
-      if (livePollTimer) clearInterval(livePollTimer);
-      delete allAssignmentsMap[activeCode];
-      activeCode = '';
-      portalSubmissions = [];
-
-      document.getElementById('portal-results-card').style.display = 'none';
-      document.getElementById('generated-link-box').style.display = 'none';
-      const tabs = document.getElementById('bundle-task-tabs');
-      if (tabs) tabs.style.display = 'none';
-
-      await loadTeacherAssignments();
-      showToast(d.message || 'Assignment deleted successfully.');
-    } else {
-      alert(d.error || 'Failed to delete assignment.');
-    }
-  } catch (err) {
-    alert('Connection error deleting assignment.');
-  }
-}
-
-// ==================== DEADLINE EDITING LOGIC ====================
-function openDeadlineEditModal() {
-  if (!activeCode) return;
-  setMinDateOnly();
-
-  const assignment = allAssignmentsMap[activeCode];
-  if (assignment && assignment.deadline) {
-    try {
-      const d = new Date(assignment.deadline);
-      const pad = (n) => String(n).padStart(2, '0');
-      
-      const cairoStr = d.toLocaleString('en-US', { timeZone: 'Africa/Cairo', hour12: false });
-      const [datePart, timePart] = cairoStr.split(', ');
-      const [m, day, y] = datePart.split('/');
-      const [h24, min] = timePart.split(':');
-
-      document.getElementById('edit-date').value = `${y}-${pad(m)}-${pad(day)}`;
-
-      let hourNum = parseInt(h24, 10);
-      const ampm = hourNum >= 12 ? 'PM' : 'AM';
-      if (hourNum > 12) hourNum -= 12;
-      if (hourNum === 0) hourNum = 12;
-
-      document.getElementById('edit-hour').value = pad(hourNum);
-      document.getElementById('edit-minute').value = min;
-      document.getElementById('edit-ampm').value = ampm;
-    } catch (e) {
-      clearEditDeadlineInputs();
-    }
-  } else {
-    clearEditDeadlineInputs();
-  }
-
-  document.getElementById('deadline-edit-modal').style.display = 'flex';
-}
-
-function clearEditDeadlineInputs() {
-  document.getElementById('edit-date').value = '';
-  document.getElementById('edit-hour').value = '11';
-  document.getElementById('edit-minute').value = '59';
-  document.getElementById('edit-ampm').value = 'PM';
-}
-
-function closeDeadlineEditModal() {
-  document.getElementById('deadline-edit-modal').style.display = 'none';
-}
-
-async function saveAssignmentDeadline() {
-  if (!activeCode) return;
-  const newDeadlineIso = getIsoFrom12h('edit-date', 'edit-hour', 'edit-minute', 'edit-ampm');
-  const btn = document.getElementById('save-deadline-btn');
-
-  if (newDeadlineIso) {
-    const ddlTime = new Date(newDeadlineIso).getTime();
-    if (!isNaN(ddlTime) && ddlTime < Date.now()) {
-      alert('The deadline cannot be set to a past date or time. Please choose a future date/time.');
-      return;
-    }
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Saving...';
-
-  try {
-    const res = await fetch(`/api/assignments/${activeCode}/update-deadline`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deadline: newDeadlineIso })
-    });
-    const d = await res.json();
-
-    btn.disabled = false;
-    btn.textContent = 'Save Changes';
-
-    if (d.success) {
-      if (allAssignmentsMap[activeCode]) {
-        allAssignmentsMap[activeCode].deadline = d.deadline;
-      }
-      const formatted = formatDeadlineString(d.deadline);
-      document.getElementById('live-portal-deadline-sub').textContent = formatted;
-      
-      const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-      const studentCount = portalSubmissions ? portalSubmissions.length : 0;
-      const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
-      document.getElementById('portal-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
-      
-      closeDeadlineEditModal();
-      await loadTeacherAssignments();
-      showToast('Deadline updated successfully!');
-    } else {
-      alert(d.error || 'Failed to update deadline.');
-    }
-  } catch (err) {
-    btn.disabled = false;
-    btn.textContent = 'Save Changes';
-    alert('Connection error updating deadline.');
-  }
-}
-
-// ==================== MANUAL BATCH LOGIC ====================
-const schemeDz = document.getElementById('scheme-dz');
-const schemeFileInput = document.getElementById('scheme-file');
-const schemeBadgeGrid = document.getElementById('scheme-badge-grid');
-const schemeText = document.getElementById('scheme-text');
-
-const essayDz = document.getElementById('essay-dz');
-const essayFileInput = document.getElementById('essay-file');
-const pageFileInput = document.getElementById('page-file-input');
-const studentList = document.getElementById('student-list');
-const studentCount = document.getElementById('student-count');
-
-const markBtn = document.getElementById('mark-btn');
-const progressWrap = document.getElementById('progress-wrap');
-const progressFill = document.getElementById('progress-fill');
-const progressLabel = document.getElementById('progress-label');
-const emptyMsg = document.getElementById('empty-msg');
-const toolbar = document.getElementById('toolbar');
-const printBtn = document.getElementById('print-btn');
-const printFeedbackBtn = document.getElementById('print-feedback-btn');
-
-['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-  window.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); }, false);
-});
-['dragenter', 'dragover'].forEach(eventName => {
-  schemeDz.addEventListener(eventName, () => schemeDz.classList.add('drag'), false);
-  essayDz.addEventListener(eventName, () => essayDz.classList.add('drag'), false);
-});
-['dragleave', 'drop'].forEach(eventName => {
-  schemeDz.addEventListener(eventName, () => schemeDz.classList.remove('drag'), false);
-  essayDz.addEventListener(eventName, () => essayDz.classList.remove('drag'), false);
-});
-
-schemeDz.addEventListener('click', () => schemeFileInput.click());
-schemeDz.addEventListener('drop', e => {
-  const files = e.dataTransfer.files;
-  if (files && files.length) addSchemeFiles(files);
-});
-schemeFileInput.addEventListener('change', e => {
-  if (e.target.files && e.target.files.length) addSchemeFiles(e.target.files);
-  schemeFileInput.value = '';
-});
-
-function addSchemeFiles(fileList) {
-  for (const file of fileList) schemeFilesList.push(file);
-  renderSchemeBadges();
-}
-
-function renderSchemeBadges() {
-  schemeBadgeGrid.innerHTML = '';
-  schemeFilesList.forEach((f, idx) => {
-    const chip = document.createElement('div');
-    chip.className = 'file-chip';
-    chip.innerHTML = `
-      <span>📋 Rubric Page ${idx + 1}: ${f.name}</span>
-      <button class="file-chip-remove" onclick="removeSchemeFile(${idx})" title="Remove file">&times;</button>
-    `;
-    schemeBadgeGrid.appendChild(chip);
-  });
-}
-
-window.removeSchemeFile = function(idx) {
-  schemeFilesList.splice(idx, 1);
-  renderSchemeBadges();
-};
-
-essayDz.addEventListener('click', () => essayFileInput.click());
-essayDz.addEventListener('drop', e => {
-  const files = e.dataTransfer.files;
-  if (files && files.length) addSubmissions(files);
-});
-essayFileInput.addEventListener('change', e => {
-  if (e.target.files && e.target.files.length) addSubmissions(e.target.files);
-  essayFileInput.value = '';
-});
-
-pageFileInput.addEventListener('change', e => {
-  if (targetStudentForAddPage && e.target.files && e.target.files.length) {
-    const student = studentSubmissions.find(s => s.id === targetStudentForAddPage);
-    if (student) {
-      for (const file of e.target.files) student.pages.push(file);
-      renderStudentSubmissions();
-    }
-  }
-  pageFileInput.value = '';
-});
-
-window.addEventListener('paste', e => {
-  const activeEl = document.activeElement;
-  if (activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT')) return;
-  const files = e.clipboardData ? e.clipboardData.files : [];
-  if (files && files.length > 0) {
-    e.preventDefault();
-    addSubmissions(files);
-  }
-});
-
-function addSubmissions(fileList){
-  for (const file of fileList) {
-    if (studentSubmissions.length >= 30) break;
-    let defaultName = file.name ? file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g,' ').replace(/\b\w/g, c=>c.toUpperCase()) : '';
-    if (!defaultName || defaultName.toLowerCase() === 'image' || defaultName.toLowerCase() === 'blob') {
-      defaultName = `Student ${studentSubmissions.length + 1}`;
-    }
-    const fileObj = file.name ? file : new File([file], `${defaultName}.png`, { type: file.type || 'image/png' });
-    studentSubmissions.push({ 
-      id: crypto.randomUUID(), 
-      name: defaultName, 
-      pages: [fileObj] 
-    });
-  }
-  renderStudentSubmissions();
-}
-
-function renderStudentSubmissions(){
-  studentList.innerHTML = '';
-  studentSubmissions.forEach((sub) => {
-    const card = document.createElement('div');
-    card.className = 'student-card';
-
-    const badgesHtml = sub.pages.map((p, pIdx) => `
-      <div class="page-badge">
-        <span>📄 Page ${pIdx + 1}: ${p.name || 'Photo'}</span>
-        <button class="page-remove" onclick="removeStudentPage('${sub.id}', ${pIdx})" title="Remove page">&times;</button>
-      </div>
-    `).join('');
-
-    card.innerHTML = `
-      <div class="student-card-head">
-        <input class="student-name-input" value="${sub.name}" data-id="${sub.id}" placeholder="Student Name">
-        <button class="add-page-btn" onclick="triggerAddPage('${sub.id}')">+ Add Page / Photo</button>
-        <button class="student-remove" onclick="removeStudent('${sub.id}')" title="Delete Student">&times;</button>
-      </div>
-      <div class="page-badges">
-        ${badgesHtml}
-      </div>
-    `;
-    studentList.appendChild(card);
-  });
-
-  studentList.querySelectorAll('.student-name-input').forEach(inp => {
-    inp.addEventListener('input', e => {
-      const target = studentSubmissions.find(x => x.id === e.target.dataset.id);
-      if (target) target.name = e.target.value;
-    });
-  });
-
-  const totalPages = studentSubmissions.reduce((acc, curr) => acc + curr.pages.length, 0);
-  studentCount.textContent = studentSubmissions.length 
-    ? `${studentSubmissions.length} Student Submission(s) loaded (${totalPages} total pages/photos)` 
-    : '';
-}
-
-window.triggerAddPage = function(studentId) {
-  targetStudentForAddPage = studentId;
-  pageFileInput.click();
-};
-
-window.removeStudentPage = function(studentId, pageIdx) {
-  const student = studentSubmissions.find(s => s.id === studentId);
-  if (student) {
-    student.pages.splice(pageIdx, 1);
-    if (student.pages.length === 0) {
-      studentSubmissions = studentSubmissions.filter(s => s.id !== studentId);
-    }
-    renderStudentSubmissions();
-  }
-};
-
-window.removeStudent = function(studentId) {
-  studentSubmissions = studentSubmissions.filter(s => s.id !== studentId);
-  renderStudentSubmissions();
-};
-
-markBtn.addEventListener('click', async () => {
-  const schemeTextVal = schemeText.value.trim();
-
-  if (schemeFilesList.length === 0 && !schemeTextVal) { 
-    alert('Please add at least one marking scheme file/photo or enter extra criteria notes.'); 
-    return; 
-  }
-  if (studentSubmissions.length === 0) { 
-    alert('Add at least one student submission.'); 
-    return; 
-  }
-
-  const formData = new FormData();
-  schemeFilesList.forEach(file => formData.append('scheme', file));
-  if (schemeTextVal) formData.append('schemeText', schemeTextVal);
-
-  const meta = [];
-  studentSubmissions.forEach(sub => {
-    meta.push({ name: sub.name, fileCount: sub.pages.length });
-    sub.pages.forEach(p => formData.append('essays', p));
-  });
-
-  formData.append('submissionsMetadata', JSON.stringify(meta));
-
-  markBtn.disabled = true;
-  progressWrap.style.display = 'block';
-  progressFill.style.width = '30%';
-  progressLabel.textContent = 'Uploading rubric and student submissions...';
-  document.getElementById('results').innerHTML = '';
-  emptyMsg.style.display = 'none';
-  toolbar.style.display = 'none';
-
-  try {
-    progressFill.style.width = '60%';
-    progressLabel.textContent = 'Gemini is evaluating multi-page submissions against rubric...';
-
-    const response = await fetch('/api/mark-batch', { method: 'POST', body: formData });
-    const data = await response.json();
-
-    if (data.success) {
-      progressFill.style.width = '100%';
-      progressLabel.textContent = `Done! ${data.count} student essays marked.`;
-      manualResults = data.data;
-      renderCardsAndSummaryTable(manualResults, 'manual');
-      toolbar.style.display = 'flex';
-      showToast('Evaluation complete!');
-    } else {
-      alert(`Notice: ${data.error}`);
-    }
-  } catch (err) {
-    alert('Server connection error.');
-  } finally {
-    markBtn.disabled = false;
-  }
-});
-
-printBtn.addEventListener('click', () => {
-  if (!manualResults || manualResults.length === 0) {
-    alert('No manual batch results to print.');
-    return;
-  }
-  document.querySelectorAll('#results .result-body').forEach(b => b.classList.add('open'));
-  document.body.classList.remove('print-feedback-only');
-  document.body.classList.add('printing-manual');
-  document.body.classList.remove('printing-portal');
-  document.getElementById('print-report-title').textContent = 'Class Evaluation Summary';
-  
-  const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-  document.getElementById('manual-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${manualResults.length} Student${manualResults.length === 1 ? '' : 's'}`;
-
-  setTimeout(() => {
-    window.print();
-    setTimeout(() => {
-      document.body.classList.remove('printing-manual');
-    }, 500);
-  }, 200);
-});
-
-printFeedbackBtn.addEventListener('click', () => {
-  if (!manualResults || manualResults.length === 0) {
-    alert('No manual batch results to print.');
-    return;
-  }
-  document.querySelectorAll('#results .result-body').forEach(b => b.classList.add('open'));
-  document.body.classList.add('print-feedback-only');
-  document.body.classList.add('printing-manual');
-  document.body.classList.remove('printing-portal');
-  document.getElementById('print-report-title').textContent = 'Student Feedback & Correction Report';
-
-  const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-  document.getElementById('manual-print-report-sub').textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${manualResults.length} Student${manualResults.length === 1 ? '' : 's'}`;
-
-  setTimeout(() => {
-    window.print();
-    setTimeout(() => {
-      document.body.classList.remove('print-feedback-only');
-      document.body.classList.remove('printing-manual');
-    }, 500);
-  }, 200);
-});
-
-// Admin Modals
-function openAdminModal() {
-  document.getElementById('admin-modal').style.display = 'flex';
-  loadAdminUsers();
-}
-function closeAdminModal() {
-  document.getElementById('admin-modal').style.display = 'none';
-}
-
-async function loadAdminUsers() {
-  const tbody = document.getElementById('admin-users-list');
-  tbody.innerHTML = '<tr><td colspan="4">Loading users...</td></tr>';
-  try {
-    const res = await fetch('/api/admin/users');
-    const data = await res.json();
-    if (data.success) {
-      tbody.innerHTML = '';
-      data.users.forEach(u => {
-        const isSelf = currentUser && currentUser.id === u.id;
-        const isRoot = u.role === 'root';
-        const tr = document.createElement('tr');
-        
-        let roleBadge = `<span class="role-teacher">Teacher</span>`;
-        if (u.role === 'root') roleBadge = `<span class="role-root">👑 Root</span>`;
-        else if (u.role === 'admin') roleBadge = `<span class="role-admin">Admin</span>`;
-
-        tr.innerHTML = `
-          <td><b>${u.name}</b><br><small>${u.email}</small></td>
-          <td>${roleBadge}</td>
-          <td>
-            <span style="font-weight:600; text-transform:uppercase; font-size:11px; color:${u.status === 'approved' ? '#059669' : '#D97706'}">
-              ${u.status}
-            </span>
-          </td>
-          <td>
-            ${!isRoot && u.status !== 'approved' ? `<button class="btn-approve" onclick="setUserStatus(${u.id}, 'approved')">Approve</button>` : ''}
-            ${!isRoot && u.status === 'approved' && u.role !== 'admin' ? `<button class="btn-reject" onclick="setUserStatus(${u.id}, 'rejected')">Revoke</button>` : ''}
-            <button class="admin-btn" style="padding:3px 7px; font-size:11px; font-weight:600;" onclick="openAdminResetModal(${u.id}, '${escapeHtml(u.email).replace(/'/g, "\\'")}')">🔑 Set Password</button>
-            ${!isRoot && !isSelf ? (u.role === 'admin' 
-           ? `<button class="admin-btn" style="padding:3px 7px; font-size:11px;" onclick="toggleUserRole(${u.id}, 'teacher')">Demote</button>` 
-            : `<button class="admin-btn" style="padding:3px 7px; font-size:11px;" onclick="toggleUserRole(${u.id}, 'admin')">Make Admin</button>`
-            ) : ''}
-            ${!isRoot && !isSelf ? `<button class="btn-delete" onclick="deleteUser(${u.id}, '${escapeHtml(u.email).replace(/'/g, "\\'")}')">Delete</button>` : ''}
-          </td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-  } catch(e) {
-    tbody.innerHTML = '<tr><td colspan="4">Error loading users.</td></tr>';
-  }
-}
-
-function openAdminResetModal(userId, email) {
-  activeResetUserId = userId;
-  activeResetUserEmail = email;
-  document.getElementById('reset-modal-target-email').textContent = email;
-  const input = document.getElementById('admin-temp-pass-input');
-  input.value = 'EduPlanet' + Math.floor(100 + Math.random() * 900) + '!';
-  
-  const msgEl = document.getElementById('admin-reset-modal-msg');
-  msgEl.style.display = 'none';
-  document.getElementById('admin-reset-modal').style.display = 'flex';
-}
-
-function closeAdminResetModal() {
-  document.getElementById('admin-reset-modal').style.display = 'none';
-  activeResetUserId = null;
-  activeResetUserEmail = '';
-}
-
-function generateRandomAdminPass() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
-  let result = 'Edu';
-  for (let i = 0; i < 6; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
-  result += '!';
-  document.getElementById('admin-temp-pass-input').value = result;
-}
-
-async function executeAdminPasswordReset() {
-  const input = document.getElementById('admin-temp-pass-input');
-  const msgEl = document.getElementById('admin-reset-modal-msg');
-  const btn = document.getElementById('admin-confirm-reset-btn');
-  const newPass = input.value.trim();
-
-  if (newPass.length < 8) {
-    msgEl.style.display = 'block';
-    msgEl.style.background = '#FDE8E8';
-    msgEl.style.color = '#9B1C1C';
-    msgEl.textContent = 'Password must be at least 8 characters long.';
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Saving...';
-
-  try {
-    const res = await fetch(`/api/admin/users/${activeResetUserId}/reset-password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ newPassword: newPass })
-    });
-    const data = await res.json();
-
-    btn.disabled = false;
-    btn.textContent = 'Save & Update';
-
-    if (data.success) {
-      navigator.clipboard.writeText(newPass);
-      showToast(`Password updated and copied: ${newPass}`);
-      closeAdminResetModal();
-    } else {
-      msgEl.style.display = 'block';
-      msgEl.style.background = '#FDE8E8';
-      msgEl.style.color = '#9B1C1C';
-      msgEl.textContent = data.error || 'Failed to update password.';
-    }
-  } catch (err) {
-    btn.disabled = false;
-    btn.textContent = 'Save & Update';
-    msgEl.style.display = 'block';
-    msgEl.style.background = '#FDE8E8';
-    msgEl.style.color = '#9B1C1C';
-    msgEl.textContent = 'Connection error updating password.';
-  }
-}
-
-async function setUserStatus(userId, status) {
-  const res = await fetch(`/api/admin/users/${userId}/status`, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ status })
-  });
-  const data = await res.json();
-  if (!data.success) {
-    alert(data.error || 'Action failed.');
-  } else {
-    showToast(data.message || `Account updated to ${status}.`);
-  }
-  loadAdminUsers();
-}
-
-async function toggleUserRole(userId, newRole) {
-  try {
-    const res = await fetch(`/api/admin/users/${userId}/role`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: newRole })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast(data.message || `User role changed to ${newRole}.`);
-      loadAdminUsers();
-    } else {
-      alert(data.error || 'Failed to update user role.');
-    }
-  } catch (err) {
-    alert('Connection error updating user role.');
-  }
-}
-
-async function deleteUser(userId, userEmail) {
-  const confirmed = await showConfirmModal(`Are you sure you want to permanently delete the account for ${userEmail}?`, 'Delete Account');
-  if (!confirmed) return;
-
-  try {
-    const res = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (data.success) {
-      showToast(`User ${userEmail} has been deleted successfully.`);
-      loadAdminUsers();
-    } else {
-      alert(data.error || 'Failed to delete account.');
-    }
-  } catch (err) {
-    alert('Connection error deleting user.');
-  }
-}
-
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-</script>
+  </div>
+
+  <div id="custom-toast"
+    style="display:none; position:fixed; bottom:24px; right:24px; background:#064E3B; color:#ECFDF5; border:1px solid #059669; padding:12px 18px; border-radius:8px; font-size:13.5px; font-weight:500; box-shadow:0 6px 20px rgba(0,0,0,0.18); z-index:10006; align-items:center; gap:8px;">
+    <span style="font-size:16px;">✓</span>
+    <span id="custom-toast-text">Action completed successfully.</span>
+  </div>
+
+  <script src="shared.js"></script>
+  <script src="dashboard.js"></script>
+  <script src="assignments.js"></script>
+  <script src="submissions.js"></script>
+  <script src="admin.js"></script>
 </body>
+
 </html>

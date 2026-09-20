@@ -172,6 +172,8 @@ async function initDatabase() {
         ai_score INTEGER DEFAULT 0,
         ai_details TEXT,
         web_score INTEGER DEFAULT 0,
+        ip_address TEXT,
+        possible_duplicate INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (assignment_id) REFERENCES assignments(id)
       );
@@ -198,7 +200,9 @@ async function initDatabase() {
       'ALTER TABLE submissions ADD COLUMN similarity_details TEXT;',
       'ALTER TABLE submissions ADD COLUMN ai_score INTEGER DEFAULT 0;',
       'ALTER TABLE submissions ADD COLUMN ai_details TEXT;',
-      'ALTER TABLE submissions ADD COLUMN web_score INTEGER DEFAULT 0;'
+      'ALTER TABLE submissions ADD COLUMN web_score INTEGER DEFAULT 0;',
+      'ALTER TABLE submissions ADD COLUMN ip_address TEXT;',
+      'ALTER TABLE submissions ADD COLUMN possible_duplicate INTEGER DEFAULT 0;'
     ];
 
     for (const sql of autoMigrations) {
@@ -213,7 +217,9 @@ async function initDatabase() {
 }
 initDatabase();
 
-// Auto-purges past assignments and student submissions 48 hours after deadline expiration
+// ----------------- ASSIGNMENT CLEANUP LIFECYCLE -----------------
+// 2-day grace period gives teachers time to review scores and handle dispute edge cases before permanent deletion.
+// Hourly schedule balances timely disk/DB reclamation against avoiding unnecessary database connection overhead.
 async function cleanExpiredAssignments() {
   try {
     const assignmentsRes = await db.execute('SELECT id, deadline FROM assignments WHERE deadline IS NOT NULL');
@@ -252,7 +258,9 @@ const upload = multer({
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Verifies JWT credentials and ensures DB role permissions match root/admin configuration
+// ----------------- AUTHENTICATION & ACCESS CONTROL -----------------
+// Verifies JWT signature from cookie/header, loads fresh DB user state, and enforces active authorization.
+// Auto-promotes configured ROOT_EMAIL and ADMIN_EMAILS so designated admins retain elevated privileges across redeploys.
 async function authenticateToken(req, res, next) {
   const token = req.cookies.halo_token || (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
 
@@ -282,6 +290,7 @@ async function authenticateToken(req, res, next) {
       role: dbUser.role
     };
 
+    // Auto-promotes users matching ROOT_EMAIL / ADMIN_EMAILS to maintain authority without requiring manual DB interventions
     if (isRootUser(userObj.email) && userObj.role !== 'root') {
       await db.execute({ sql: "UPDATE users SET role = 'root', status = 'approved' WHERE id = ?", args: [userObj.id] });
       userObj.role = 'root';
@@ -388,7 +397,9 @@ function calculateTextSimilarity(text1, text2) {
   return { score, sharedPhrases: shared };
 }
 
-// Calls Gemini with multi-model fallback and transient error retries
+// ----------------- GEMINI AI EVALUATION ENGINE -----------------
+// Falls back from gemini-2.5-flash (higher quality/speed) to gemini-1.5-flash to prevent outages if the primary model degrades.
+// Retries only on transient capacity/rate errors (500, 503, high demand, quota) where backoff helps, skipping non-recoverable 4xx errors.
 async function callGemini(inputPayload) {
   const models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
   let lastErr;
@@ -928,9 +939,10 @@ app.get('/api/assignments', authenticateToken, requireApprovedUser, async (req, 
 app.get('/api/assignments/:code/submissions', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const { code } = req.params;
+    const isElevated = ['root', 'admin'].includes(req.user.role);
     const assignResult = await db.execute({
-      sql: 'SELECT id, title, deadline FROM assignments WHERE code = ? AND teacher_id = ?',
-      args: [code, req.user.id]
+      sql: 'SELECT id, title, deadline FROM assignments WHERE code = ?' + (isElevated ? '' : ' AND teacher_id = ?'),
+      args: isElevated ? [code] : [code, req.user.id]
     });
 
     const assignment = assignResult.rows[0];
@@ -938,7 +950,8 @@ app.get('/api/assignments/:code/submissions', authenticateToken, requireApproved
 
     const subsResult = await db.execute({
       sql: `SELECT id, student_name as name, student_name, teacher_name, page_count as pageCount, total_score, 
-            category_breakdown, mistakes, weaknesses, similarity_score, similarity_details, ai_score, ai_details, web_score, created_at 
+            category_breakdown, mistakes, weaknesses, similarity_score, similarity_details, ai_score, ai_details, web_score, 
+            possible_duplicate, ip_address, created_at 
             FROM submissions WHERE assignment_id = ? ORDER BY id ASC`,
       args: [assignment.id]
     });
@@ -1032,6 +1045,72 @@ app.delete('/api/assignments/:code/submissions/:submissionId', authenticateToken
   }
 });
 
+// PATCH update student submission feedback, scores, or student name
+app.patch('/api/assignments/:code/submissions/:submissionId', authenticateToken, requireApprovedUser, async (req, res) => {
+  const { code, submissionId } = req.params;
+  const numId = parseInt(submissionId, 10);
+
+  if (isNaN(numId) || numId <= 0) {
+    return res.status(400).json({ success: false, error: 'Invalid submission ID format. Numeric ID is required.' });
+  }
+
+  try {
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+
+    const assignResult = await db.execute({
+      sql: 'SELECT id FROM assignments WHERE code = ?' + (isElevated ? '' : ' AND teacher_id = ?'),
+      args: isElevated ? [code] : [code, req.user.id]
+    });
+
+    if (!assignResult.rows || assignResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Assignment not found or unauthorized.' });
+    }
+
+    const assignmentId = assignResult.rows[0].id;
+
+    const subCheck = await db.execute({
+      sql: 'SELECT id FROM submissions WHERE assignment_id = ? AND id = ?',
+      args: [assignmentId, numId]
+    });
+
+    if (!subCheck.rows || subCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Submission record not found for this assignment.' });
+    }
+
+    const updates = [];
+    const args = [];
+
+    const nameVal = req.body.student_name !== undefined ? req.body.student_name : req.body.name;
+    if (nameVal !== undefined) {
+      updates.push('student_name = ?');
+      args.push(String(nameVal).trim());
+    }
+
+    for (const field of ['total_score', 'category_breakdown', 'mistakes', 'weaknesses']) {
+      if (req.body[field] !== undefined) {
+        updates.push(`${field} = ?`);
+        args.push(String(req.body[field]).trim());
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid update fields provided.' });
+    }
+
+    args.push(numId);
+    await db.execute({
+      sql: `UPDATE submissions SET ${updates.join(', ')} WHERE id = ?`,
+      args
+    });
+
+    return res.json({ success: true, message: 'Submission updated successfully.' });
+  } catch (err) {
+    console.error('Error updating submission by ID:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update submission.' });
+  }
+});
+
+
 app.get('/api/assignments/:code/logs', authenticateToken, requireApprovedUser, async (req, res) => {
   const { code } = req.params;
   try {
@@ -1122,6 +1201,7 @@ app.post(
       const { code } = req.params;
       const studentNameInput = (req.body.studentName || '').trim();
       const deviceIdInput = (req.body.deviceId || '').trim();
+      const clientIp = getClientIp(req);
 
       if (!studentNameInput) {
         return res.status(400).json({ error: 'Please provide your full name before submitting.' });
@@ -1260,18 +1340,18 @@ Respond ONLY with valid JSON matching the schema.`;
         }
       }
 
-      // Check for concurrent device/network submission bursts (5-minute soft audit flag)
-      const recentAuditCheck = await db.execute({
-        sql: `SELECT student_name FROM submissions 
-              WHERE assignment_id = ? 
-                AND (device_id = ? OR created_at >= datetime('now', '-5 minutes'))
-              LIMIT 1`,
-        args: [assignment.id, deviceIdInput || '']
-      });
-
-      if (recentAuditCheck.rows.length > 0) {
-        const priorName = recentAuditCheck.rows[0].student_name;
-        similarityDetails += ` | Audit Note: Recent network/device submission detected (${priorName}).`;
+      // Secondary duplicate check: flag if another submission for the same assignment and IP occurred within the last 10 minutes
+      let isPossibleDuplicate = false;
+      if (clientIp && clientIp !== 'unknown') {
+        const dupCheck = await db.execute({
+          sql: `SELECT id FROM submissions 
+                WHERE assignment_id = ? 
+                  AND ip_address = ? 
+                  AND created_at >= datetime('now', '-10 minutes') 
+                LIMIT 1`,
+          args: [assignment.id, clientIp]
+        });
+        isPossibleDuplicate = dupCheck.rows && dupCheck.rows.length > 0;
       }
 
       const finalName = studentNameInput || parsedFeedback.student_name || 'Student';
@@ -1279,13 +1359,15 @@ Respond ONLY with valid JSON matching the schema.`;
 
       await db.execute({
         sql: `INSERT INTO submissions 
-              (assignment_id, student_name, teacher_name, device_id, essay_text, page_count, total_score, category_breakdown, mistakes, weaknesses, similarity_score, similarity_details, ai_score, ai_details, web_score)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              (assignment_id, student_name, teacher_name, device_id, ip_address, possible_duplicate, essay_text, page_count, total_score, category_breakdown, mistakes, weaknesses, similarity_score, similarity_details, ai_score, ai_details, web_score)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           assignment.id,
           finalName,
           teacherName,
           deviceIdInput || null,
+          clientIp || null,
+          isPossibleDuplicate ? 1 : 0,
           parsedFeedback.extracted_essay || '',
           files.length,
           parsedFeedback.total_score || '—',
@@ -1313,7 +1395,8 @@ Respond ONLY with valid JSON matching the schema.`;
       return res.json({
         success: true,
         message: 'Your work has been received and evaluated successfully!',
-        studentName: finalName
+        studentName: finalName,
+        possible_duplicate: isPossibleDuplicate
       });
     } catch (err) {
       console.error('Student Upload Error:', err);
