@@ -945,6 +945,16 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
   const summaryTbody = document.getElementById(modePrefix === 'portal' ? 'portal-summary-table-body' : 'summary-table-body');
   const resultsContainer = document.getElementById(modePrefix === 'portal' ? 'portal-results-list' : 'results');
 
+  // 1. Remember which student cards are currently expanded before clearing the DOM
+  const openCardIndices = new Set();
+  resultsContainer.querySelectorAll('.result-body.open').forEach(el => {
+    const card = el.closest('.result-card');
+    const head = card ? card.querySelector('.result-head') : null;
+    if (head && head.dataset.idx !== undefined) {
+      openCardIndices.add(head.dataset.idx);
+    }
+  });
+
   summaryTbody.innerHTML = '';
   resultsContainer.innerHTML = '';
 
@@ -989,6 +999,9 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
     `;
     summaryTbody.appendChild(tr);
 
+    // 2. Restore open state if this card was previously expanded
+    const isOpen = openCardIndices.has(String(idx));
+
     const card = document.createElement('div');
     card.className = 'result-card';
     card.innerHTML = `
@@ -1001,7 +1014,7 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
         </div>
         <div class="result-score card-score-text" id="${modePrefix}-card-score-${idx}">${totalScoreVal}</div>
       </div>
-      <div class="result-body" id="${modePrefix}-body-${idx}">
+      <div class="result-body ${isOpen ? 'open' : ''}" id="${modePrefix}-body-${idx}">
         <div class="result-body-inner">
           <div class="fb-section fb-integrity-box no-print" style="background:#F8FAFC; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:14px;">
             <div class="fb-label">🛡️ Academic Integrity & Similarity Audit <span class="edit-hint">(Visible to Teacher Only)</span></div>
@@ -1085,7 +1098,8 @@ function renderCardsAndSummaryTable(dataList, modePrefix = 'portal') {
     head.addEventListener('click', () => {
       const idx = head.dataset.idx;
       const mode = head.dataset.mode;
-      document.getElementById(`${mode}-body-${idx}`).classList.toggle('open');
+      const body = document.getElementById(`${mode}-body-${idx}`);
+      if (body) body.classList.toggle('open');
     });
   });
 }
