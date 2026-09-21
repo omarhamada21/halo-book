@@ -398,10 +398,10 @@ function calculateTextSimilarity(text1, text2) {
 }
 
 // ----------------- GEMINI AI EVALUATION ENGINE -----------------
-// Falls back from gemini-2.5-flash (higher quality/speed) to gemini-1.5-flash to prevent outages if the primary model degrades.
+// Falls back from gemini-3.6-flash (primary, high speed & quality) to gemini-3.5-flash to prevent outages if the primary model degrades.
 // Retries only on transient capacity/rate errors (500, 503, high demand, quota) where backoff helps, skipping non-recoverable 4xx errors.
 async function callGemini(inputPayload) {
-  const models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+  const models = ['gemini-3.6-flash', 'gemini-3.5-flash'];
   let lastErr;
 
   for (const modelName of models) {
