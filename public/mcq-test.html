@@ -58,6 +58,20 @@
   .plays-locked {
     background: #FEE2E2 !important; color: #991B1B !important; border: 1px solid #FCA5A5;
   }
+  .btn-start-audio {
+    width: 100%; background: var(--pen); color: #fff; border: none; border-radius: 8px;
+    padding: 13px 18px; font-size: 14.5px; font-weight: 600; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: all 0.2s; margin-top: 6px; outline: none; font-family: 'Inter', sans-serif;
+  }
+  .btn-start-audio:hover:not(:disabled) { background: #122544; }
+  .btn-start-audio:disabled { opacity: 0.75; cursor: not-allowed; background: #4A5670; }
+  .audio-toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #1F2937; color: #F9FAFB; padding: 10px 18px; border-radius: 8px;
+    font-size: 13px; font-weight: 500; box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    z-index: 9999; display: none;
+  }
 
   /* Question Cards */
   .q-card {
@@ -132,13 +146,18 @@
     <div class="deadline-box" id="deadline-box" style="display: none;"></div>
 
     <!-- AUDIO PLAYER BOX (Conditional) -->
-    <div class="audio-box" id="mcq-audio-box" style="display: none;">
+    <div class="audio-box" id="mcq-audio-box" style="display: none;" oncontextmenu="return false;">
       <div class="audio-head">
         <span class="audio-title">🎧 Listening Audio Track</span>
         <span class="plays-badge" id="audio-plays-notice" style="display: none;"></span>
       </div>
-      <audio id="mcq-audio-player" controls preload="metadata" style="width: 100%; height: 40px; margin-top: 6px; outline: none;"></audio>
-      <div id="audio-locked-msg" style="display: none; color: #991B1B; font-size: 12px; font-weight: 600; margin-top: 6px;"></div>
+      <button type="button" id="btn-start-audio" class="btn-start-audio" onclick="startAudioTrack()">▶ Play Audio Exam Track</button>
+      <div id="audio-progress-bar-wrap" style="display: none; width: 100%; height: 6px; background: var(--pen-soft); border-radius: 3px; overflow: hidden; margin-top: 10px;">
+        <div id="audio-progress-bar" style="width: 0%; height: 100%; background: var(--pen); transition: width 0.25s linear;"></div>
+      </div>
+      <div id="audio-time-display" style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--ink-soft); margin-top: 6px; text-align: center; display: none;">0:00 / 0:00</div>
+      <audio id="mcq-audio-player" controls controlsList="nodownload noplaybackrate" oncontextmenu="return false;" preload="metadata" style="display: none;"></audio>
+      <div id="audio-locked-msg" style="display: none; color: #991B1B; font-size: 12px; font-weight: 600; margin-top: 8px;"></div>
     </div>
   </div>
 
@@ -292,33 +311,98 @@
     }
   }
 
+  let audioToastTimeout = null;
+  function showAudioToast(msg) {
+    let toast = document.getElementById('audio-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'audio-toast';
+      toast.className = 'audio-toast';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.display = 'block';
+    if (audioToastTimeout) clearTimeout(audioToastTimeout);
+    audioToastTimeout = setTimeout(() => {
+      toast.style.display = 'none';
+    }, 2500);
+  }
+
   function setupAudioPlayer(audioUrl) {
     const audioBox = document.getElementById('mcq-audio-box');
     const audioPlayer = document.getElementById('mcq-audio-player');
+    const btnStart = document.getElementById('btn-start-audio');
     const noticeEl = document.getElementById('audio-plays-notice');
     const lockedMsg = document.getElementById('audio-locked-msg');
+    const progressWrap = document.getElementById('audio-progress-bar-wrap');
+    const progressBar = document.getElementById('audio-progress-bar');
+    const timeDisplay = document.getElementById('audio-time-display');
 
     audioPlayer.src = audioUrl;
     audioBox.style.display = 'block';
+
+    // Security: Prevent context menu on audio container
+    audioBox.addEventListener('contextmenu', (e) => e.preventDefault());
 
     if (maxPlaysLimit > 0) {
       noticeEl.style.display = 'inline-block';
       noticeEl.textContent = `Plays: 0 of ${maxPlaysLimit}`;
     }
 
+    if (btnStart) {
+      btnStart.disabled = false;
+      btnStart.innerHTML = '▶ Play Audio Exam Track';
+    }
+
+    // Enforce Continuous Playback (Disable Pausing)
+    audioPlayer.addEventListener('pause', () => {
+      if (!audioPlayer.ended && audioPlayer.currentTime > 0) {
+        audioPlayer.play().catch(() => {});
+        showAudioToast('⚠️ Exam audio cannot be paused once started.');
+      }
+    });
+
+    audioPlayer.addEventListener('timeupdate', () => {
+      if (audioPlayer.duration && progressWrap && progressBar && timeDisplay) {
+        progressWrap.style.display = 'block';
+        timeDisplay.style.display = 'block';
+        const pct = (audioPlayer.currentTime / audioPlayer.duration) * 100;
+        progressBar.style.width = `${pct}%`;
+        const curMin = Math.floor(audioPlayer.currentTime / 60);
+        const curSec = Math.floor(audioPlayer.currentTime % 60);
+        const durMin = Math.floor(audioPlayer.duration / 60);
+        const durSec = Math.floor(audioPlayer.duration % 60);
+        timeDisplay.textContent = `${curMin}:${curSec < 10 ? '0' : ''}${curSec} / ${durMin}:${durSec < 10 ? '0' : ''}${durSec}`;
+      }
+    });
+
     audioPlayer.addEventListener('ended', () => {
       playCount += 1;
+      if (progressWrap) progressWrap.style.display = 'none';
+      if (timeDisplay) timeDisplay.style.display = 'none';
+
       if (maxPlaysLimit > 0) {
         noticeEl.textContent = `Plays: ${playCount} of ${maxPlaysLimit}`;
         if (playCount >= maxPlaysLimit) {
-          audioPlayer.pause();
-          audioPlayer.removeAttribute('controls');
-          audioPlayer.style.pointerEvents = 'none';
-          audioPlayer.style.opacity = '0.5';
+          if (btnStart) {
+            btnStart.disabled = true;
+            btnStart.innerHTML = `⛔ Maximum Plays Reached (${maxPlaysLimit}/${maxPlaysLimit})`;
+          }
           noticeEl.className = 'plays-badge plays-locked';
           noticeEl.textContent = `Plays: ${playCount} of ${maxPlaysLimit} (Locked)`;
           lockedMsg.style.display = 'block';
           lockedMsg.textContent = `⛔ Maximum plays reached (${maxPlaysLimit}/${maxPlaysLimit}). Audio playback is now locked.`;
+          return;
+        } else {
+          if (btnStart) {
+            btnStart.disabled = false;
+            btnStart.innerHTML = `▶ Play Audio Exam Track (Play ${playCount + 1} of ${maxPlaysLimit})`;
+          }
+        }
+      } else {
+        if (btnStart) {
+          btnStart.disabled = false;
+          btnStart.innerHTML = '▶ Play Audio Exam Track Again';
         }
       }
     });
@@ -333,10 +417,32 @@
           const curTime = audioPlayer.currentTime || 0;
           audioPlayer.src = refData.audioUrl;
           audioPlayer.currentTime = curTime;
+          audioPlayer.play().catch(() => {});
         }
       } catch (e) {
         console.warn('Audio refresh failed:', e);
       }
+    });
+  }
+
+  function startAudioTrack() {
+    const audioPlayer = document.getElementById('mcq-audio-player');
+    const btnStart = document.getElementById('btn-start-audio');
+    if (!audioPlayer) return;
+
+    if (maxPlaysLimit > 0 && playCount >= maxPlaysLimit) {
+      alert('Maximum audio plays reached.');
+      return;
+    }
+
+    audioPlayer.play().then(() => {
+      if (btnStart) {
+        btnStart.disabled = true;
+        btnStart.innerHTML = '🎧 Audio Playing... (Do not close or reload)';
+      }
+    }).catch((err) => {
+      console.error('Audio play error:', err);
+      alert('Could not start audio playback. Please check your browser audio permissions.');
     });
   }
 
