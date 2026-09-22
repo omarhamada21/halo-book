@@ -344,14 +344,60 @@
     // Security: Prevent context menu on audio container
     audioBox.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    if (maxPlaysLimit > 0) {
-      noticeEl.style.display = 'inline-block';
-      noticeEl.textContent = `Plays: 0 of ${maxPlaysLimit}`;
-    }
+    // 1. Check persistent Audio Play State in localStorage (Anti-Cheat)
+    const storageKey = 'mcq_audio_state_' + testCode;
+    let audioState = { playCount: 0, hasStarted: false, isLocked: false };
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) audioState = JSON.parse(raw);
+    } catch (_) {}
 
-    if (btnStart) {
-      btnStart.disabled = false;
-      btnStart.innerHTML = '▶ Play Audio Exam Track';
+    if (maxPlaysLimit > 0) {
+      // If student refreshed/reloaded page mid-playback, penalize attempt immediately
+      if (audioState.hasStarted) {
+        audioState.playCount = (audioState.playCount || 0) + 1;
+        audioState.hasStarted = false;
+        if (audioState.playCount >= maxPlaysLimit) {
+          audioState.isLocked = true;
+        }
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(audioState));
+        } catch (_) {}
+      }
+
+      playCount = audioState.playCount || 0;
+
+      if (playCount >= maxPlaysLimit || audioState.isLocked) {
+        btnStart.disabled = true;
+        btnStart.textContent = '🔒 Audio limit reached (' + maxPlaysLimit + '/' + maxPlaysLimit + ' plays used)';
+        if (noticeEl) {
+          noticeEl.style.display = 'inline-block';
+          noticeEl.className = 'plays-badge plays-locked';
+          noticeEl.textContent = `Plays: ${maxPlaysLimit} of ${maxPlaysLimit} (Locked)`;
+        }
+        if (lockedMsg) {
+          lockedMsg.style.display = 'block';
+          lockedMsg.textContent = 'Maximum plays reached. Playback is locked.';
+        }
+        return;
+      }
+
+      noticeEl.style.display = 'inline-block';
+      noticeEl.textContent = `Plays: ${playCount} of ${maxPlaysLimit}`;
+
+      if (btnStart) {
+        btnStart.disabled = false;
+        if (playCount > 0) {
+          btnStart.innerHTML = `▶ Play Audio Exam Track (Play ${playCount + 1} of ${maxPlaysLimit})`;
+        } else {
+          btnStart.innerHTML = '▶ Play Audio Exam Track';
+        }
+      }
+    } else {
+      if (btnStart) {
+        btnStart.disabled = false;
+        btnStart.innerHTML = '▶ Play Audio Exam Track';
+      }
     }
 
     // Enforce Continuous Playback (Disable Pausing)
@@ -382,22 +428,32 @@
       if (timeDisplay) timeDisplay.style.display = 'none';
 
       if (maxPlaysLimit > 0) {
-        noticeEl.textContent = `Plays: ${playCount} of ${maxPlaysLimit}`;
-        if (playCount >= maxPlaysLimit) {
+        const isLocked = playCount >= maxPlaysLimit;
+        const s = {
+          playCount: playCount,
+          hasStarted: false,
+          isLocked: isLocked
+        };
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(s));
+        } catch (_) {}
+
+        if (isLocked) {
           if (btnStart) {
             btnStart.disabled = true;
-            btnStart.innerHTML = `⛔ Maximum Plays Reached (${maxPlaysLimit}/${maxPlaysLimit})`;
+            btnStart.textContent = '🔒 Audio limit reached (' + maxPlaysLimit + '/' + maxPlaysLimit + ' plays used)';
           }
           noticeEl.className = 'plays-badge plays-locked';
-          noticeEl.textContent = `Plays: ${playCount} of ${maxPlaysLimit} (Locked)`;
+          noticeEl.textContent = `Plays: ${maxPlaysLimit} of ${maxPlaysLimit} (Locked)`;
           lockedMsg.style.display = 'block';
-          lockedMsg.textContent = `⛔ Maximum plays reached (${maxPlaysLimit}/${maxPlaysLimit}). Audio playback is now locked.`;
+          lockedMsg.textContent = 'Maximum plays reached. Playback is locked.';
           return;
         } else {
           if (btnStart) {
             btnStart.disabled = false;
             btnStart.innerHTML = `▶ Play Audio Exam Track (Play ${playCount + 1} of ${maxPlaysLimit})`;
           }
+          noticeEl.textContent = `Plays: ${playCount} of ${maxPlaysLimit}`;
         }
       } else {
         if (btnStart) {
@@ -435,6 +491,18 @@
       return;
     }
 
+    const storageKey = 'mcq_audio_state_' + testCode;
+    if (maxPlaysLimit > 0) {
+      try {
+        let s = { playCount: playCount, hasStarted: true, isLocked: false };
+        const raw = localStorage.getItem(storageKey);
+        if (raw) s = { ...s, ...JSON.parse(raw) };
+        s.hasStarted = true;
+        s.playCount = playCount;
+        localStorage.setItem(storageKey, JSON.stringify(s));
+      } catch (_) {}
+    }
+
     audioPlayer.play().then(() => {
       if (btnStart) {
         btnStart.disabled = true;
@@ -442,11 +510,18 @@
       }
     }).catch((err) => {
       console.error('Audio play error:', err);
+      if (maxPlaysLimit > 0) {
+        try {
+          let s = JSON.parse(localStorage.getItem(storageKey) || '{}');
+          s.hasStarted = false;
+          localStorage.setItem(storageKey, JSON.stringify(s));
+        } catch (_) {}
+      }
       alert('Could not start audio playback. Please check your browser audio permissions.');
     });
   }
 
-  const optionLetters = ['A', 'B', 'C', 'D'];
+  const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 
   function renderStudentQuestions() {
     const container = document.getElementById('mcq-questions-container');
@@ -458,19 +533,47 @@
     }
 
     container.innerHTML = mcqQuestions.map((q, idx) => {
+      const qType = q.question_type || 'mcq';
       const opts = Array.isArray(q.options) ? q.options : [];
-      return `
-        <div class="q-card" id="q-card-${q.id}">
-          <div class="q-header">
-            <span class="q-number">Question ${idx + 1} of ${mcqQuestions.length}</span>
+
+      let badgeHtml = '';
+      if (qType === 'fill_blank') {
+        badgeHtml = '<span class="tag" style="margin: 0; font-size: 10px; color: var(--pen); background: var(--pen-soft); padding: 2px 7px; border-radius: 4px;">✏️ Fill in the Blank</span>';
+      } else if (qType === 'matching') {
+        badgeHtml = '<span class="tag" style="margin: 0; font-size: 10px; color: #5B21B6; background: #EDE9FE; padding: 2px 7px; border-radius: 4px;">🔀 Matching</span>';
+      }
+
+      let contentHtml = '';
+      if (qType === 'fill_blank') {
+        contentHtml = `
+          <div style="margin-top: 10px;">
+            <input type="text" class="fill-blank-input" id="q-input-${q.id}" name="question_${q.id}"
+              placeholder="Type answer here..." autocomplete="off"
+              style="width: 100%; padding: 12px 14px; font-size: 14px; border: 1px solid var(--border); border-radius: 8px; outline: none; font-family: 'Inter', sans-serif;" />
           </div>
-          <div class="q-prompt">${escapeHtml(q.question_text || '')}</div>
+        `;
+      } else if (qType === 'matching') {
+        contentHtml = `
+          <div style="margin-top: 10px;">
+            <select name="question_${q.id}" id="q-select-${q.id}" class="matching-select"
+              style="width: 100%; padding: 12px 14px; font-size: 14px; border: 1px solid var(--border); border-radius: 8px; outline: none; background: #fff; font-family: 'Inter', sans-serif; cursor: pointer;">
+              <option value="">-- Choose matching statement --</option>
+              ${opts.map((opt, i) => {
+                const letter = optionLetters[i] || String(i + 1);
+                return `<option value="${i}">${letter}. ${escapeHtml(opt)}</option>`;
+              }).join('')}
+            </select>
+          </div>
+        `;
+      } else {
+        // 'mcq'
+        contentHtml = `
           <div class="options-list">
             ${opts.map((optText, optIdx) => {
               const letter = optionLetters[optIdx] || String(optIdx + 1);
               return `
                 <div class="opt-choice" id="opt-choice-${q.id}-${optIdx}" onclick="selectStudentOption(${q.id}, ${optIdx})">
-                  <input type="radio" name="q_${q.id}" id="opt-radio-${q.id}-${optIdx}" value="${optIdx}" class="opt-radio"
+                  <input type="radio" name="question_${q.id}" id="opt-radio-${q.id}-${optIdx}" value="${optIdx}" class="opt-radio"
                     onclick="event.stopPropagation(); selectStudentOption(${q.id}, ${optIdx});" />
                   <span class="opt-letter">${letter}.</span>
                   <span class="opt-text">${escapeHtml(optText)}</span>
@@ -478,6 +581,17 @@
               `;
             }).join('')}
           </div>
+        `;
+      }
+
+      return `
+        <div class="q-card" id="q-card-${q.id}">
+          <div class="q-header">
+            <span class="q-number">Question ${idx + 1} of ${mcqQuestions.length}</span>
+            ${badgeHtml}
+          </div>
+          <div class="q-prompt">${escapeHtml(q.question_text || '')}</div>
+          ${contentHtml}
         </div>
       `;
     }).join('');
@@ -511,23 +625,44 @@
       return;
     }
 
-    // Collect answers
+    // Collect answers across mcq, matching, and fill_blank
     const answers = {};
     let unansweredCount = 0;
 
     for (const q of mcqQuestions) {
-      const radios = document.getElementsByName(`q_${q.id}`);
-      let chosen = -1;
-      for (let r = 0; r < radios.length; r++) {
-        if (radios[r].checked) {
-          chosen = parseInt(radios[r].value, 10);
-          break;
+      const qType = q.question_type || 'mcq';
+
+      if (qType === 'fill_blank') {
+        const inp = document.getElementById(`q-input-${q.id}`) || document.querySelector(`input[name="question_${q.id}"]`);
+        const val = (inp?.value || '').trim();
+        if (val) {
+          answers[q.id] = val;
+        } else {
+          unansweredCount += 1;
         }
-      }
-      if (chosen !== -1) {
-        answers[q.id] = chosen;
+      } else if (qType === 'matching') {
+        const sel = document.getElementById(`q-select-${q.id}`) || document.querySelector(`select[name="question_${q.id}"]`);
+        const val = sel?.value;
+        if (val !== '' && val !== undefined && val !== null) {
+          answers[q.id] = parseInt(val, 10);
+        } else {
+          unansweredCount += 1;
+        }
       } else {
-        unansweredCount += 1;
+        // 'mcq'
+        const radios = document.getElementsByName(`question_${q.id}`);
+        let chosen = -1;
+        for (let r = 0; r < radios.length; r++) {
+          if (radios[r].checked) {
+            chosen = parseInt(radios[r].value, 10);
+            break;
+          }
+        }
+        if (chosen !== -1) {
+          answers[q.id] = chosen;
+        } else {
+          unansweredCount += 1;
+        }
       }
     }
 

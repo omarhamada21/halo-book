@@ -1024,32 +1024,91 @@ function renderMcqAttemptsTable(attempts, questions) {
       ? `<span class="pill-badge pill-amber" title="Multiple submissions from same IP within 10 minutes">⚠️ Rapid IP Resubmit</span>`
       : '';
 
-    // Question-by-question objective breakdown against correct_index
+    // Question-by-question objective breakdown per question type
+    const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
     const breakdownRows = (questions || []).map((q, qIdx) => {
-      const studentChoice = (att.answers && att.answers[q.id] !== undefined) ? Number(att.answers[q.id]) : -1;
-      const isCorrect = studentChoice === Number(q.correct_index);
+      const qType = q.question_type || 'mcq';
 
-      const correctOptText = (q.options && q.options[q.correct_index]) ? q.options[q.correct_index] : `Option ${q.correct_index + 1}`;
-      const studentOptText = (studentChoice >= 0 && q.options && q.options[studentChoice]) ? q.options[studentChoice] : (studentChoice >= 0 ? `Option ${studentChoice + 1}` : 'None');
+      if (qType === 'fill_blank') {
+        const rawAns = (att.answers && att.answers[q.id] !== undefined && att.answers[q.id] !== null) ? String(att.answers[q.id]).trim() : '';
+        const acceptable = Array.isArray(q.acceptable_answers) ? q.acceptable_answers : [];
+        const normStudent = rawAns.toLowerCase().replace(/['"]/g, '');
+        const isCorrect = normStudent !== '' && acceptable.some((a) => (a || '').toString().trim().toLowerCase().replace(/['"]/g, '') === normStudent);
 
-      if (studentChoice === -1) {
-        return `
-          <div style="font-size: 12.5px; padding: 3px 0; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
-            <b>Q${qIdx + 1}:</b> ⚪ <span style="color:#6B7280;">Unanswered</span> &bull; Correct: <span style="color:#065F46; font-weight:600;">${escapeHtml(correctOptText)}</span>
-          </div>
-        `;
-      } else if (isCorrect) {
-        return `
-          <div style="font-size: 12.5px; padding: 3px 0; color: #065F46; font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
-            <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✓</span> <span style="font-weight:600;">${escapeHtml(correctOptText)}</span>
-          </div>
-        `;
+        if (!rawAns) {
+          return `
+            <div style="font-size: 12.5px; padding: 3px 0; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
+              <b>Q${qIdx + 1}:</b> ⚪ <span style="color:#6B7280;">(empty)</span> &rarr; Expected: <span style="color:#065F46; font-weight:600;">[${escapeHtml(acceptable.join(', '))}]</span>
+            </div>
+          `;
+        } else if (isCorrect) {
+          return `
+            <div style="font-size: 12.5px; padding: 3px 0; color: #065F46; font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
+              <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✓</span> "${escapeHtml(rawAns)}"
+            </div>
+          `;
+        } else {
+          return `
+            <div style="font-size: 12.5px; padding: 3px 0; color: #991B1B; font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
+              <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✕</span> "${escapeHtml(rawAns || '(empty)')}" &rarr; Expected: <span style="color:#065F46; font-weight:600;">[${escapeHtml(acceptable.join(', '))}]</span>
+            </div>
+          `;
+        }
+      } else if (qType === 'matching') {
+        const rawAns = (att.answers && att.answers[q.id] !== undefined && att.answers[q.id] !== null) ? att.answers[q.id] : -1;
+        const studentChoice = rawAns !== '' ? Number(rawAns) : -1;
+        const isCorrect = !isNaN(studentChoice) && studentChoice === Number(q.correct_index);
+
+        const correctLetter = optionLetters[q.correct_index] || String(q.correct_index + 1);
+        const studentLetter = studentChoice >= 0 ? (optionLetters[studentChoice] || String(studentChoice + 1)) : null;
+
+        if (studentChoice === -1 || isNaN(studentChoice)) {
+          return `
+            <div style="font-size: 12.5px; padding: 3px 0; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
+              <b>Q${qIdx + 1}:</b> ⚪ <span style="color:#6B7280;">Unanswered</span> &bull; Correct: <span style="color:#065F46; font-weight:600;">Option ${correctLetter}</span>
+            </div>
+          `;
+        } else if (isCorrect) {
+          return `
+            <div style="font-size: 12.5px; padding: 3px 0; color: #065F46; font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
+              <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✓</span> Option ${correctLetter}
+            </div>
+          `;
+        } else {
+          return `
+            <div style="font-size: 12.5px; padding: 3px 0; color: #991B1B; font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
+              <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✕</span> Option ${studentLetter} &rarr; Correct: <span style="color:#065F46; font-weight:600;">Option ${correctLetter}</span>
+            </div>
+          `;
+        }
       } else {
-        return `
-          <div style="font-size: 12.5px; padding: 3px 0; color: #991B1B; font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
-            <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✕</span> <span style="text-decoration: line-through;">${escapeHtml(studentOptText)}</span> &rarr; Correct: <span style="color:#065F46; font-weight:600;">${escapeHtml(correctOptText)}</span>
-          </div>
-        `;
+        // Standard MCQ
+        const rawAns = (att.answers && att.answers[q.id] !== undefined && att.answers[q.id] !== null) ? att.answers[q.id] : -1;
+        const studentChoice = rawAns !== '' ? Number(rawAns) : -1;
+        const isCorrect = !isNaN(studentChoice) && studentChoice === Number(q.correct_index);
+
+        const correctOptText = (q.options && q.options[q.correct_index]) ? q.options[q.correct_index] : `Option ${q.correct_index + 1}`;
+        const studentOptText = (studentChoice >= 0 && q.options && q.options[studentChoice]) ? q.options[studentChoice] : (studentChoice >= 0 ? `Option ${studentChoice + 1}` : 'None');
+
+        if (studentChoice === -1 || isNaN(studentChoice)) {
+          return `
+            <div style="font-size: 12.5px; padding: 3px 0; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
+              <b>Q${qIdx + 1}:</b> ⚪ <span style="color:#6B7280;">Unanswered</span> &bull; Correct: <span style="color:#065F46; font-weight:600;">${escapeHtml(correctOptText)}</span>
+            </div>
+          `;
+        } else if (isCorrect) {
+          return `
+            <div style="font-size: 12.5px; padding: 3px 0; color: #065F46; font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
+              <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✓</span> <span style="font-weight:600;">${escapeHtml(correctOptText)}</span>
+            </div>
+          `;
+        } else {
+          return `
+            <div style="font-size: 12.5px; padding: 3px 0; color: #991B1B; font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
+              <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✕</span> <span style="text-decoration: line-through;">${escapeHtml(studentOptText)}</span> &rarr; Correct: <span style="color:#065F46; font-weight:600;">${escapeHtml(correctOptText)}</span>
+            </div>
+          `;
+        }
       }
     }).join('');
 

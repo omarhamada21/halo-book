@@ -211,9 +211,11 @@ async function initDatabase() {
       CREATE TABLE IF NOT EXISTS mcq_questions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         test_id INTEGER NOT NULL,
+        question_type TEXT DEFAULT 'mcq',
         question_text TEXT NOT NULL,
         options TEXT NOT NULL,
-        correct_index INTEGER NOT NULL,
+        correct_index INTEGER,
+        acceptable_answers TEXT,
         points REAL DEFAULT 1,
         order_index INTEGER DEFAULT 0,
         FOREIGN KEY (test_id) REFERENCES mcq_tests(id)
@@ -249,6 +251,8 @@ async function initDatabase() {
       'ALTER TABLE submissions ADD COLUMN ip_address TEXT;',
       'ALTER TABLE submissions ADD COLUMN possible_duplicate INTEGER DEFAULT 0;',
       'ALTER TABLE mcq_tests ADD COLUMN max_plays INTEGER DEFAULT 0;',
+      "ALTER TABLE mcq_questions ADD COLUMN question_type TEXT DEFAULT 'mcq';",
+      'ALTER TABLE mcq_questions ADD COLUMN acceptable_answers TEXT;',
       `CREATE TABLE IF NOT EXISTS mcq_tests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         teacher_id INTEGER NOT NULL,
@@ -264,9 +268,11 @@ async function initDatabase() {
       `CREATE TABLE IF NOT EXISTS mcq_questions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         test_id INTEGER NOT NULL,
+        question_type TEXT DEFAULT 'mcq',
         question_text TEXT NOT NULL,
         options TEXT NOT NULL,
-        correct_index INTEGER NOT NULL,
+        correct_index INTEGER,
+        acceptable_answers TEXT,
         points REAL DEFAULT 1,
         order_index INTEGER DEFAULT 0,
         FOREIGN KEY (test_id) REFERENCES mcq_tests(id)
@@ -1931,23 +1937,45 @@ app.post(
       }
 
       // 3. Prompt instructing Gemini to convert PDF questions into MCQ JSON array
-      const promptText = `You are an expert exam creator and assessor.
+      // 3. Prompt instructing Gemini to convert PDF questions into native Cambridge, IELTS, GCSE exam formats
+      const promptText = `You are an expert assessment converter for English exams (Cambridge, IELTS, GCSE).
 You are provided with an examination/test PDF document and its official marking scheme / answer key.
-Your task is to convert each question from the test PDF into multiple-choice format (MCQ).
+Analyze the Test Paper and Marking Scheme. Extract all questions into one of three question_type formats:
+
+1. 'mcq': Standard multiple-choice questions with 3-5 options.
+   - "question_type": "mcq"
+   - "question": Clear question prompt text
+   - "options": Array of 3-5 plausible option strings. One must be the correct answer according to the marking scheme.
+   - "correct_index": Zero-based integer (0 to options.length - 1) indicating the correct option
+   - "acceptable_answers": []
+   - "points": Marks/points awarded (default 1)
+
+2. 'matching': Matching tasks (e.g., Speakers 1 to 5 matching Statements A to H).
+   - "question_type": "matching"
+   - "question": Speaker or item prompt (e.g. "Speaker 1")
+   - "options": Array of the available statements (e.g. ["Statement A: ...", "Statement B: ...", ...])
+   - "correct_index": Zero-based integer indicating which statement matches this prompt
+   - "acceptable_answers": []
+   - "points": Marks/points awarded (default 1)
+
+3. 'fill_blank': Note, sentence, or summary completion where students write short answers.
+   - "question_type": "fill_blank"
+   - "question": The sentence or context with the blank indicated (e.g. "Lara spent (11) [blank] days in Zambia.")
+   - "options": []
+   - "correct_index": 0
+   - "acceptable_answers": Array of valid strings accepted by the mark scheme (e.g. ["14", "fourteen"])
+   - "points": Marks/points awarded (default 1)
 
 CRITICAL INSTRUCTIONS:
-1. For every question in the test PDF:
-   - "question": Extract or formulate the clear question text as a string.
-   - "options": An array of EXACTLY 4 strings representing plausible options. One must be the correct answer, and the remaining 3 must be plausible distractors.
-   - "correct_index": An integer (0, 1, 2, or 3) indicating which option in "options" is the correct answer. You MUST use the marking scheme/answer key to determine the correct option.
-   - "points": A positive number representing the awarded marks/points for this question as indicated in the marking scheme. If unspecified in the marking scheme, default to 1.
-2. Maintain the natural sequence of questions as presented in the test PDF.
-3. Return ONLY a JSON array matching the schema:
+1. Maintain the natural sequence of questions as presented in the test PDF.
+2. Return ONLY a JSON array matching the schema:
    [
      {
+       "question_type": "mcq" | "matching" | "fill_blank",
        "question": "string",
-       "options": ["string", "string", "string", "string"],
+       "options": ["string", ...],
        "correct_index": 0,
+       "acceptable_answers": ["string", ...],
        "points": 1
      }
    ]
@@ -1963,15 +1991,20 @@ ${markingSchemePromptAddon}`;
           items: {
             type: 'OBJECT',
             properties: {
+              question_type: { type: 'STRING', enum: ['mcq', 'matching', 'fill_blank'] },
               question: { type: 'STRING' },
               options: {
                 type: 'ARRAY',
                 items: { type: 'STRING' }
               },
               correct_index: { type: 'INTEGER' },
+              acceptable_answers: {
+                type: 'ARRAY',
+                items: { type: 'STRING' }
+              },
               points: { type: 'NUMBER' }
             },
-            required: ['question', 'options', 'correct_index', 'points']
+            required: ['question_type', 'question', 'points']
           }
         }
       };
@@ -1995,6 +2028,9 @@ ${markingSchemePromptAddon}`;
           cleanText = cleanText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
         }
         parsedQuestions = JSON.parse(cleanText);
+        if (parsedQuestions && !Array.isArray(parsedQuestions) && Array.isArray(parsedQuestions.questions)) {
+          parsedQuestions = parsedQuestions.questions;
+        }
       } catch (parseErr) {
         if (uploadedAudioKey) {
           try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) {}
@@ -2020,36 +2056,50 @@ ${markingSchemePromptAddon}`;
           return res.status(422).json({ success: false, error: `Question #${i + 1} has missing or empty question text.` });
         }
 
-        if (!Array.isArray(item.options) || item.options.length !== 4) {
-          if (uploadedAudioKey) {
-            try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) {}
-          }
-          return res.status(422).json({ success: false, error: `Question #${i + 1} must have exactly 4 options.` });
-        }
+        const qType = ['mcq', 'matching', 'fill_blank'].includes(item.question_type) ? item.question_type : 'mcq';
+        let cleanOptions = [];
+        let correctIdx = 0;
+        let cleanAcceptable = [];
 
-        const cleanOptions = item.options.map((opt) => (opt !== null && opt !== undefined ? String(opt).trim() : ''));
-        if (cleanOptions.some((opt) => !opt)) {
-          if (uploadedAudioKey) {
-            try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) {}
+        if (qType === 'fill_blank') {
+          cleanOptions = [];
+          if (Array.isArray(item.acceptable_answers)) {
+            cleanAcceptable = item.acceptable_answers.map((a) => String(a).trim()).filter(Boolean);
           }
-          return res.status(422).json({ success: false, error: `Question #${i + 1} contains empty or invalid option strings.` });
-        }
+          if (cleanAcceptable.length === 0 && item.correct_answer) {
+            cleanAcceptable = [String(item.correct_answer).trim()];
+          }
+          correctIdx = 0;
+        } else {
+          // 'mcq' or 'matching'
+          if (!Array.isArray(item.options) || item.options.length < 2) {
+            if (uploadedAudioKey) {
+              try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) {}
+            }
+            return res.status(422).json({ success: false, error: `Question #${i + 1} (${qType}) must have at least 2 options.` });
+          }
+          cleanOptions = item.options.map((opt) => (opt !== null && opt !== undefined ? String(opt).trim() : '')).filter(Boolean);
+          if (cleanOptions.length < 2) {
+            if (uploadedAudioKey) {
+              try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) {}
+            }
+            return res.status(422).json({ success: false, error: `Question #${i + 1} contains empty or invalid option strings.` });
+          }
 
-        const correctIdx = Number(item.correct_index);
-        if (!Number.isInteger(correctIdx) || correctIdx < 0 || correctIdx > 3) {
-          if (uploadedAudioKey) {
-            try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) {}
-          }
-          return res.status(422).json({ success: false, error: `Question #${i + 1} has an invalid correct_index (${item.correct_index}). Must be 0, 1, 2, or 3.` });
+          const rawIdx = Number(item.correct_index);
+          correctIdx = Number.isInteger(rawIdx) && rawIdx >= 0 && rawIdx < cleanOptions.length ? rawIdx : 0;
+          cleanAcceptable = [];
         }
 
         const rawPoints = Number(item.points);
         const points = !isNaN(rawPoints) && rawPoints > 0 ? rawPoints : 1;
 
         validatedQuestions.push({
+          question_type: qType,
           question: item.question.trim(),
           options: cleanOptions,
           correct_index: correctIdx,
+          acceptable_answers: cleanAcceptable,
           points
         });
       }
@@ -2083,17 +2133,19 @@ ${markingSchemePromptAddon}`;
       for (let i = 0; i < validatedQuestions.length; i++) {
         const q = validatedQuestions[i];
         const qInsert = await db.execute({
-          sql: `INSERT INTO mcq_questions (test_id, question_text, options, correct_index, points, order_index)
-                VALUES (?, ?, ?, ?, ?, ?)`,
-          args: [testId, q.question, JSON.stringify(q.options), q.correct_index, q.points, i]
+          sql: `INSERT INTO mcq_questions (test_id, question_type, question_text, options, correct_index, acceptable_answers, points, order_index)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [testId, q.question_type, q.question, JSON.stringify(q.options), q.correct_index, JSON.stringify(q.acceptable_answers), q.points, i]
         });
 
         insertedQuestions.push({
           id: Number(qInsert.lastInsertRowid),
           test_id: testId,
+          question_type: q.question_type,
           question_text: q.question,
           options: q.options,
           correct_index: q.correct_index,
+          acceptable_answers: q.acceptable_answers,
           points: q.points,
           order_index: i
         });
@@ -2204,7 +2256,7 @@ app.get('/api/mcq/:code/attempts', authenticateToken, requireApprovedUser, async
     });
 
     const questionsRes = await db.execute({
-      sql: `SELECT id, question_text, options, correct_index, points, order_index
+      sql: `SELECT id, question_type, question_text, options, correct_index, acceptable_answers, points, order_index
             FROM mcq_questions
             WHERE test_id = ?
             ORDER BY order_index ASC, id ASC`,
@@ -2220,9 +2272,19 @@ app.get('/api/mcq/:code/attempts', authenticateToken, requireApprovedUser, async
           opts = [];
         }
       }
+      let acceptable = q.acceptable_answers;
+      if (typeof acceptable === 'string') {
+        try {
+          acceptable = JSON.parse(acceptable);
+        } catch (_) {
+          acceptable = [];
+        }
+      }
       return {
         ...q,
-        options: Array.isArray(opts) ? opts : []
+        question_type: q.question_type || 'mcq',
+        options: Array.isArray(opts) ? opts : [],
+        acceptable_answers: Array.isArray(acceptable) ? acceptable : []
       };
     });
 
@@ -2306,7 +2368,7 @@ app.get('/api/mcq/:testId', authenticateToken, requireApprovedUser, async (req, 
     }
 
     const qRes = await db.execute({
-      sql: 'SELECT id, test_id, question_text, options, correct_index, points, order_index FROM mcq_questions WHERE test_id = ? ORDER BY order_index ASC, id ASC',
+      sql: 'SELECT id, test_id, question_type, question_text, options, correct_index, acceptable_answers, points, order_index FROM mcq_questions WHERE test_id = ? ORDER BY order_index ASC, id ASC',
       args: [testId]
     });
 
@@ -2319,12 +2381,22 @@ app.get('/api/mcq/:testId', authenticateToken, requireApprovedUser, async (req, 
           opts = [];
         }
       }
+      let acceptable = q.acceptable_answers;
+      if (typeof acceptable === 'string') {
+        try {
+          acceptable = JSON.parse(acceptable);
+        } catch (_) {
+          acceptable = [];
+        }
+      }
       return {
         id: q.id,
         test_id: q.test_id,
+        question_type: q.question_type || 'mcq',
         question_text: q.question_text,
         options: Array.isArray(opts) ? opts : [],
         correct_index: q.correct_index,
+        acceptable_answers: Array.isArray(acceptable) ? acceptable : [],
         points: q.points,
         order_index: q.order_index
       };
@@ -2374,7 +2446,7 @@ app.patch('/api/mcq/:testId/questions/:questionId', authenticateToken, requireAp
     }
 
     const qRes = await db.execute({
-      sql: 'SELECT id, test_id, question_text, options, correct_index, points, order_index FROM mcq_questions WHERE id = ? AND test_id = ?',
+      sql: 'SELECT id, test_id, question_type, question_text, options, correct_index, acceptable_answers, points, order_index FROM mcq_questions WHERE id = ? AND test_id = ?',
       args: [questionId, testId]
     });
     const question = qRes.rows[0];
@@ -2389,7 +2461,18 @@ app.patch('/api/mcq/:testId/questions/:questionId', authenticateToken, requireAp
       existingOptions = [];
     }
 
-    const { question_text, options, correct_index, points } = req.body;
+    let existingAcceptable = [];
+    try {
+      existingAcceptable = typeof question.acceptable_answers === 'string' ? JSON.parse(question.acceptable_answers) : question.acceptable_answers;
+    } catch (_) {
+      existingAcceptable = [];
+    }
+
+    const { question_type, question_text, options, correct_index, acceptable_answers, points } = req.body;
+
+    const updatedQType = question_type !== undefined
+      ? (['mcq', 'matching', 'fill_blank'].includes(question_type) ? question_type : 'mcq')
+      : (question.question_type || 'mcq');
 
     let updatedQuestionText = question.question_text;
     if (question_text !== undefined) {
@@ -2399,27 +2482,44 @@ app.patch('/api/mcq/:testId/questions/:questionId', authenticateToken, requireAp
       updatedQuestionText = question_text.trim();
     }
 
-    let updatedOptions = existingOptions;
-    if (options !== undefined) {
-      if (!Array.isArray(options) || options.length < 2) {
-        return res.status(400).json({ error: 'Options must be an array with at least 2 options.' });
-      }
-      const cleanOptions = options.map((opt) => (opt !== null && opt !== undefined ? String(opt).trim() : ''));
-      if (cleanOptions.some((opt) => !opt)) {
-        return res.status(400).json({ error: 'All options must be non-empty strings.' });
-      }
-      updatedOptions = cleanOptions;
-    }
-
+    let updatedOptions = Array.isArray(existingOptions) ? existingOptions : [];
     let updatedCorrectIndex = question.correct_index;
-    if (correct_index !== undefined) {
-      const cIdx = Number(correct_index);
-      if (!Number.isInteger(cIdx) || cIdx < 0 || cIdx >= updatedOptions.length) {
-        return res.status(400).json({ error: `correct_index must be an integer between 0 and ${updatedOptions.length - 1}.` });
+    let updatedAcceptable = Array.isArray(existingAcceptable) ? existingAcceptable : [];
+
+    if (updatedQType === 'fill_blank') {
+      updatedOptions = [];
+      updatedCorrectIndex = null;
+      if (acceptable_answers !== undefined) {
+        if (Array.isArray(acceptable_answers)) {
+          updatedAcceptable = acceptable_answers.map((a) => String(a || '').trim()).filter(Boolean);
+        } else if (typeof acceptable_answers === 'string') {
+          updatedAcceptable = acceptable_answers.split(',').map((a) => a.trim()).filter(Boolean);
+        } else {
+          updatedAcceptable = [];
+        }
       }
-      updatedCorrectIndex = cIdx;
-    } else if (options !== undefined && (updatedCorrectIndex < 0 || updatedCorrectIndex >= updatedOptions.length)) {
-      updatedCorrectIndex = 0;
+    } else {
+      // 'mcq' or 'matching'
+      if (options !== undefined) {
+        if (!Array.isArray(options) || options.length < 2) {
+          return res.status(400).json({ error: 'Options must be an array with at least 2 options.' });
+        }
+        const cleanOptions = options.map((opt) => (opt !== null && opt !== undefined ? String(opt).trim() : ''));
+        if (cleanOptions.some((opt) => !opt)) {
+          return res.status(400).json({ error: 'All options must be non-empty strings.' });
+        }
+        updatedOptions = cleanOptions;
+      }
+
+      if (correct_index !== undefined) {
+        const cIdx = Number(correct_index);
+        if (!Number.isInteger(cIdx) || cIdx < 0 || cIdx >= updatedOptions.length) {
+          return res.status(400).json({ error: `correct_index must be an integer between 0 and ${updatedOptions.length - 1}.` });
+        }
+        updatedCorrectIndex = cIdx;
+      } else if (options !== undefined && (updatedCorrectIndex === null || updatedCorrectIndex < 0 || updatedCorrectIndex >= updatedOptions.length)) {
+        updatedCorrectIndex = 0;
+      }
     }
 
     let updatedPoints = question.points;
@@ -2433,9 +2533,18 @@ app.patch('/api/mcq/:testId/questions/:questionId', authenticateToken, requireAp
 
     await db.execute({
       sql: `UPDATE mcq_questions 
-            SET question_text = ?, options = ?, correct_index = ?, points = ?
+            SET question_type = ?, question_text = ?, options = ?, correct_index = ?, acceptable_answers = ?, points = ?
             WHERE id = ? AND test_id = ?`,
-      args: [updatedQuestionText, JSON.stringify(updatedOptions), updatedCorrectIndex, updatedPoints, questionId, testId]
+      args: [
+        updatedQType,
+        updatedQuestionText,
+        JSON.stringify(updatedOptions),
+        updatedCorrectIndex,
+        JSON.stringify(updatedAcceptable),
+        updatedPoints,
+        questionId,
+        testId
+      ]
     });
 
     return res.json({ success: true, message: 'Question updated.' });
@@ -2562,7 +2671,7 @@ app.post('/api/mcq/:testId/publish', authenticateToken, requireApprovedUser, asy
     }
 
     const qRes = await db.execute({
-      sql: 'SELECT id, question_text, options, correct_index, points, order_index FROM mcq_questions WHERE test_id = ? ORDER BY order_index ASC',
+      sql: 'SELECT id, question_type, question_text, options, correct_index, acceptable_answers, points, order_index FROM mcq_questions WHERE test_id = ? ORDER BY order_index ASC',
       args: [testId]
     });
 
@@ -2573,30 +2682,43 @@ app.post('/api/mcq/:testId/publish', authenticateToken, requireApprovedUser, asy
 
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
+      const qType = q.question_type || 'mcq';
+
       if (!q.question_text || !q.question_text.trim()) {
         return res.status(400).json({ error: `Cannot publish: Question #${i + 1} has empty question text.` });
       }
 
-      let opts = q.options;
-      if (typeof opts === 'string') {
-        try {
-          opts = JSON.parse(opts);
-        } catch (_) {
-          opts = [];
+      if (qType === 'fill_blank') {
+        let acceptable = q.acceptable_answers;
+        if (typeof acceptable === 'string') {
+          try { acceptable = JSON.parse(acceptable); } catch (_) { acceptable = []; }
         }
-      }
+        if (!Array.isArray(acceptable) || acceptable.length === 0 || !acceptable.some(a => String(a || '').trim())) {
+          return res.status(400).json({ error: `Cannot publish: Question #${i + 1} (Fill in the Blank) must have at least 1 acceptable answer.` });
+        }
+      } else {
+        // 'mcq' or 'matching'
+        let opts = q.options;
+        if (typeof opts === 'string') {
+          try {
+            opts = JSON.parse(opts);
+          } catch (_) {
+            opts = [];
+          }
+        }
 
-      if (!Array.isArray(opts) || opts.length < 2) {
-        return res.status(400).json({ error: `Cannot publish: Question #${i + 1} must have at least 2 options.` });
-      }
+        if (!Array.isArray(opts) || opts.length < 2) {
+          return res.status(400).json({ error: `Cannot publish: Question #${i + 1} must have at least 2 options.` });
+        }
 
-      if (opts.some((opt) => !opt || !String(opt).trim())) {
-        return res.status(400).json({ error: `Cannot publish: Question #${i + 1} contains empty options.` });
-      }
+        if (opts.some((opt) => !opt || !String(opt).trim())) {
+          return res.status(400).json({ error: `Cannot publish: Question #${i + 1} contains empty options.` });
+        }
 
-      const cIdx = Number(q.correct_index);
-      if (q.correct_index === null || q.correct_index === undefined || !Number.isInteger(cIdx) || cIdx < 0 || cIdx >= opts.length) {
-        return res.status(400).json({ error: `Cannot publish: Question #${i + 1} does not have a valid correct option selected.` });
+        const cIdx = Number(q.correct_index);
+        if (q.correct_index === null || q.correct_index === undefined || !Number.isInteger(cIdx) || cIdx < 0 || cIdx >= opts.length) {
+          return res.status(400).json({ error: `Cannot publish: Question #${i + 1} does not have a valid correct option selected.` });
+        }
       }
     }
 
@@ -2700,14 +2822,14 @@ app.get('/api/public/mcq/:code', async (req, res) => {
     const isPastDeadline = Boolean(test.deadline && Date.now() > new Date(test.deadline).getTime());
 
     const qRes = await db.execute({
-      sql: `SELECT id, question_text, options, order_index
+      sql: `SELECT id, question_type, question_text, options, order_index
             FROM mcq_questions
             WHERE test_id = ?
             ORDER BY order_index ASC, id ASC`,
       args: [test.id]
     });
 
-    // CRITICAL: Anti-cheat stripping of correct_index and points
+    // CRITICAL: Anti-cheat stripping of correct_index, points, and acceptable_answers
     const questions = qRes.rows.map((q) => {
       let opts = q.options;
       if (typeof opts === 'string') {
@@ -2719,6 +2841,7 @@ app.get('/api/public/mcq/:code', async (req, res) => {
       }
       return {
         id: q.id,
+        question_type: q.question_type || 'mcq',
         question_text: q.question_text,
         options: Array.isArray(opts) ? opts : []
       };
@@ -2854,7 +2977,7 @@ app.post(
 
       // Server-Side Auto-Grading (Query mcq_questions)
       const qRes = await db.execute({
-        sql: 'SELECT id, correct_index, points FROM mcq_questions WHERE test_id = ? ORDER BY order_index ASC, id ASC',
+        sql: 'SELECT id, question_type, correct_index, acceptable_answers, points FROM mcq_questions WHERE test_id = ? ORDER BY order_index ASC, id ASC',
         args: [test.id]
       });
 
@@ -2866,10 +2989,32 @@ app.post(
       for (const q of questions) {
         const qPoints = Number(q.points) > 0 ? Number(q.points) : 1;
         totalScore += qPoints;
+        const qType = q.question_type || 'mcq';
 
-        const studentChoice = cleanAnswers[q.id] !== undefined ? Number(cleanAnswers[q.id]) : -1;
-        if (studentChoice === Number(q.correct_index)) {
-          earnedScore += qPoints;
+        if (qType === 'fill_blank') {
+          const rawAns = cleanAnswers[q.id] !== undefined && cleanAnswers[q.id] !== null ? String(cleanAnswers[q.id]) : '';
+          const studentAns = rawAns.trim().toLowerCase().replace(/['"]/g, '');
+
+          let acceptable = q.acceptable_answers;
+          if (typeof acceptable === 'string') {
+            try { acceptable = JSON.parse(acceptable); } catch (_) { acceptable = []; }
+          }
+          if (!Array.isArray(acceptable)) acceptable = [];
+
+          const normalizedAcceptable = acceptable
+            .map((a) => (a !== null && a !== undefined ? String(a).trim().toLowerCase().replace(/['"]/g, '') : ''))
+            .filter(Boolean);
+
+          if (studentAns && normalizedAcceptable.includes(studentAns)) {
+            earnedScore += qPoints;
+          }
+        } else {
+          // 'mcq' or 'matching'
+          const rawVal = cleanAnswers[q.id];
+          const studentChoice = rawVal !== undefined && rawVal !== null && rawVal !== '' ? parseInt(rawVal, 10) : -1;
+          if (!isNaN(studentChoice) && studentChoice === Number(q.correct_index)) {
+            earnedScore += qPoints;
+          }
         }
       }
 

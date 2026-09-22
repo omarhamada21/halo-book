@@ -1009,33 +1009,71 @@ function renderMcqEditor() {
     return;
   }
 
-  const optionLetters = ['A', 'B', 'C', 'D'];
+  const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 
   container.innerHTML = currentMcqQuestions.map((q, qIdx) => {
+    const qType = q.question_type || 'mcq';
     const opts = Array.isArray(q.options) ? q.options : ['Option A', 'Option B', 'Option C', 'Option D'];
 
-    return `
-      <div class="mcq-question-card" id="mcq-q-card-${q.id}">
-        <div class="mcq-question-header">
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <span class="mcq-qnum">Question ${qIdx + 1}</span>
-            <div class="mcq-points-wrap">
-              <span>Points:</span>
-              <input type="number" class="mcq-points-input" id="mcq-q-points-${q.id}" min="0" step="0.5" value="${q.points ?? 1}"
-                oninput="onQuestionFieldChanged(${q.id})" />
-            </div>
+    let badgeHtml = '<span class="pill-badge pill-pen" style="font-size: 11px;">📝 Multiple Choice</span>';
+    if (qType === 'fill_blank') {
+      badgeHtml = '<span class="pill-badge pill-blue" style="font-size: 11px;">✏️ Fill in the Blank</span>';
+    } else if (qType === 'matching') {
+      badgeHtml = '<span class="pill-badge pill-purple" style="font-size: 11px;">🔀 Matching</span>';
+    }
+
+    let bodyHtml = '';
+    if (qType === 'fill_blank') {
+      bodyHtml = `
+        <div style="margin-top: 10px;">
+          <label style="display:block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink-soft);">
+            Acceptable Answers (Comma-separated)
+          </label>
+          <input type="text" class="mcq-edit-acceptable" id="mcq-q-acceptable-${q.id}"
+            value="${escapeHtml((q.acceptable_answers || []).join(', '))}"
+            placeholder="e.g. 14, fourteen"
+            oninput="onQuestionFieldChanged(${q.id})" />
+          <small style="color: var(--ink-soft); font-size: 11px; display: block; margin-top: 4px;">
+            💡 Multiple variations accepted (e.g. "14, fourteen"). Grading is case-insensitive.
+          </small>
+        </div>
+      `;
+    } else if (qType === 'matching') {
+      bodyHtml = `
+        <div style="margin-top: 10px;">
+          <label style="display:block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--ink-soft);">
+            Statement Pool & Correct Match
+          </label>
+          <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 12px; font-weight: 600; color: var(--pen);">Correct Statement:</span>
+            <select class="mcq-matching-key-select" id="mcq-matching-select-${q.id}"
+              onchange="onMatchingCorrectChanged(${q.id}, this.value)"
+              style="padding: 5px 8px; border-radius: 4px; border: 1px solid var(--border); font-size: 12.5px;">
+              ${opts.map((optText, optIdx) => {
+                const letter = optionLetters[optIdx] || String(optIdx + 1);
+                return `<option value="${optIdx}" ${Number(q.correct_index) === optIdx ? 'selected' : ''}>Statement ${letter}</option>`;
+              }).join('')}
+            </select>
           </div>
-          <button type="button" class="line-delete-btn" onclick="deleteMcqQuestion(${q.id})" title="Delete Question">
-            🗑️ Delete
-          </button>
+          <div class="mcq-options-grid">
+            ${opts.map((optText, optIdx) => {
+              const letter = optionLetters[optIdx] || String(optIdx + 1);
+              const isCorrect = Number(q.correct_index) === optIdx;
+              return `
+                <div class="mcq-option-row ${isCorrect ? 'correct' : ''}" id="mcq-opt-row-${q.id}-${optIdx}">
+                  <span class="mcq-opt-label">${letter}.</span>
+                  <input type="text" class="mcq-opt-input" id="mcq-opt-input-${q.id}-${optIdx}"
+                    value="${escapeHtml(optText || '')}" placeholder="Statement ${letter} text..."
+                    oninput="onQuestionFieldChanged(${q.id})" />
+                </div>
+              `;
+            }).join('')}
+          </div>
         </div>
-
-        <div>
-          <label style="display:block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink-soft);">Question Prompt / Text</label>
-          <textarea class="mcq-qtext-input" id="mcq-q-text-${q.id}" placeholder="Type question prompt here..."
-            oninput="onQuestionFieldChanged(${q.id})">${escapeHtml(q.question_text || '')}</textarea>
-        </div>
-
+      `;
+    } else {
+      // 'mcq'
+      bodyHtml = `
         <div>
           <label style="display:block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--ink-soft);">
             Options & Correct Answer (Select the radio button for the correct option)
@@ -1057,6 +1095,33 @@ function renderMcqEditor() {
             }).join('')}
           </div>
         </div>
+      `;
+    }
+
+    return `
+      <div class="mcq-question-card" id="mcq-q-card-${q.id}">
+        <div class="mcq-question-header">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="mcq-qnum">Question ${qIdx + 1}</span>
+            ${badgeHtml}
+            <div class="mcq-points-wrap">
+              <span>Points:</span>
+              <input type="number" class="mcq-points-input" id="mcq-q-points-${q.id}" min="0" step="0.5" value="${q.points ?? 1}"
+                oninput="onQuestionFieldChanged(${q.id})" />
+            </div>
+          </div>
+          <button type="button" class="line-delete-btn" onclick="deleteMcqQuestion(${q.id})" title="Delete Question">
+            🗑️ Delete
+          </button>
+        </div>
+
+        <div>
+          <label style="display:block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink-soft);">Question Prompt / Text</label>
+          <textarea class="mcq-qtext-input" id="mcq-q-text-${q.id}" placeholder="Type question prompt here..."
+            oninput="onQuestionFieldChanged(${q.id})">${escapeHtml(q.question_text || '')}</textarea>
+        </div>
+
+        ${bodyHtml}
       </div>
     `;
   }).join('');
@@ -1075,6 +1140,23 @@ function onRadioCorrectChanged(questionId, selectedIdx) {
     const row = document.getElementById(`mcq-opt-row-${questionId}-${i}`);
     if (row) {
       if (i === selectedIdx) row.classList.add('correct');
+      else row.classList.remove('correct');
+    }
+  }
+  scheduleQuestionSave(questionId);
+}
+
+function onMatchingCorrectChanged(questionId, selectedIdx) {
+  const q = currentMcqQuestions.find((item) => item.id === questionId);
+  const idx = parseInt(selectedIdx, 10);
+  if (q) {
+    q.correct_index = isNaN(idx) ? 0 : idx;
+  }
+  const count = q && Array.isArray(q.options) ? q.options.length : 4;
+  for (let i = 0; i < count; i++) {
+    const row = document.getElementById(`mcq-opt-row-${questionId}-${i}`);
+    if (row) {
+      if (i === idx) row.classList.add('correct');
       else row.classList.remove('correct');
     }
   }
@@ -1103,28 +1185,53 @@ async function executeQuestionSave(questionId) {
   const question_text = textEl.value.trim();
   const points = Math.max(0, parseFloat(pointsEl?.value || '1') || 1);
 
-  const options = [];
-  for (let i = 0; i < 4; i++) {
-    const optEl = document.getElementById(`mcq-opt-input-${questionId}-${i}`);
-    if (optEl) {
-      options.push(optEl.value.trim());
-    }
-  }
-
-  const radios = document.getElementsByName(`mcq-correct-${questionId}`);
-  let correct_index = 0;
-  for (let i = 0; i < radios.length; i++) {
-    if (radios[i].checked) {
-      correct_index = i;
-      break;
-    }
-  }
-
   const q = currentMcqQuestions.find((item) => item.id === questionId);
+  const qType = q?.question_type || 'mcq';
+
+  let options = [];
+  let correct_index = null;
+  let acceptable_answers = [];
+
+  if (qType === 'fill_blank') {
+    const accEl = document.getElementById(`mcq-q-acceptable-${questionId}`);
+    const rawAcc = accEl ? accEl.value : '';
+    acceptable_answers = rawAcc.split(',').map((s) => s.trim()).filter(Boolean);
+    options = [];
+    correct_index = null;
+  } else if (qType === 'matching') {
+    const existingCount = Array.isArray(q?.options) ? q.options.length : 4;
+    for (let i = 0; i < existingCount; i++) {
+      const optEl = document.getElementById(`mcq-opt-input-${questionId}-${i}`);
+      if (optEl) {
+        options.push(optEl.value.trim());
+      }
+    }
+    const selEl = document.getElementById(`mcq-matching-select-${questionId}`);
+    const selVal = selEl ? parseInt(selEl.value, 10) : 0;
+    correct_index = isNaN(selVal) ? 0 : selVal;
+  } else {
+    // 'mcq'
+    for (let i = 0; i < 4; i++) {
+      const optEl = document.getElementById(`mcq-opt-input-${questionId}-${i}`);
+      if (optEl) {
+        options.push(optEl.value.trim());
+      }
+    }
+    const radios = document.getElementsByName(`mcq-correct-${questionId}`);
+    correct_index = 0;
+    for (let i = 0; i < radios.length; i++) {
+      if (radios[i].checked) {
+        correct_index = i;
+        break;
+      }
+    }
+  }
+
   if (q) {
     q.question_text = question_text;
     q.options = options;
     q.correct_index = correct_index;
+    q.acceptable_answers = acceptable_answers;
     q.points = points;
   }
 
@@ -1132,7 +1239,14 @@ async function executeQuestionSave(questionId) {
     const res = await fetch(`/api/mcq/${currentMcqTestId}/questions/${questionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question_text, options, correct_index, points })
+      body: JSON.stringify({
+        question_type: qType,
+        question_text,
+        options,
+        correct_index,
+        acceptable_answers,
+        points
+      })
     });
 
     const data = await res.json();
@@ -1239,6 +1353,8 @@ async function publishMcqTest() {
 
   for (let i = 0; i < currentMcqQuestions.length; i++) {
     const q = currentMcqQuestions[i];
+    const qType = q.question_type || 'mcq';
+
     if (!q.question_text || !q.question_text.trim()) {
       alert(`Cannot publish: Question #${i + 1} has an empty question prompt.`);
       const textEl = document.getElementById(`mcq-q-text-${q.id}`);
@@ -1246,24 +1362,34 @@ async function publishMcqTest() {
       return;
     }
 
-    const opts = Array.isArray(q.options) ? q.options : [];
-    if (opts.length < 2) {
-      alert(`Cannot publish: Question #${i + 1} must have at least 2 options.`);
-      return;
-    }
-
-    for (let j = 0; j < opts.length; j++) {
-      if (!opts[j] || !opts[j].trim()) {
-        alert(`Cannot publish: Question #${i + 1}, Option ${String.fromCharCode(65 + j)} is empty.`);
-        const optEl = document.getElementById(`mcq-opt-input-${q.id}-${j}`);
-        if (optEl) optEl.focus();
+    if (qType === 'fill_blank') {
+      const acceptable = Array.isArray(q.acceptable_answers) ? q.acceptable_answers : [];
+      if (acceptable.length === 0 || !acceptable.some((a) => a && a.trim())) {
+        alert(`Cannot publish: Question #${i + 1} (Fill in the Blank) must have at least 1 acceptable answer.`);
+        const accEl = document.getElementById(`mcq-q-acceptable-${q.id}`);
+        if (accEl) accEl.focus();
         return;
       }
-    }
+    } else {
+      const opts = Array.isArray(q.options) ? q.options : [];
+      if (opts.length < 2) {
+        alert(`Cannot publish: Question #${i + 1} must have at least 2 options.`);
+        return;
+      }
 
-    if (q.correct_index === null || q.correct_index === undefined || q.correct_index < 0 || q.correct_index >= opts.length) {
-      alert(`Cannot publish: Question #${i + 1} does not have a correct answer selected.`);
-      return;
+      for (let j = 0; j < opts.length; j++) {
+        if (!opts[j] || !opts[j].trim()) {
+          alert(`Cannot publish: Question #${i + 1}, Option ${String.fromCharCode(65 + j)} is empty.`);
+          const optEl = document.getElementById(`mcq-opt-input-${q.id}-${j}`);
+          if (optEl) optEl.focus();
+          return;
+        }
+      }
+
+      if (q.correct_index === null || q.correct_index === undefined || q.correct_index < 0 || q.correct_index >= opts.length) {
+        alert(`Cannot publish: Question #${i + 1} does not have a correct answer selected.`);
+        return;
+      }
     }
   }
 
