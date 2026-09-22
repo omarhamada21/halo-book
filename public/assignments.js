@@ -179,6 +179,22 @@ function loadSelectedAssignment(selectedCode) {
   if (!selectedCode) return;
   activeCode = selectedCode;
 
+  if (typeof stopMcqLivePolling === 'function') stopMcqLivePolling();
+  if (typeof activeMcqCode !== 'undefined') activeMcqCode = null;
+  if (typeof activeViewMode !== 'undefined') activeViewMode = 'essay';
+
+  const essayHeaders = document.getElementById('portal-table-headers-essay');
+  const mcqHeaders = document.getElementById('portal-table-headers-mcq');
+  if (essayHeaders) essayHeaders.style.display = 'table-row';
+  if (mcqHeaders) mcqHeaders.style.display = 'none';
+
+  const btnEditDdl = document.getElementById('portal-btn-edit-deadline');
+  const btnManageBundle = document.getElementById('portal-btn-manage-bundle');
+  const btnDelForm = document.getElementById('portal-btn-delete-form');
+  if (btnEditDdl) btnEditDdl.style.display = '';
+  if (btnManageBundle) btnManageBundle.style.display = '';
+  if (btnDelForm) btnDelForm.style.display = '';
+
   const fullDisplayTitle = getFullActiveTitle();
   const assignmentObj = allAssignmentsMap[selectedCode];
   const deadlineText = assignmentObj ? formatDeadlineString(assignmentObj.deadline) : 'No Deadline';

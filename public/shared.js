@@ -137,6 +137,7 @@ fetch('/api/auth/me')
       setMinDateOnly();
       if (typeof renderTaskDefinitions === 'function') renderTaskDefinitions();
       if (typeof loadTeacherAssignments === 'function') loadTeacherAssignments();
+      if (typeof loadTeacherMcqTests === 'function') loadTeacherMcqTests();
     } else {
       window.location.replace('/login.html');
     }

@@ -2082,6 +2082,159 @@ ${markingSchemePromptAddon}`;
   }
 );
 
+// ----------------- STAGE 5: TEACHER RESULTS & SUBMISSIONS ENDPOINTS -----------------
+
+// 1. GET /api/mcq/teacher/tests - List all MCQ tests for teacher with attempt counts
+// NOTE: Registered BEFORE /api/mcq/:testId so Express does not parse 'teacher' as a testId
+app.get('/api/mcq/teacher/tests', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+    const query = isElevated
+      ? `SELECT t.id, t.code, t.title, t.deadline, t.status, t.created_at,
+                (SELECT COUNT(*) FROM mcq_attempts WHERE test_id = t.id) as attempt_count
+         FROM mcq_tests t
+         ORDER BY t.id DESC`
+      : `SELECT t.id, t.code, t.title, t.deadline, t.status, t.created_at,
+                (SELECT COUNT(*) FROM mcq_attempts WHERE test_id = t.id) as attempt_count
+         FROM mcq_tests t
+         WHERE t.teacher_id = ?
+         ORDER BY t.id DESC`;
+
+    const args = isElevated ? [] : [req.user.id];
+    const testsRes = await db.execute({ sql: query, args });
+
+    return res.json({
+      success: true,
+      tests: testsRes.rows
+    });
+  } catch (err) {
+    console.error('Error fetching teacher MCQ tests:', err);
+    return res.status(500).json({ error: 'Failed to fetch MCQ tests.' });
+  }
+});
+
+// 2. GET /api/mcq/:code/attempts - View all student attempts and question key for an MCQ test
+app.get('/api/mcq/:code/attempts', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const code = (req.params.code || '').trim();
+    if (!code) {
+      return res.status(400).json({ error: 'Test code is required.' });
+    }
+
+    const testRes = await db.execute({
+      sql: 'SELECT id, code, title, deadline, status, teacher_id FROM mcq_tests WHERE code = ?',
+      args: [code]
+    });
+    const test = testRes.rows[0];
+    if (!test) {
+      return res.status(404).json({ error: 'MCQ test not found.' });
+    }
+
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+    if (Number(test.teacher_id) !== Number(req.user.id) && !isElevated) {
+      return res.status(403).json({ error: 'Unauthorized to view attempts for this test.' });
+    }
+
+    const attemptsRes = await db.execute({
+      sql: `SELECT id, student_name, device_id, ip_address, answers, score, possible_duplicate, submitted_at
+            FROM mcq_attempts
+            WHERE test_id = ?
+            ORDER BY submitted_at ASC, id ASC`,
+      args: [test.id]
+    });
+
+    const attempts = attemptsRes.rows.map((att) => {
+      let parsedAnswers = att.answers;
+      if (typeof parsedAnswers === 'string') {
+        try {
+          parsedAnswers = JSON.parse(parsedAnswers);
+        } catch (_) {
+          parsedAnswers = {};
+        }
+      }
+      return {
+        ...att,
+        answers: parsedAnswers && typeof parsedAnswers === 'object' ? parsedAnswers : {}
+      };
+    });
+
+    const questionsRes = await db.execute({
+      sql: `SELECT id, question_text, options, correct_index, points, order_index
+            FROM mcq_questions
+            WHERE test_id = ?
+            ORDER BY order_index ASC, id ASC`,
+      args: [test.id]
+    });
+
+    const questions = questionsRes.rows.map((q) => {
+      let opts = q.options;
+      if (typeof opts === 'string') {
+        try {
+          opts = JSON.parse(opts);
+        } catch (_) {
+          opts = [];
+        }
+      }
+      return {
+        ...q,
+        options: Array.isArray(opts) ? opts : []
+      };
+    });
+
+    return res.json({
+      success: true,
+      test,
+      attempts,
+      questions
+    });
+  } catch (err) {
+    console.error('Error fetching MCQ attempts:', err);
+    return res.status(500).json({ error: 'Failed to fetch MCQ attempts.' });
+  }
+});
+
+// 3. DELETE /api/mcq/:code/attempts/:attemptId - Delete single student attempt strictly by numeric ID
+app.delete('/api/mcq/:code/attempts/:attemptId', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const code = (req.params.code || '').trim();
+    const attemptId = parseInt(req.params.attemptId, 10);
+    if (!code || isNaN(attemptId) || attemptId <= 0) {
+      return res.status(400).json({ error: 'Invalid test code or attempt ID.' });
+    }
+
+    const testRes = await db.execute({
+      sql: 'SELECT id, teacher_id FROM mcq_tests WHERE code = ?',
+      args: [code]
+    });
+    const test = testRes.rows[0];
+    if (!test) {
+      return res.status(404).json({ error: 'MCQ test not found.' });
+    }
+
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+    if (Number(test.teacher_id) !== Number(req.user.id) && !isElevated) {
+      return res.status(403).json({ error: 'Unauthorized to delete attempts for this test.' });
+    }
+
+    const delRes = await db.execute({
+      sql: 'DELETE FROM mcq_attempts WHERE id = ? AND test_id = ?',
+      args: [attemptId, test.id]
+    });
+
+    if (delRes.rowsAffected === 0) {
+      return res.status(404).json({ error: 'Attempt record not found for this test.' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Student attempt deleted. Student may now retake the test.'
+    });
+  } catch (err) {
+    console.error('Error deleting MCQ attempt:', err);
+    return res.status(500).json({ error: 'Failed to delete student attempt.' });
+  }
+});
+
 // ----------------- STAGE 2: TEACHER REVIEW & PUBLISH ENDPOINTS -----------------
 
 // 1. GET /api/mcq/:testId - Teacher view of test, questions, and fresh signed audio URL

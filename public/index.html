@@ -1285,11 +1285,20 @@
         <button class="primary" onclick="createAssignmentLink()">🔗 Generate Student Submission Link</button>
 
         <div style="margin-left: 38px; margin-top: 24px; border-top: 1px solid var(--paper-line); padding-top: 16px;">
-          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">📂 Or View Past
-            Assignment Submissions:</label>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+            <label style="font-size: 13px; font-weight: 600; margin: 0;">📂 View Past Submissions & Results:</label>
+            <div style="display: inline-flex; gap: 4px; background: var(--pen-soft); padding: 2px; border-radius: 6px;">
+              <button type="button" id="btn-sub-view-essay" class="ghost" style="font-size: 11.5px; padding: 4px 10px; font-weight: 600; background: #fff; border-radius: 4px; color: var(--pen); box-shadow: 0 1px 2px rgba(0,0,0,0.06);" onclick="switchSubmissionsView('essay')">📝 Homework Packages</button>
+              <button type="button" id="btn-sub-view-mcq" class="ghost" style="font-size: 11.5px; padding: 4px 10px; font-weight: 600; background: transparent; border-radius: 4px; color: var(--ink-soft);" onclick="switchSubmissionsView('mcq')">🎧 MCQ Assessments</button>
+            </div>
+          </div>
           <select id="past-assignments-select" onchange="loadSelectedAssignment(this.value)"
             style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: #fff;">
-            <option value="">-- Select an assignment to view live marks --</option>
+            <option value="">-- Select an assignment package to view live marks --</option>
+          </select>
+          <select id="mcq-tests-select" onchange="loadSelectedMcqTest(this.value)"
+            style="display: none; width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: #fff;">
+            <option value="">-- Select an MCQ Assessment to view results --</option>
           </select>
         </div>
       </div>
@@ -1302,11 +1311,11 @@
             <h2 class="step-title" id="live-portal-title" style="margin-bottom: 4px;">Live Submissions</h2>
             <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
               <span style="font-size: 12.5px; color: var(--ink-soft);" id="live-portal-deadline-sub"></span>
-              <button type="button" class="ghost" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;"
+              <button type="button" class="ghost" id="portal-btn-edit-deadline" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;"
                 onclick="openDeadlineEditModal()">✏️ Edit Deadline</button>
-              <button type="button" class="ghost" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;"
+              <button type="button" class="ghost" id="portal-btn-manage-bundle" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;"
                 onclick="openBundleManagerModal()">⚙️ Manage Package Tasks</button>
-              <button type="button" class="ghost ghost-danger"
+              <button type="button" class="ghost ghost-danger" id="portal-btn-delete-form"
                 style="padding: 2px 8px; font-size: 11px; border-radius: 4px;" onclick="deleteActiveAssignment()">🗑️
                 Delete Form</button>
             </div>
@@ -1317,7 +1326,7 @@
             <button class="ghost" onclick="printReport('full')">📄 Full Report (With Marks)</button>
             <button class="ghost ghost-feedback" onclick="printReport('feedback')">📝 Feedback Report (No
               Marks)</button>
-            <button class="ghost" onclick="toggleSubmissionLogsModal()" style="font-weight: 600;">🕒 View Submission
+            <button class="ghost" id="portal-btn-logs" onclick="toggleSubmissionLogsModal()" style="font-weight: 600;">🕒 View Submission
               Logs</button>
           </div>
         </div>
@@ -1341,10 +1350,15 @@
           <div class="print-sub" id="portal-print-report-sub">Teacher: Teacher | Total Assessed: 0 Students</div>
           <table class="summary-table">
             <thead>
-              <tr>
+              <tr id="portal-table-headers-essay">
                 <th style="width: 24%;" class="summary-col-name">Student Name</th>
                 <th style="width: 30%;" class="col-score-breakdown">Score Breakdown</th>
                 <th style="width: 46%;" class="summary-col-mistakes">Mistakes in Your Work</th>
+              </tr>
+              <tr id="portal-table-headers-mcq" style="display: none;">
+                <th style="width: 25%;">Student & Submission Audit</th>
+                <th style="width: 15%;">Total Score</th>
+                <th style="width: 60%;">Questions & Answer Breakdown</th>
               </tr>
             </thead>
             <tbody id="portal-summary-table-body">

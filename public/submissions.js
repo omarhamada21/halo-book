@@ -11,6 +11,9 @@ function stopLivePolling() {
     clearInterval(livePollTimer);
     livePollTimer = null;
   }
+  if (typeof stopMcqLivePolling === 'function') {
+    stopMcqLivePolling();
+  }
 }
 
 function isSubmissionProtected(subId) {
@@ -474,8 +477,15 @@ document.addEventListener('visibilitychange', () => {
       clearInterval(livePollTimer);
       livePollTimer = null;
     }
+    if (typeof stopMcqLivePolling === 'function') {
+      stopMcqLivePolling();
+    }
   } else {
-    if (activeCode) {
+    if (typeof activeViewMode !== 'undefined' && activeViewMode === 'mcq') {
+      if (typeof activeMcqCode !== 'undefined' && activeMcqCode && typeof startMcqLivePolling === 'function') {
+        startMcqLivePolling();
+      }
+    } else if (activeCode) {
       startLivePolling();
     }
   }
@@ -532,6 +542,34 @@ async function fetchLiveSubmissions() {
 
 // Native direct report printing with combined title
 function printReport(type) {
+  if (typeof activeViewMode !== 'undefined' && activeViewMode === 'mcq') {
+    if (!mcqAttemptsData || mcqAttemptsData.length === 0) {
+      alert('No student MCQ submissions found to print.');
+      return;
+    }
+
+    const fullReportTitle = (activeMcqTestObj && activeMcqTestObj.title) ? activeMcqTestObj.title : (activeMcqCode || 'MCQ Assessment');
+    const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
+    const studentCount = mcqAttemptsData.length;
+    const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
+
+    document.body.classList.add('printing-portal');
+    document.body.classList.remove('printing-manual');
+
+    const reportTitleEl = document.getElementById('portal-print-report-title');
+    const reportSubEl = document.getElementById('portal-print-report-sub');
+    if (reportTitleEl) reportTitleEl.textContent = `Class Evaluation Summary: ${fullReportTitle}`;
+    if (reportSubEl) reportSubEl.textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
+
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        document.body.classList.remove('printing-portal');
+      }, 1000);
+    }, 250);
+    return;
+  }
+
   if (!portalSubmissions || portalSubmissions.length === 0) {
     alert('No student submissions found to print.');
     return;
@@ -652,6 +690,380 @@ async function toggleSubmissionLogsModal() {
   }
 }
 
+// ==========================================
+// STAGE 5: MCQ TEACHER RESULTS INTEGRATION
+// ==========================================
+
+let activeViewMode = 'essay';
+let activeMcqCode = null;
+let activeMcqTestObj = null;
+let mcqAttemptsData = [];
+let mcqQuestionsData = [];
+let mcqLivePollTimer = null;
+let isMcqPollingActive = false;
+
+function stopMcqLivePolling() {
+  if (mcqLivePollTimer) {
+    clearInterval(mcqLivePollTimer);
+    mcqLivePollTimer = null;
+  }
+}
+
+function startMcqLivePolling() {
+  stopMcqLivePolling();
+  fetchLiveMcqAttempts();
+  mcqLivePollTimer = setInterval(fetchLiveMcqAttempts, 10000);
+}
+
+function switchSubmissionsView(mode) {
+  activeViewMode = mode;
+  const btnEssay = document.getElementById('btn-sub-view-essay');
+  const btnMcq = document.getElementById('btn-sub-view-mcq');
+  const selectEssay = document.getElementById('past-assignments-select');
+  const selectMcq = document.getElementById('mcq-tests-select');
+
+  if (mode === 'mcq') {
+    if (btnMcq) {
+      btnMcq.style.background = '#fff';
+      btnMcq.style.color = 'var(--pen)';
+      btnMcq.style.boxShadow = '0 1px 2px rgba(0,0,0,0.06)';
+    }
+    if (btnEssay) {
+      btnEssay.style.background = 'transparent';
+      btnEssay.style.color = 'var(--ink-soft)';
+      btnEssay.style.boxShadow = 'none';
+    }
+    if (selectEssay) selectEssay.style.display = 'none';
+    if (selectMcq) selectMcq.style.display = 'block';
+
+    if (typeof stopLivePolling === 'function') stopLivePolling();
+    loadTeacherMcqTests();
+
+    if (activeMcqCode && selectMcq) {
+      selectMcq.value = activeMcqCode;
+      loadSelectedMcqTest(activeMcqCode);
+    } else {
+      const resultsCard = document.getElementById('portal-results-card');
+      if (resultsCard) resultsCard.style.display = 'none';
+    }
+  } else {
+    // Essay mode
+    if (btnEssay) {
+      btnEssay.style.background = '#fff';
+      btnEssay.style.color = 'var(--pen)';
+      btnEssay.style.boxShadow = '0 1px 2px rgba(0,0,0,0.06)';
+    }
+    if (btnMcq) {
+      btnMcq.style.background = 'transparent';
+      btnMcq.style.color = 'var(--ink-soft)';
+      btnMcq.style.boxShadow = 'none';
+    }
+    if (selectEssay) selectEssay.style.display = 'block';
+    if (selectMcq) selectMcq.style.display = 'none';
+
+    stopMcqLivePolling();
+
+    if (activeCode && selectEssay) {
+      selectEssay.value = activeCode;
+      if (typeof loadSelectedAssignment === 'function') {
+        loadSelectedAssignment(activeCode);
+      }
+    } else {
+      const resultsCard = document.getElementById('portal-results-card');
+      if (resultsCard) resultsCard.style.display = 'none';
+    }
+  }
+}
+
+async function loadTeacherMcqTests() {
+  try {
+    const res = await fetch('/api/mcq/teacher/tests');
+    const d = await res.json();
+    if (d.success && Array.isArray(d.tests)) {
+      const select = document.getElementById('mcq-tests-select');
+      if (!select) return;
+
+      select.innerHTML = '<option value="">-- Select an MCQ Assessment to view results --</option>' +
+        d.tests.map((t) => {
+          const count = Number(t.attempt_count) || 0;
+          const countText = `${count} submission${count === 1 ? '' : 's'}`;
+          let deadlineText = 'No Deadline';
+          if (t.deadline) {
+            const dObj = new Date(t.deadline);
+            if (!isNaN(dObj.getTime())) {
+              deadlineText = 'Due: ' + new Intl.DateTimeFormat('en-US', {
+                timeZone: 'Africa/Cairo',
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+              }).format(dObj);
+            }
+          }
+          return `<option value="${t.code}">🎧 ${escapeHtml(t.title)} (${countText}) — ${escapeHtml(deadlineText)} [${t.status}]</option>`;
+        }).join('');
+
+      if (activeMcqCode) {
+        select.value = activeMcqCode;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load teacher MCQ tests:', err);
+  }
+}
+
+async function loadSelectedMcqTest(code) {
+  if (!code) {
+    const resultsCard = document.getElementById('portal-results-card');
+    if (resultsCard) resultsCard.style.display = 'none';
+    stopMcqLivePolling();
+    activeMcqCode = null;
+    return;
+  }
+
+  activeMcqCode = code;
+  activeViewMode = 'mcq';
+  if (typeof stopLivePolling === 'function') stopLivePolling();
+
+  try {
+    const res = await fetch(`/api/mcq/${encodeURIComponent(code)}/attempts`);
+    const d = await res.json();
+    if (d.success && d.test) {
+      activeMcqTestObj = d.test;
+      mcqAttemptsData = d.attempts || [];
+      mcqQuestionsData = d.questions || [];
+
+      // Update titles
+      const liveTitle = document.getElementById('live-portal-title');
+      if (liveTitle) liveTitle.textContent = `Live Submissions: ${d.test.title} (MCQ Assessment)`;
+
+      let deadlineText = 'No Deadline';
+      if (d.test.deadline) {
+        const dObj = new Date(d.test.deadline);
+        if (!isNaN(dObj.getTime())) {
+          deadlineText = 'Due: ' + new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Africa/Cairo',
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+          }).format(dObj);
+        }
+      }
+      const deadlineSub = document.getElementById('live-portal-deadline-sub');
+      if (deadlineSub) deadlineSub.textContent = deadlineText;
+
+      const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
+      const studentCount = mcqAttemptsData.length;
+      const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
+
+      const printTitle = document.getElementById('portal-print-report-title');
+      if (printTitle) printTitle.textContent = `Class Evaluation Summary: ${d.test.title}`;
+
+      const printSub = document.getElementById('portal-print-report-sub');
+      if (printSub) printSub.textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
+
+      // Show public test link
+      const fullUrl = `${window.location.origin}/mcq-test.html?code=${d.test.code}`;
+      const linkUrlEl = document.getElementById('generated-link-url');
+      if (linkUrlEl) linkUrlEl.textContent = fullUrl;
+      const linkBox = document.getElementById('generated-link-box');
+      if (linkBox) linkBox.style.display = 'flex';
+
+      // Hide essay bundle elements
+      const bundleTabs = document.getElementById('bundle-task-tabs');
+      if (bundleTabs) bundleTabs.style.display = 'none';
+
+      const btnEditDdl = document.getElementById('portal-btn-edit-deadline');
+      const btnManageBundle = document.getElementById('portal-btn-manage-bundle');
+      const btnDelForm = document.getElementById('portal-btn-delete-form');
+      if (btnEditDdl) btnEditDdl.style.display = 'none';
+      if (btnManageBundle) btnManageBundle.style.display = 'none';
+      if (btnDelForm) btnDelForm.style.display = 'none';
+
+      // Show MCQ table headers and hide essay headers
+      const essayHeaders = document.getElementById('portal-table-headers-essay');
+      const mcqHeaders = document.getElementById('portal-table-headers-mcq');
+      if (essayHeaders) essayHeaders.style.display = 'none';
+      if (mcqHeaders) mcqHeaders.style.display = 'table-row';
+
+      // Show results card
+      const resultsCard = document.getElementById('portal-results-card');
+      if (resultsCard) resultsCard.style.display = 'block';
+
+      // Render read-only attempts table
+      renderMcqAttemptsTable(mcqAttemptsData, mcqQuestionsData);
+
+      // Start live polling
+      startMcqLivePolling();
+    } else {
+      alert(d.error || 'Failed to load MCQ assessment.');
+    }
+  } catch (err) {
+    console.error('Error loading MCQ attempts:', err);
+    alert('Failed to load MCQ assessment details.');
+  }
+}
+
+async function fetchLiveMcqAttempts() {
+  if (!activeMcqCode || isMcqPollingActive || activeViewMode !== 'mcq') return;
+
+  isMcqPollingActive = true;
+  try {
+    const res = await fetch(`/api/mcq/${encodeURIComponent(activeMcqCode)}/attempts`);
+    const d = await res.json();
+    if (d.success) {
+      activeMcqTestObj = d.test;
+      mcqAttemptsData = d.attempts || [];
+      mcqQuestionsData = d.questions || [];
+
+      renderMcqAttemptsTable(mcqAttemptsData, mcqQuestionsData);
+
+      const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
+      const studentCount = mcqAttemptsData.length;
+      const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
+      const subEl = document.getElementById('portal-print-report-sub');
+      if (subEl) subEl.textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
+    }
+  } catch (_) {
+    // Silently handle background poll error
+  } finally {
+    isMcqPollingActive = false;
+  }
+}
+
+function renderMcqAttemptsTable(attempts, questions) {
+  const summaryTbody = document.getElementById('portal-summary-table-body');
+  const resultsContainer = document.getElementById('portal-results-list');
+
+  if (resultsContainer) resultsContainer.innerHTML = '';
+  if (!summaryTbody) return;
+
+  summaryTbody.innerHTML = '';
+
+  if (!attempts || attempts.length === 0) {
+    summaryTbody.innerHTML = `
+      <tr>
+        <td colspan="3" style="text-align: center; color: var(--ink-soft); padding: 36px 20px; font-size: 14px;">
+          Waiting for students to take this assessment... Share the link above with your class.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  attempts.forEach((att, idx) => {
+    const displayName = escapeHtml(att.student_name || 'Student');
+
+    let formattedDate = '—';
+    if (att.submitted_at) {
+      const dObj = new Date(att.submitted_at);
+      if (!isNaN(dObj.getTime())) {
+        formattedDate = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Africa/Cairo',
+          dateStyle: 'medium',
+          timeStyle: 'short'
+        }).format(dObj);
+      }
+    }
+
+    const dupPill = att.possible_duplicate
+      ? `<span class="pill-badge pill-amber" title="Multiple submissions from same IP within 10 minutes">⚠️ Rapid IP Resubmit</span>`
+      : '';
+
+    // Question-by-question objective breakdown against correct_index
+    const breakdownRows = (questions || []).map((q, qIdx) => {
+      const studentChoice = (att.answers && att.answers[q.id] !== undefined) ? Number(att.answers[q.id]) : -1;
+      const isCorrect = studentChoice === Number(q.correct_index);
+
+      const correctOptText = (q.options && q.options[q.correct_index]) ? q.options[q.correct_index] : `Option ${q.correct_index + 1}`;
+      const studentOptText = (studentChoice >= 0 && q.options && q.options[studentChoice]) ? q.options[studentChoice] : (studentChoice >= 0 ? `Option ${studentChoice + 1}` : 'None');
+
+      if (studentChoice === -1) {
+        return `
+          <div style="font-size: 12.5px; padding: 3px 0; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
+            <b>Q${qIdx + 1}:</b> ⚪ <span style="color:#6B7280;">Unanswered</span> &bull; Correct: <span style="color:#065F46; font-weight:600;">${escapeHtml(correctOptText)}</span>
+          </div>
+        `;
+      } else if (isCorrect) {
+        return `
+          <div style="font-size: 12.5px; padding: 3px 0; color: #065F46; font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
+            <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✓</span> <span style="font-weight:600;">${escapeHtml(correctOptText)}</span>
+          </div>
+        `;
+      } else {
+        return `
+          <div style="font-size: 12.5px; padding: 3px 0; color: #991B1B; font-family: 'IBM Plex Mono', monospace; border-bottom: 1px dashed #E5E7EB;">
+            <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✕</span> <span style="text-decoration: line-through;">${escapeHtml(studentOptText)}</span> &rarr; Correct: <span style="color:#065F46; font-weight:600;">${escapeHtml(correctOptText)}</span>
+          </div>
+        `;
+      }
+    }).join('');
+
+    const tr = document.createElement('tr');
+    tr.id = `mcq-summary-tr-${idx}`;
+    tr.innerHTML = `
+      <td style="vertical-align: top; padding: 12px 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+          <div>
+            <b style="font-size: 14.5px; color: var(--ink);">${displayName}</b>
+            <div style="margin-top: 3px; font-size: 11.5px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace;">
+              🕒 ${formattedDate}
+            </div>
+            <div class="integrity-pills no-print" style="margin-top: 6px;">${dupPill}</div>
+          </div>
+          <button class="line-delete-btn no-print" onclick="deleteMcqAttempt(${att.id}, '${escapeHtml(att.student_name || 'Student')}')" title="Delete attempt & allow student to retake test" style="font-size: 15px; color: #DC2626; padding: 2px 5px; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: 4px; transition: all 0.2s;">🗑️</button>
+        </div>
+      </td>
+      <td style="vertical-align: top; padding: 12px 14px;">
+        <div style="display: inline-block; padding: 6px 12px; background: var(--pen-soft); color: var(--pen); border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; border: 1px solid rgba(0,0,0,0.06);">
+          ${escapeHtml(att.score || '0')}
+        </div>
+      </td>
+      <td style="vertical-align: top; padding: 12px 14px;">
+        <div style="background: #F9FAFB; border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; max-height: 240px; overflow-y: auto;">
+          ${breakdownRows || '<span style="color:var(--ink-soft); font-size:12px;">No question breakdown available</span>'}
+        </div>
+      </td>
+    `;
+    summaryTbody.appendChild(tr);
+  });
+}
+
+async function deleteMcqAttempt(attemptId, studentName) {
+  const numericId = parseInt(attemptId, 10);
+  if (!activeMcqCode || isNaN(numericId) || numericId <= 0) {
+    alert('Unable to identify assessment attempt ID.');
+    return;
+  }
+
+  const confirmed = await showConfirmModal(
+    `Delete attempt for "${studentName}"? This permanently removes their score and unlocks their device to retake the test.`,
+    'Remove Student Attempt'
+  );
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`/api/mcq/${encodeURIComponent(activeMcqCode)}/attempts/${numericId}`, {
+      method: 'DELETE'
+    });
+    const d = await res.json();
+    if (d.success) {
+      showToast(d.message || 'Student attempt deleted.');
+      await fetchLiveMcqAttempts();
+      await loadTeacherMcqTests();
+    } else {
+      alert(d.error || 'Failed to remove attempt.');
+    }
+  } catch (err) {
+    console.error('Error deleting MCQ attempt:', err);
+    alert('Network error while deleting assessment attempt.');
+  }
+}
+
 // Global window exports
 window.renderCardsAndSummaryTable = renderCardsAndSummaryTable;
 window.startLivePolling = startLivePolling;
@@ -663,3 +1075,14 @@ window.toggleSubmissionLogsModal = toggleSubmissionLogsModal;
 window.deleteLineItem = deleteLineItem;
 window.addNewSectionLine = addNewSectionLine;
 window.recalculateTotal = recalculateTotal;
+
+// Stage 5 MCQ exports
+window.switchSubmissionsView = switchSubmissionsView;
+window.loadTeacherMcqTests = loadTeacherMcqTests;
+window.loadSelectedMcqTest = loadSelectedMcqTest;
+window.fetchLiveMcqAttempts = fetchLiveMcqAttempts;
+window.renderMcqAttemptsTable = renderMcqAttemptsTable;
+window.deleteMcqAttempt = deleteMcqAttempt;
+window.startMcqLivePolling = startMcqLivePolling;
+window.stopMcqLivePolling = stopMcqLivePolling;
+
