@@ -636,3 +636,650 @@ async function saveAssignmentDeadline() {
     alert('Connection error updating deadline.');
   }
 }
+
+// ==========================================
+// MCQ TESTS (STAGE 2: REVIEW & PUBLISH)
+// ==========================================
+
+var currentMcqTestId = null;
+var currentMcqTestData = null;
+var currentMcqQuestions = [];
+var mcqPdfFile = null;
+var mcqSchemeFiles = [];
+var mcqAudioFile = null;
+var mcqAutoSaveTimers = {};
+
+function initMcqFileHandlers() {
+  const pdfDz = document.getElementById('mcq-pdf-dz');
+  const pdfInput = document.getElementById('mcq-pdf-file');
+  const schemeDz = document.getElementById('mcq-scheme-dz');
+  const schemeInput = document.getElementById('mcq-scheme-file');
+  const audioDz = document.getElementById('mcq-audio-dz');
+  const audioInput = document.getElementById('mcq-audio-file');
+
+  if (pdfDz && pdfInput) {
+    pdfDz.addEventListener('click', () => pdfInput.click());
+    pdfInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        mcqPdfFile = e.target.files[0];
+        renderMcqPdfBadge();
+      }
+    });
+    pdfDz.addEventListener('dragover', (e) => { e.preventDefault(); pdfDz.classList.add('drag'); });
+    pdfDz.addEventListener('dragleave', () => pdfDz.classList.remove('drag'));
+    pdfDz.addEventListener('drop', (e) => {
+      e.preventDefault();
+      pdfDz.classList.remove('drag');
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        mcqPdfFile = e.dataTransfer.files[0];
+        renderMcqPdfBadge();
+      }
+    });
+  }
+
+  if (schemeDz && schemeInput) {
+    schemeDz.addEventListener('click', () => schemeInput.click());
+    schemeInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length) {
+        for (const f of e.target.files) mcqSchemeFiles.push(f);
+        renderMcqSchemeBadges();
+      }
+      schemeInput.value = '';
+    });
+    schemeDz.addEventListener('dragover', (e) => { e.preventDefault(); schemeDz.classList.add('drag'); });
+    schemeDz.addEventListener('dragleave', () => schemeDz.classList.remove('drag'));
+    schemeDz.addEventListener('drop', (e) => {
+      e.preventDefault();
+      schemeDz.classList.remove('drag');
+      if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        for (const f of e.dataTransfer.files) mcqSchemeFiles.push(f);
+        renderMcqSchemeBadges();
+      }
+    });
+  }
+
+  if (audioDz && audioInput) {
+    audioDz.addEventListener('click', () => audioInput.click());
+    audioInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        mcqAudioFile = e.target.files[0];
+        renderMcqAudioBadge();
+      }
+    });
+    audioDz.addEventListener('dragover', (e) => { e.preventDefault(); audioDz.classList.add('drag'); });
+    audioDz.addEventListener('dragleave', () => audioDz.classList.remove('drag'));
+    audioDz.addEventListener('drop', (e) => {
+      e.preventDefault();
+      audioDz.classList.remove('drag');
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        mcqAudioFile = e.dataTransfer.files[0];
+        renderMcqAudioBadge();
+      }
+    });
+  }
+}
+
+function renderMcqPdfBadge() {
+  const container = document.getElementById('mcq-pdf-badge');
+  if (!container) return;
+  if (!mcqPdfFile) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = `
+    <div class="file-chip">
+      <span>📄 Question Paper: ${escapeHtml(mcqPdfFile.name)}</span>
+      <button type="button" class="file-chip-remove" onclick="removeMcqPdf()">&times;</button>
+    </div>
+  `;
+}
+
+function removeMcqPdf() {
+  mcqPdfFile = null;
+  const input = document.getElementById('mcq-pdf-file');
+  if (input) input.value = '';
+  renderMcqPdfBadge();
+}
+
+function renderMcqSchemeBadges() {
+  const container = document.getElementById('mcq-scheme-badges');
+  if (!container) return;
+  container.innerHTML = mcqSchemeFiles.map((f, idx) => `
+    <div class="file-chip">
+      <span>📋 Scheme #${idx + 1}: ${escapeHtml(f.name)}</span>
+      <button type="button" class="file-chip-remove" onclick="removeMcqSchemeFile(${idx})">&times;</button>
+    </div>
+  `).join('');
+}
+
+function removeMcqSchemeFile(idx) {
+  mcqSchemeFiles.splice(idx, 1);
+  renderMcqSchemeBadges();
+}
+
+function renderMcqAudioBadge() {
+  const container = document.getElementById('mcq-audio-badge');
+  if (!container) return;
+  if (!mcqAudioFile) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = `
+    <div class="file-chip">
+      <span>🎵 Audio Track: ${escapeHtml(mcqAudioFile.name)}</span>
+      <button type="button" class="file-chip-remove" onclick="removeMcqAudio()">&times;</button>
+    </div>
+  `;
+}
+
+function removeMcqAudio() {
+  mcqAudioFile = null;
+  const input = document.getElementById('mcq-audio-file');
+  if (input) input.value = '';
+  renderMcqAudioBadge();
+}
+
+async function generateMcqTest() {
+  const titleInput = document.getElementById('mcq-title-input');
+  const schemeTextInput = document.getElementById('mcq-scheme-text');
+  const maxPlaysInput = document.getElementById('mcq-max-plays');
+  const btn = document.getElementById('mcq-generate-btn');
+  const progressWrap = document.getElementById('mcq-progress-wrap');
+  const progressFill = document.getElementById('mcq-progress-fill');
+  const progressLabel = document.getElementById('mcq-progress-label');
+
+  const title = (titleInput?.value || '').trim();
+  if (!title) {
+    alert('Please enter a test title.');
+    titleInput?.focus();
+    return;
+  }
+
+  if (!mcqPdfFile) {
+    alert('Please upload a test question paper PDF.');
+    return;
+  }
+
+  const schemeText = (schemeTextInput?.value || '').trim();
+  if (mcqSchemeFiles.length === 0 && !schemeText) {
+    alert('Please provide a marking scheme as a file or text criteria.');
+    return;
+  }
+
+  const deadline = getIsoFrom12h('mcq-deadline-date', 'mcq-deadline-hour', 'mcq-deadline-minute', 'mcq-deadline-ampm');
+  const maxPlays = Math.max(0, parseInt(maxPlaysInput?.value || '0', 10) || 0);
+
+  const fd = new FormData();
+  fd.append('title', title);
+  if (deadline) fd.append('deadline', deadline);
+  fd.append('maxPlays', maxPlays);
+  fd.append('pdf', mcqPdfFile);
+
+  mcqSchemeFiles.forEach((f) => fd.append('markingScheme', f));
+  if (schemeText) fd.append('markingScheme', schemeText);
+
+  if (mcqAudioFile) {
+    fd.append('audio', mcqAudioFile);
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Processing with AI...';
+  if (progressWrap) progressWrap.style.display = 'block';
+  if (progressFill) progressFill.style.width = '35%';
+  if (progressLabel) progressLabel.textContent = 'Uploading documents and initiating AI extraction...';
+
+  try {
+    if (progressFill) progressFill.style.width = '65%';
+    if (progressLabel) progressLabel.textContent = 'Analyzing PDF & generating multiple-choice questions...';
+
+    const res = await fetch('/api/mcq/generate', {
+      method: 'POST',
+      body: fd
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to generate MCQ test.');
+    }
+
+    if (progressFill) progressFill.style.width = '100%';
+    if (progressLabel) progressLabel.textContent = 'MCQ test successfully generated!';
+
+    showToast('MCQ test generated successfully!');
+
+    // Switch view to review card
+    document.getElementById('mcq-create-card').style.display = 'none';
+    document.getElementById('mcq-review-card').style.display = 'block';
+
+    await loadMcqReview(data.test.id);
+  } catch (err) {
+    console.error('MCQ generation error:', err);
+    alert('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Generate MCQ Test with AI';
+    if (progressWrap) progressWrap.style.display = 'none';
+    if (progressFill) progressFill.style.width = '0%';
+  }
+}
+
+async function loadMcqReview(testId) {
+  try {
+    const res = await fetch(`/api/mcq/${testId}`);
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to load test details.');
+    }
+
+    currentMcqTestId = data.test.id;
+    currentMcqTestData = data.test;
+    currentMcqQuestions = data.questions || [];
+
+    // Update Header
+    const titleEl = document.getElementById('mcq-review-title');
+    if (titleEl) titleEl.textContent = data.test.title || 'MCQ Test Review';
+
+    const statusEl = document.getElementById('mcq-review-status');
+    if (statusEl) {
+      if (data.test.status === 'published') {
+        statusEl.className = 'pill-badge pill-green';
+        statusEl.textContent = 'Published';
+      } else {
+        statusEl.className = 'pill-badge pill-amber';
+        statusEl.textContent = 'Draft';
+      }
+    }
+
+    // Audio Preview
+    const audioContainer = document.getElementById('mcq-preview-audio-container');
+    const audioElement = document.getElementById('mcq-preview-audio');
+    if (data.audioUrl) {
+      if (audioElement) {
+        audioElement.src = data.audioUrl;
+        audioElement.load();
+      }
+      if (audioContainer) audioContainer.style.display = 'block';
+    } else {
+      if (audioContainer) audioContainer.style.display = 'none';
+    }
+
+    // If already published, show the link box
+    const linkBox = document.getElementById('mcq-published-link-box');
+    const linkText = document.getElementById('mcq-published-link-url');
+    if (data.test.status === 'published' && data.test.code) {
+      const fullLink = `${window.location.origin}/mcq-test.html?code=${data.test.code}`;
+      if (linkText) linkText.textContent = fullLink;
+      if (linkBox) linkBox.style.display = 'flex';
+      setPublishButtonsState(true);
+    } else {
+      if (linkBox) linkBox.style.display = 'none';
+      setPublishButtonsState(false);
+    }
+
+    renderMcqEditor();
+  } catch (err) {
+    console.error('Failed to load MCQ review:', err);
+    alert('Error loading review: ' + err.message);
+  }
+}
+
+function renderMcqEditor() {
+  const container = document.getElementById('mcq-questions-editor');
+  if (!container) return;
+
+  if (currentMcqQuestions.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 40px 20px; color: var(--ink-soft); border: 1px dashed var(--border); border-radius: 8px;">
+        <p style="margin: 0 0 10px 0; font-size: 14px;">No questions in this test yet.</p>
+        <button type="button" class="ghost" onclick="addBlankMcqQuestion()" style="font-weight: 600;">➕ Add Your First Question</button>
+      </div>
+    `;
+    return;
+  }
+
+  const optionLetters = ['A', 'B', 'C', 'D'];
+
+  container.innerHTML = currentMcqQuestions.map((q, qIdx) => {
+    const opts = Array.isArray(q.options) ? q.options : ['Option A', 'Option B', 'Option C', 'Option D'];
+
+    return `
+      <div class="mcq-question-card" id="mcq-q-card-${q.id}">
+        <div class="mcq-question-header">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="mcq-qnum">Question ${qIdx + 1}</span>
+            <div class="mcq-points-wrap">
+              <span>Points:</span>
+              <input type="number" class="mcq-points-input" id="mcq-q-points-${q.id}" min="0" step="0.5" value="${q.points ?? 1}"
+                oninput="onQuestionFieldChanged(${q.id})" />
+            </div>
+          </div>
+          <button type="button" class="line-delete-btn" onclick="deleteMcqQuestion(${q.id})" title="Delete Question">
+            🗑️ Delete
+          </button>
+        </div>
+
+        <div>
+          <label style="display:block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink-soft);">Question Prompt / Text</label>
+          <textarea class="mcq-qtext-input" id="mcq-q-text-${q.id}" placeholder="Type question prompt here..."
+            oninput="onQuestionFieldChanged(${q.id})">${escapeHtml(q.question_text || '')}</textarea>
+        </div>
+
+        <div>
+          <label style="display:block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--ink-soft);">
+            Options & Correct Answer (Select the radio button for the correct option)
+          </label>
+          <div class="mcq-options-grid">
+            ${opts.map((optText, optIdx) => {
+              const isCorrect = Number(q.correct_index) === optIdx;
+              const letter = optionLetters[optIdx] || String(optIdx + 1);
+              return `
+                <div class="mcq-option-row ${isCorrect ? 'correct' : ''}" id="mcq-opt-row-${q.id}-${optIdx}">
+                  <input type="radio" name="mcq-correct-${q.id}" class="mcq-radio"
+                    ${isCorrect ? 'checked' : ''} onchange="onRadioCorrectChanged(${q.id}, ${optIdx})" />
+                  <span class="mcq-opt-label">${letter}.</span>
+                  <input type="text" class="mcq-opt-input" id="mcq-opt-input-${q.id}-${optIdx}"
+                    value="${escapeHtml(optText || '')}" placeholder="Option ${letter} text..."
+                    oninput="onQuestionFieldChanged(${q.id})" />
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function onQuestionFieldChanged(questionId) {
+  scheduleQuestionSave(questionId);
+}
+
+function onRadioCorrectChanged(questionId, selectedIdx) {
+  const q = currentMcqQuestions.find((item) => item.id === questionId);
+  if (q) {
+    q.correct_index = selectedIdx;
+  }
+  for (let i = 0; i < 4; i++) {
+    const row = document.getElementById(`mcq-opt-row-${questionId}-${i}`);
+    if (row) {
+      if (i === selectedIdx) row.classList.add('correct');
+      else row.classList.remove('correct');
+    }
+  }
+  scheduleQuestionSave(questionId);
+}
+
+function scheduleQuestionSave(questionId) {
+  showAutoSaveIndicator('saving');
+
+  if (mcqAutoSaveTimers[questionId]) {
+    clearTimeout(mcqAutoSaveTimers[questionId]);
+  }
+
+  mcqAutoSaveTimers[questionId] = setTimeout(() => {
+    executeQuestionSave(questionId);
+  }, 600);
+}
+
+async function executeQuestionSave(questionId) {
+  if (!currentMcqTestId) return;
+
+  const textEl = document.getElementById(`mcq-q-text-${questionId}`);
+  const pointsEl = document.getElementById(`mcq-q-points-${questionId}`);
+  if (!textEl) return;
+
+  const question_text = textEl.value.trim();
+  const points = Math.max(0, parseFloat(pointsEl?.value || '1') || 1);
+
+  const options = [];
+  for (let i = 0; i < 4; i++) {
+    const optEl = document.getElementById(`mcq-opt-input-${questionId}-${i}`);
+    if (optEl) {
+      options.push(optEl.value.trim());
+    }
+  }
+
+  const radios = document.getElementsByName(`mcq-correct-${questionId}`);
+  let correct_index = 0;
+  for (let i = 0; i < radios.length; i++) {
+    if (radios[i].checked) {
+      correct_index = i;
+      break;
+    }
+  }
+
+  const q = currentMcqQuestions.find((item) => item.id === questionId);
+  if (q) {
+    q.question_text = question_text;
+    q.options = options;
+    q.correct_index = correct_index;
+    q.points = points;
+  }
+
+  try {
+    const res = await fetch(`/api/mcq/${currentMcqTestId}/questions/${questionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question_text, options, correct_index, points })
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      console.warn('Auto-save error:', data.error);
+      showAutoSaveIndicator('error');
+    } else {
+      showAutoSaveIndicator('saved');
+    }
+  } catch (err) {
+    console.error('Auto-save network error:', err);
+    showAutoSaveIndicator('error');
+  }
+}
+
+function showAutoSaveIndicator(status) {
+  const indicator = document.getElementById('mcq-autosave-indicator');
+  if (!indicator) return;
+
+  if (status === 'saving') {
+    indicator.style.display = 'inline';
+    indicator.style.color = '#D97706';
+    indicator.textContent = 'Saving...';
+  } else if (status === 'saved') {
+    indicator.style.display = 'inline';
+    indicator.style.color = '#059669';
+    indicator.textContent = '✓ Saved';
+    setTimeout(() => {
+      if (indicator.textContent === '✓ Saved') {
+        indicator.style.display = 'none';
+      }
+    }, 2000);
+  } else if (status === 'error') {
+    indicator.style.display = 'inline';
+    indicator.style.color = '#DC2626';
+    indicator.textContent = '⚠️ Save error';
+  }
+}
+
+async function addBlankMcqQuestion() {
+  if (!currentMcqTestId) return;
+
+  try {
+    const res = await fetch(`/api/mcq/${currentMcqTestId}/questions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to add question.');
+    }
+
+    currentMcqQuestions.push(data.question);
+    renderMcqEditor();
+    showToast('New question added!');
+
+    const newCard = document.getElementById(`mcq-q-card-${data.question.id}`);
+    if (newCard) newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (err) {
+    alert('Failed to add question: ' + err.message);
+  }
+}
+
+async function deleteMcqQuestion(questionId) {
+  if (!currentMcqTestId) return;
+
+  const confirmed = await showConfirmModal('Are you sure you want to delete this question?');
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`/api/mcq/${currentMcqTestId}/questions/${questionId}`, {
+      method: 'DELETE'
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to delete question.');
+    }
+
+    currentMcqQuestions = currentMcqQuestions.filter((q) => q.id !== questionId);
+    renderMcqEditor();
+    showToast('Question deleted.');
+  } catch (err) {
+    alert('Failed to delete question: ' + err.message);
+  }
+}
+
+async function publishMcqTest() {
+  if (!currentMcqTestId) return;
+
+  // Flush any pending auto-saves first
+  for (const q of currentMcqQuestions) {
+    if (mcqAutoSaveTimers[q.id]) {
+      clearTimeout(mcqAutoSaveTimers[q.id]);
+      await executeQuestionSave(q.id);
+    }
+  }
+
+  if (currentMcqQuestions.length === 0) {
+    alert('Cannot publish test without any questions. Please add at least one question.');
+    return;
+  }
+
+  for (let i = 0; i < currentMcqQuestions.length; i++) {
+    const q = currentMcqQuestions[i];
+    if (!q.question_text || !q.question_text.trim()) {
+      alert(`Cannot publish: Question #${i + 1} has an empty question prompt.`);
+      const textEl = document.getElementById(`mcq-q-text-${q.id}`);
+      if (textEl) textEl.focus();
+      return;
+    }
+
+    const opts = Array.isArray(q.options) ? q.options : [];
+    if (opts.length < 2) {
+      alert(`Cannot publish: Question #${i + 1} must have at least 2 options.`);
+      return;
+    }
+
+    for (let j = 0; j < opts.length; j++) {
+      if (!opts[j] || !opts[j].trim()) {
+        alert(`Cannot publish: Question #${i + 1}, Option ${String.fromCharCode(65 + j)} is empty.`);
+        const optEl = document.getElementById(`mcq-opt-input-${q.id}-${j}`);
+        if (optEl) optEl.focus();
+        return;
+      }
+    }
+
+    if (q.correct_index === null || q.correct_index === undefined || q.correct_index < 0 || q.correct_index >= opts.length) {
+      alert(`Cannot publish: Question #${i + 1} does not have a correct answer selected.`);
+      return;
+    }
+  }
+
+  const btn1 = document.getElementById('mcq-publish-btn');
+  const btn2 = document.getElementById('mcq-publish-btn-bottom');
+  if (btn1) btn1.disabled = true;
+  if (btn2) btn2.disabled = true;
+
+  try {
+    const res = await fetch(`/api/mcq/${currentMcqTestId}/publish`, {
+      method: 'POST'
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to publish test.');
+    }
+
+    const statusEl = document.getElementById('mcq-review-status');
+    if (statusEl) {
+      statusEl.className = 'pill-badge pill-green';
+      statusEl.textContent = 'Published';
+    }
+
+    const linkBox = document.getElementById('mcq-published-link-box');
+    const linkText = document.getElementById('mcq-published-link-url');
+    if (linkText) linkText.textContent = data.link;
+    if (linkBox) {
+      linkBox.style.display = 'flex';
+      linkBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    setPublishButtonsState(true);
+    showToast('Test published successfully!');
+  } catch (err) {
+    alert('Failed to publish test: ' + err.message);
+    if (btn1) btn1.disabled = false;
+    if (btn2) btn2.disabled = false;
+  }
+}
+
+function setPublishButtonsState(isPublished) {
+  const btn1 = document.getElementById('mcq-publish-btn');
+  const btn2 = document.getElementById('mcq-publish-btn-bottom');
+  if (isPublished) {
+    if (btn1) { btn1.textContent = '✓ Published'; btn1.disabled = true; }
+    if (btn2) { btn2.textContent = '✓ Published'; btn2.disabled = true; }
+  } else {
+    if (btn1) { btn1.textContent = '🚀 Publish Test Link'; btn1.disabled = false; }
+    if (btn2) { btn2.textContent = '🚀 Publish Test Link'; btn2.disabled = false; }
+  }
+}
+
+function copyMcqPublishedLink() {
+  const linkText = document.getElementById('mcq-published-link-url')?.textContent;
+  if (!linkText) return;
+  navigator.clipboard.writeText(linkText).then(() => {
+    showToast('Shareable test link copied to clipboard!');
+  }).catch(() => {
+    alert('Copied link: ' + linkText);
+  });
+}
+
+function resetMcqCreationForm() {
+  currentMcqTestId = null;
+  currentMcqTestData = null;
+  currentMcqQuestions = [];
+  mcqPdfFile = null;
+  mcqSchemeFiles = [];
+  mcqAudioFile = null;
+
+  const titleInp = document.getElementById('mcq-title-input');
+  if (titleInp) titleInp.value = '';
+  const schemeTxt = document.getElementById('mcq-scheme-text');
+  if (schemeTxt) schemeTxt.value = '';
+  const maxPlays = document.getElementById('mcq-max-plays');
+  if (maxPlays) maxPlays.value = '0';
+
+  renderMcqPdfBadge();
+  renderMcqSchemeBadges();
+  renderMcqAudioBadge();
+
+  document.getElementById('mcq-create-card').style.display = 'block';
+  document.getElementById('mcq-review-card').style.display = 'none';
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initMcqFileHandlers);
+} else {
+  initMcqFileHandlers();
+}

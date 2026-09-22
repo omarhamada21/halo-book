@@ -13,6 +13,8 @@ import cookieParser from 'cookie-parser';
 import { createClient } from '@libsql/client';
 import crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const require = createRequire(import.meta.url);
 
@@ -190,6 +192,49 @@ async function initDatabase() {
       );
     `);
 
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS mcq_tests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        teacher_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        audio_path TEXT,
+        deadline TEXT,
+        status TEXT DEFAULT 'draft',
+        code TEXT UNIQUE NOT NULL,
+        max_plays INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (teacher_id) REFERENCES users(id)
+      );
+    `);
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS mcq_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        test_id INTEGER NOT NULL,
+        question_text TEXT NOT NULL,
+        options TEXT NOT NULL,
+        correct_index INTEGER NOT NULL,
+        points REAL DEFAULT 1,
+        order_index INTEGER DEFAULT 0,
+        FOREIGN KEY (test_id) REFERENCES mcq_tests(id)
+      );
+    `);
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS mcq_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        test_id INTEGER NOT NULL,
+        student_name TEXT NOT NULL,
+        device_id TEXT,
+        ip_address TEXT,
+        answers TEXT,
+        score REAL DEFAULT 0,
+        possible_duplicate INTEGER DEFAULT 0,
+        submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (test_id) REFERENCES mcq_tests(id)
+      );
+    `);
+
     const autoMigrations = [
       'ALTER TABLE assignments ADD COLUMN bundle_code TEXT;',
       'ALTER TABLE assignments ADD COLUMN group_title TEXT;',
@@ -202,7 +247,42 @@ async function initDatabase() {
       'ALTER TABLE submissions ADD COLUMN ai_details TEXT;',
       'ALTER TABLE submissions ADD COLUMN web_score INTEGER DEFAULT 0;',
       'ALTER TABLE submissions ADD COLUMN ip_address TEXT;',
-      'ALTER TABLE submissions ADD COLUMN possible_duplicate INTEGER DEFAULT 0;'
+      'ALTER TABLE submissions ADD COLUMN possible_duplicate INTEGER DEFAULT 0;',
+      'ALTER TABLE mcq_tests ADD COLUMN max_plays INTEGER DEFAULT 0;',
+      `CREATE TABLE IF NOT EXISTS mcq_tests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        teacher_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        audio_path TEXT,
+        deadline TEXT,
+        status TEXT DEFAULT 'draft',
+        code TEXT UNIQUE NOT NULL,
+        max_plays INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (teacher_id) REFERENCES users(id)
+      );`,
+      `CREATE TABLE IF NOT EXISTS mcq_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        test_id INTEGER NOT NULL,
+        question_text TEXT NOT NULL,
+        options TEXT NOT NULL,
+        correct_index INTEGER NOT NULL,
+        points REAL DEFAULT 1,
+        order_index INTEGER DEFAULT 0,
+        FOREIGN KEY (test_id) REFERENCES mcq_tests(id)
+      );`,
+      `CREATE TABLE IF NOT EXISTS mcq_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        test_id INTEGER NOT NULL,
+        student_name TEXT NOT NULL,
+        device_id TEXT,
+        ip_address TEXT,
+        answers TEXT,
+        score REAL DEFAULT 0,
+        possible_duplicate INTEGER DEFAULT 0,
+        submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (test_id) REFERENCES mcq_tests(id)
+      );`
     ];
 
     for (const sql of autoMigrations) {
@@ -279,6 +359,7 @@ async function authenticateToken(req, res, next) {
     const dbUser = result.rows[0];
     if (!dbUser) {
       res.clearCookie('halo_token');
+      if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'User not found.' });
       return res.redirect('/login.html');
     }
 
@@ -400,9 +481,40 @@ function calculateTextSimilarity(text1, text2) {
 // ----------------- GEMINI AI EVALUATION ENGINE -----------------
 // Falls back from gemini-3.6-flash (primary, high speed & quality) to gemini-3.5-flash to prevent outages if the primary model degrades.
 // Retries only on transient capacity/rate errors (500, 503, high demand, quota) where backoff helps, skipping non-recoverable 4xx errors.
-async function callGemini(inputPayload) {
+async function callGemini(inputPayload, configOverride = null) {
   const models = ['gemini-3.6-flash', 'gemini-3.5-flash'];
   let lastErr;
+
+  const defaultConfig = {
+    responseMimeType: 'application/json',
+    responseSchema: {
+      type: 'OBJECT',
+      properties: {
+        student_name: { type: 'STRING' },
+        extracted_essay: { type: 'STRING' },
+        total_score: { type: 'STRING' },
+        category_breakdown: { type: 'STRING' },
+        mistakes: { type: 'STRING' },
+        weaknesses: { type: 'STRING' },
+        ai_probability_score: { type: 'INTEGER' },
+        ai_detection_notes: { type: 'STRING' },
+        web_similarity_score: { type: 'INTEGER' }
+      },
+      required: [
+        'student_name',
+        'extracted_essay',
+        'total_score',
+        'category_breakdown',
+        'mistakes',
+        'weaknesses',
+        'ai_probability_score',
+        'ai_detection_notes',
+        'web_similarity_score'
+      ]
+    }
+  };
+
+  const activeConfig = configOverride || defaultConfig;
 
   for (const modelName of models) {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -410,34 +522,7 @@ async function callGemini(inputPayload) {
         const response = await ai.models.generateContent({
           model: modelName,
           contents: inputPayload,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: 'OBJECT',
-              properties: {
-                student_name: { type: 'STRING' },
-                extracted_essay: { type: 'STRING' },
-                total_score: { type: 'STRING' },
-                category_breakdown: { type: 'STRING' },
-                mistakes: { type: 'STRING' },
-                weaknesses: { type: 'STRING' },
-                ai_probability_score: { type: 'INTEGER' },
-                ai_detection_notes: { type: 'STRING' },
-                web_similarity_score: { type: 'INTEGER' }
-              },
-              required: [
-                'student_name',
-                'extracted_essay',
-                'total_score',
-                'category_breakdown',
-                'mistakes',
-                'weaknesses',
-                'ai_probability_score',
-                'ai_detection_notes',
-                'web_similarity_score'
-              ]
-            }
-          }
+          config: activeConfig
         });
         return response.text;
       } catch (err) {
@@ -1602,6 +1687,993 @@ Respond ONLY with valid JSON matching the schema.`;
   }
 );
 
+// ----------------- MCQ TESTS (FILEBASE S3 & GEMINI GENERATION) -----------------
+
+function getMissingFilebaseEnvVars() {
+  const required = ['FILEBASE_ACCESS_KEY', 'FILEBASE_SECRET_KEY', 'FILEBASE_BUCKET_NAME', 'FILEBASE_ENDPOINT'];
+  return required.filter((v) => !process.env[v] || !process.env[v].trim());
+}
+
+function getFilebaseEndpoint() {
+  const rawEndpoint = (process.env.FILEBASE_ENDPOINT || 'https://s3.filebase.io').trim();
+  const endpoint = rawEndpoint.startsWith('http://') || rawEndpoint.startsWith('https://')
+    ? rawEndpoint
+    : `https://${rawEndpoint}`;
+  return endpoint.replace('s3.filebase.com', 's3.filebase.io').replace(/\/+$/, '');
+}
+
+async function uploadAudioToFilebase(audioFile) {
+  const missing = getMissingFilebaseEnvVars();
+  if (missing.length > 0) {
+    throw new Error(`Filebase storage configuration error: Missing required environment variable(s): ${missing.join(', ')}`);
+  }
+
+  const endpoint = getFilebaseEndpoint();
+  const s3Client = new S3Client({
+    endpoint,
+    region: 'us-east-1',
+    credentials: {
+      accessKeyId: process.env.FILEBASE_ACCESS_KEY.trim(),
+      secretAccessKey: process.env.FILEBASE_SECRET_KEY.trim()
+    },
+    forcePathStyle: true
+  });
+
+  const fileExt = path.extname(audioFile.originalname || '') || '.mp3';
+  const safeExt = fileExt.toLowerCase().startsWith('.') ? fileExt.toLowerCase() : `.${fileExt.toLowerCase()}`;
+  const objectKey = `mcq-audio/${Date.now()}_${crypto.randomBytes(6).toString('hex')}${safeExt}`;
+  const bucketName = process.env.FILEBASE_BUCKET_NAME.trim();
+
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: bucketName,
+      Key: objectKey,
+      Body: audioFile.buffer,
+      ContentType: audioFile.mimetype || 'audio/mpeg'
+    })
+  );
+
+  // Return ONLY the object key (e.g. "mcq-audio/12345_abc.wav")
+  return objectKey;
+}
+
+async function generateSignedAudioUrl(objectKey) {
+  if (!objectKey) return null;
+  const missing = getMissingFilebaseEnvVars();
+  if (missing.length > 0) return null;
+
+  try {
+    const endpoint = getFilebaseEndpoint();
+    const s3Client = new S3Client({
+      endpoint,
+      region: 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.FILEBASE_ACCESS_KEY.trim(),
+        secretAccessKey: process.env.FILEBASE_SECRET_KEY.trim()
+      },
+      forcePathStyle: true
+    });
+
+    const command = new GetObjectCommand({
+      Bucket: process.env.FILEBASE_BUCKET_NAME.trim(),
+      Key: objectKey
+    });
+
+    // Valid for 1 hour (3600 seconds)
+    return await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+  } catch (err) {
+    console.warn(`[Filebase Pre-sign Warning] Failed to generate signed URL for ${objectKey}:`, err.message);
+    return null;
+  }
+}
+
+async function deleteAudioFromFilebase(objectKey) {
+  try {
+    const missing = getMissingFilebaseEnvVars();
+    if (missing.length > 0 || !objectKey) return;
+
+    const endpoint = getFilebaseEndpoint();
+    const s3Client = new S3Client({
+      endpoint,
+      region: 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.FILEBASE_ACCESS_KEY.trim(),
+        secretAccessKey: process.env.FILEBASE_SECRET_KEY.trim()
+      },
+      forcePathStyle: true
+    });
+
+    await s3Client.send(
+      new DeleteObjectCommand({
+        Bucket: process.env.FILEBASE_BUCKET_NAME.trim(),
+        Key: objectKey
+      })
+    );
+    console.log(`[Filebase Cleanup] Successfully deleted orphaned audio: ${objectKey}`);
+  } catch (delErr) {
+    console.warn(`[Filebase Cleanup Notice] Failed to delete orphaned audio ${objectKey}:`, delErr.message);
+  }
+}
+
+async function generateUniqueMcqCode() {
+  for (let i = 0; i < 10; i++) {
+    const code = crypto.randomBytes(4).toString('hex');
+    const existing = await db.execute({
+      sql: 'SELECT id FROM mcq_tests WHERE code = ? LIMIT 1',
+      args: [code]
+    });
+    if (existing.rows.length === 0) return code;
+  }
+  return crypto.randomBytes(6).toString('hex');
+}
+
+app.post(
+  '/api/mcq/generate',
+  authenticateToken,
+  requireApprovedUser,
+  upload.any(),
+  async (req, res) => {
+    try {
+      const { title, deadline } = req.body;
+      const maxPlays = Math.max(0, parseInt(req.body.maxPlays || req.body.max_plays, 10) || 0);
+      const files = req.files || [];
+
+      if (!title || !title.trim()) {
+        return res.status(400).json({ error: 'Test title is required.' });
+      }
+
+      const pdfFile = files.find((f) => f.fieldname === 'pdf');
+      if (!pdfFile || !isPdf(pdfFile)) {
+        return res.status(400).json({ error: 'A test PDF file is required (fieldname "pdf").' });
+      }
+
+      const markingSchemeFile = files.find((f) => f.fieldname === 'markingScheme' || f.fieldname === 'marking_scheme');
+      const markingSchemeText = (req.body.markingScheme || req.body.marking_scheme || '').toString().trim();
+
+      if (!markingSchemeFile && !markingSchemeText) {
+        return res.status(400).json({ error: 'A marking scheme is required as either a file ("markingScheme") or text.' });
+      }
+
+      const audioFile = files.find((f) => f.fieldname === 'audio');
+      let audioPath = null;
+      let uploadedAudioKey = null;
+
+      // Handle audio upload to Filebase S3 if audio file is present
+      if (audioFile) {
+        const missing = getMissingFilebaseEnvVars();
+        if (missing.length > 0) {
+          return res.status(500).json({
+            error: `Filebase S3 configuration is incomplete. Missing required environment variable(s): ${missing.join(', ')}`
+          });
+        }
+
+        try {
+          const objectKey = await uploadAudioToFilebase(audioFile);
+          audioPath = objectKey;
+          uploadedAudioKey = objectKey;
+        } catch (uploadErr) {
+          console.error('Filebase upload failed:', uploadErr);
+          return res.status(500).json({ error: `Failed to upload audio to Filebase: ${uploadErr.message}` });
+        }
+      }
+
+      // Build Gemini Input Payload
+      const inputPayload = [];
+
+      // 1. Attach test PDF
+      inputPayload.push({
+        inlineData: {
+          mimeType: 'application/pdf',
+          data: pdfFile.buffer.toString('base64')
+        }
+      });
+
+      // 2. Attach marking scheme
+      let markingSchemePromptAddon = '';
+      if (markingSchemeFile) {
+        if (isPdf(markingSchemeFile)) {
+          inputPayload.push({
+            inlineData: {
+              mimeType: 'application/pdf',
+              data: markingSchemeFile.buffer.toString('base64')
+            }
+          });
+        } else if (isImage(markingSchemeFile)) {
+          let mimeType = markingSchemeFile.mimetype || 'image/png';
+          if (!mimeType.startsWith('image/')) mimeType = 'image/png';
+          inputPayload.push({
+            inlineData: {
+              mimeType,
+              data: markingSchemeFile.buffer.toString('base64')
+            }
+          });
+        } else {
+          const extractedText = await extractText(markingSchemeFile);
+          if (extractedText && extractedText.trim()) {
+            markingSchemePromptAddon += `\n\nMARKING SCHEME / ANSWER KEY:\n${extractedText.trim()}`;
+          } else {
+            markingSchemePromptAddon += `\n\nMARKING SCHEME / ANSWER KEY:\n${markingSchemeFile.buffer.toString('utf-8')}`;
+          }
+        }
+      }
+
+      if (markingSchemeText) {
+        markingSchemePromptAddon += `\n\nMARKING SCHEME / ANSWER KEY (TEXT):\n${markingSchemeText}`;
+      }
+
+      // 3. Prompt instructing Gemini to convert PDF questions into MCQ JSON array
+      const promptText = `You are an expert exam creator and assessor.
+You are provided with an examination/test PDF document and its official marking scheme / answer key.
+Your task is to convert each question from the test PDF into multiple-choice format (MCQ).
+
+CRITICAL INSTRUCTIONS:
+1. For every question in the test PDF:
+   - "question": Extract or formulate the clear question text as a string.
+   - "options": An array of EXACTLY 4 strings representing plausible options. One must be the correct answer, and the remaining 3 must be plausible distractors.
+   - "correct_index": An integer (0, 1, 2, or 3) indicating which option in "options" is the correct answer. You MUST use the marking scheme/answer key to determine the correct option.
+   - "points": A positive number representing the awarded marks/points for this question as indicated in the marking scheme. If unspecified in the marking scheme, default to 1.
+2. Maintain the natural sequence of questions as presented in the test PDF.
+3. Return ONLY a JSON array matching the schema:
+   [
+     {
+       "question": "string",
+       "options": ["string", "string", "string", "string"],
+       "correct_index": 0,
+       "points": 1
+     }
+   ]
+${markingSchemePromptAddon}`;
+
+      inputPayload.push(promptText);
+
+      // Define Gemini JSON Array Schema
+      const mcqConfig = {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              question: { type: 'STRING' },
+              options: {
+                type: 'ARRAY',
+                items: { type: 'STRING' }
+              },
+              correct_index: { type: 'INTEGER' },
+              points: { type: 'NUMBER' }
+            },
+            required: ['question', 'options', 'correct_index', 'points']
+          }
+        }
+      };
+
+      let rawOutput;
+      try {
+        rawOutput = await callGemini(inputPayload, mcqConfig);
+      } catch (aiErr) {
+        if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
+        console.error('Gemini MCQ generation call error:', aiErr);
+        return res.status(502).json({ error: `AI question generation failed: ${aiErr.message || 'Gemini service error.'}` });
+      }
+
+      // Parse and Validate JSON
+      let parsedQuestions = null;
+      try {
+        let cleanText = (rawOutput || '').trim();
+        if (cleanText.startsWith('```')) {
+          cleanText = cleanText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        }
+        parsedQuestions = JSON.parse(cleanText);
+      } catch (parseErr) {
+        if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
+        console.error('MCQ JSON parse error:', parseErr, 'Raw output:', rawOutput);
+        return res.status(422).json({ error: 'Failed to parse AI output into valid JSON questions.' });
+      }
+
+      if (!Array.isArray(parsedQuestions) || parsedQuestions.length === 0) {
+        if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
+        return res.status(422).json({ error: 'AI returned an empty or invalid question set. Expected a non-empty array of questions.' });
+      }
+
+      const validatedQuestions = [];
+      for (let i = 0; i < parsedQuestions.length; i++) {
+        const item = parsedQuestions[i];
+        if (!item || typeof item.question !== 'string' || !item.question.trim()) {
+          if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
+          return res.status(422).json({ error: `Question #${i + 1} has missing or empty question text.` });
+        }
+
+        if (!Array.isArray(item.options) || item.options.length !== 4) {
+          if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
+          return res.status(422).json({ error: `Question #${i + 1} must have exactly 4 options.` });
+        }
+
+        const cleanOptions = item.options.map((opt) => (opt !== null && opt !== undefined ? String(opt).trim() : ''));
+        if (cleanOptions.some((opt) => !opt)) {
+          if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
+          return res.status(422).json({ error: `Question #${i + 1} contains empty or invalid option strings.` });
+        }
+
+        const correctIdx = Number(item.correct_index);
+        if (!Number.isInteger(correctIdx) || correctIdx < 0 || correctIdx > 3) {
+          if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
+          return res.status(422).json({ error: `Question #${i + 1} has an invalid correct_index (${item.correct_index}). Must be 0, 1, 2, or 3.` });
+        }
+
+        const rawPoints = Number(item.points);
+        const points = !isNaN(rawPoints) && rawPoints > 0 ? rawPoints : 1;
+
+        validatedQuestions.push({
+          question: item.question.trim(),
+          options: cleanOptions,
+          correct_index: correctIdx,
+          points
+        });
+      }
+
+      // Generate unique shareable code with DB collision retry
+      const deadlineVal = deadline && deadline.trim() ? deadline.trim() : null;
+      let testId = null;
+      let testCode = null;
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          testCode = await generateUniqueMcqCode();
+          const testInsert = await db.execute({
+            sql: `INSERT INTO mcq_tests (teacher_id, title, audio_path, deadline, status, code, max_plays)
+                  VALUES (?, ?, ?, ?, 'draft', ?, ?)`,
+            args: [req.user.id, title.trim(), audioPath, deadlineVal, testCode, maxPlays]
+          });
+          testId = Number(testInsert.lastInsertRowid);
+          break;
+        } catch (insertErr) {
+          if (insertErr.message && insertErr.message.includes('UNIQUE constraint failed') && attempt < 2) {
+            console.warn(`[MCQ Insert] Code collision on ${testCode}. Retrying...`);
+            continue;
+          }
+          throw insertErr;
+        }
+      }
+
+      const insertedQuestions = [];
+
+      for (let i = 0; i < validatedQuestions.length; i++) {
+        const q = validatedQuestions[i];
+        const qInsert = await db.execute({
+          sql: `INSERT INTO mcq_questions (test_id, question_text, options, correct_index, points, order_index)
+                VALUES (?, ?, ?, ?, ?, ?)`,
+          args: [testId, q.question, JSON.stringify(q.options), q.correct_index, q.points, i]
+        });
+
+        insertedQuestions.push({
+          id: Number(qInsert.lastInsertRowid),
+          test_id: testId,
+          question_text: q.question,
+          options: q.options,
+          correct_index: q.correct_index,
+          points: q.points,
+          order_index: i
+        });
+      }
+
+      const testRowRes = await db.execute({
+        sql: 'SELECT id, teacher_id, title, audio_path, deadline, status, code, created_at, max_plays FROM mcq_tests WHERE id = ?',
+        args: [testId]
+      });
+
+      const fullTest = testRowRes.rows[0];
+      const signedAudioUrl = fullTest.audio_path ? await generateSignedAudioUrl(fullTest.audio_path) : null;
+
+      return res.json({
+        success: true,
+        test: {
+          ...fullTest,
+          audio_url: signedAudioUrl
+        },
+        questions: insertedQuestions
+      });
+    } catch (err) {
+      if (uploadedAudioKey) {
+        await deleteAudioFromFilebase(uploadedAudioKey);
+      }
+      console.error('MCQ Generation Endpoint Error:', err);
+      return res.status(500).json({ error: err.message || 'Internal server error generating MCQ test.' });
+    }
+  }
+);
+
+// ----------------- STAGE 2: TEACHER REVIEW & PUBLISH ENDPOINTS -----------------
+
+// 1. GET /api/mcq/:testId - Teacher view of test, questions, and fresh signed audio URL
+app.get('/api/mcq/:testId', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const testId = parseInt(req.params.testId, 10);
+    if (isNaN(testId) || testId <= 0) {
+      return res.status(400).json({ error: 'Invalid test ID format.' });
+    }
+
+    const testRes = await db.execute({
+      sql: 'SELECT id, teacher_id, title, audio_path, deadline, status, code, created_at, max_plays FROM mcq_tests WHERE id = ?',
+      args: [testId]
+    });
+
+    const test = testRes.rows[0];
+    if (!test) {
+      return res.status(404).json({ error: 'MCQ test not found.' });
+    }
+
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+    if (Number(test.teacher_id) !== Number(req.user.id) && !isElevated) {
+      return res.status(403).json({ error: 'Unauthorized to view this MCQ test.' });
+    }
+
+    const qRes = await db.execute({
+      sql: 'SELECT id, test_id, question_text, options, correct_index, points, order_index FROM mcq_questions WHERE test_id = ? ORDER BY order_index ASC, id ASC',
+      args: [testId]
+    });
+
+    const questions = qRes.rows.map((q) => {
+      let opts = q.options;
+      if (typeof opts === 'string') {
+        try {
+          opts = JSON.parse(opts);
+        } catch (_) {
+          opts = [];
+        }
+      }
+      return {
+        id: q.id,
+        test_id: q.test_id,
+        question_text: q.question_text,
+        options: Array.isArray(opts) ? opts : [],
+        correct_index: q.correct_index,
+        points: q.points,
+        order_index: q.order_index
+      };
+    });
+
+    let audioUrl = null;
+    if (test.audio_path) {
+      audioUrl = await generateSignedAudioUrl(test.audio_path);
+    }
+
+    return res.json({
+      success: true,
+      test: {
+        ...test,
+        audio_url: audioUrl
+      },
+      questions,
+      audioUrl
+    });
+  } catch (err) {
+    console.error('Error fetching MCQ test:', err);
+    return res.status(500).json({ error: 'Failed to fetch MCQ test.' });
+  }
+});
+
+// 2. PATCH /api/mcq/:testId/questions/:questionId - Edit question details
+app.patch('/api/mcq/:testId/questions/:questionId', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const testId = parseInt(req.params.testId, 10);
+    const questionId = parseInt(req.params.questionId, 10);
+    if (isNaN(testId) || isNaN(questionId) || testId <= 0 || questionId <= 0) {
+      return res.status(400).json({ error: 'Invalid test ID or question ID format.' });
+    }
+
+    const testRes = await db.execute({
+      sql: 'SELECT id, teacher_id FROM mcq_tests WHERE id = ?',
+      args: [testId]
+    });
+    const test = testRes.rows[0];
+    if (!test) {
+      return res.status(404).json({ error: 'MCQ test not found.' });
+    }
+
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+    if (Number(test.teacher_id) !== Number(req.user.id) && !isElevated) {
+      return res.status(403).json({ error: 'Unauthorized to edit questions for this test.' });
+    }
+
+    const qRes = await db.execute({
+      sql: 'SELECT id, test_id, question_text, options, correct_index, points, order_index FROM mcq_questions WHERE id = ? AND test_id = ?',
+      args: [questionId, testId]
+    });
+    const question = qRes.rows[0];
+    if (!question) {
+      return res.status(404).json({ error: 'Question not found for this test.' });
+    }
+
+    let existingOptions = [];
+    try {
+      existingOptions = typeof question.options === 'string' ? JSON.parse(question.options) : question.options;
+    } catch (_) {
+      existingOptions = [];
+    }
+
+    const { question_text, options, correct_index, points } = req.body;
+
+    let updatedQuestionText = question.question_text;
+    if (question_text !== undefined) {
+      if (typeof question_text !== 'string') {
+        return res.status(400).json({ error: 'Question text must be a string.' });
+      }
+      updatedQuestionText = question_text.trim();
+    }
+
+    let updatedOptions = existingOptions;
+    if (options !== undefined) {
+      if (!Array.isArray(options) || options.length < 2) {
+        return res.status(400).json({ error: 'Options must be an array with at least 2 options.' });
+      }
+      const cleanOptions = options.map((opt) => (opt !== null && opt !== undefined ? String(opt).trim() : ''));
+      if (cleanOptions.some((opt) => !opt)) {
+        return res.status(400).json({ error: 'All options must be non-empty strings.' });
+      }
+      updatedOptions = cleanOptions;
+    }
+
+    let updatedCorrectIndex = question.correct_index;
+    if (correct_index !== undefined) {
+      const cIdx = Number(correct_index);
+      if (!Number.isInteger(cIdx) || cIdx < 0 || cIdx >= updatedOptions.length) {
+        return res.status(400).json({ error: `correct_index must be an integer between 0 and ${updatedOptions.length - 1}.` });
+      }
+      updatedCorrectIndex = cIdx;
+    } else if (options !== undefined && (updatedCorrectIndex < 0 || updatedCorrectIndex >= updatedOptions.length)) {
+      updatedCorrectIndex = 0;
+    }
+
+    let updatedPoints = question.points;
+    if (points !== undefined) {
+      const pNum = Number(points);
+      if (isNaN(pNum) || pNum < 0) {
+        return res.status(400).json({ error: 'Points must be a positive number or zero.' });
+      }
+      updatedPoints = pNum;
+    }
+
+    await db.execute({
+      sql: `UPDATE mcq_questions 
+            SET question_text = ?, options = ?, correct_index = ?, points = ?
+            WHERE id = ? AND test_id = ?`,
+      args: [updatedQuestionText, JSON.stringify(updatedOptions), updatedCorrectIndex, updatedPoints, questionId, testId]
+    });
+
+    return res.json({ success: true, message: 'Question updated.' });
+  } catch (err) {
+    console.error('Error updating MCQ question:', err);
+    return res.status(500).json({ error: 'Failed to update question.' });
+  }
+});
+
+// 3. POST /api/mcq/:testId/questions - Add a blank question to test
+app.post('/api/mcq/:testId/questions', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const testId = parseInt(req.params.testId, 10);
+    if (isNaN(testId) || testId <= 0) {
+      return res.status(400).json({ error: 'Invalid test ID format.' });
+    }
+
+    const testRes = await db.execute({
+      sql: 'SELECT id, teacher_id FROM mcq_tests WHERE id = ?',
+      args: [testId]
+    });
+    const test = testRes.rows[0];
+    if (!test) {
+      return res.status(404).json({ error: 'MCQ test not found.' });
+    }
+
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+    if (Number(test.teacher_id) !== Number(req.user.id) && !isElevated) {
+      return res.status(403).json({ error: 'Unauthorized to add questions to this test.' });
+    }
+
+    const maxOrderRes = await db.execute({
+      sql: 'SELECT MAX(order_index) as max_order FROM mcq_questions WHERE test_id = ?',
+      args: [testId]
+    });
+    const maxOrder = maxOrderRes.rows[0]?.max_order;
+    const nextOrder = (maxOrder !== null && maxOrder !== undefined && !isNaN(maxOrder)) ? Number(maxOrder) + 1 : 0;
+
+    const defaultOptions = ['Option A', 'Option B', 'Option C', 'Option D'];
+    const insertRes = await db.execute({
+      sql: `INSERT INTO mcq_questions (test_id, question_text, options, correct_index, points, order_index)
+            VALUES (?, ?, ?, 0, 1, ?)`,
+      args: [testId, 'New Question', JSON.stringify(defaultOptions), nextOrder]
+    });
+
+    const newQuestionId = Number(insertRes.lastInsertRowid);
+    return res.json({
+      success: true,
+      question: {
+        id: newQuestionId,
+        test_id: testId,
+        question_text: 'New Question',
+        options: defaultOptions,
+        correct_index: 0,
+        points: 1,
+        order_index: nextOrder
+      }
+    });
+  } catch (err) {
+    console.error('Error adding MCQ question:', err);
+    return res.status(500).json({ error: 'Failed to add question.' });
+  }
+});
+
+// 4. DELETE /api/mcq/:testId/questions/:questionId - Delete question from test
+app.delete('/api/mcq/:testId/questions/:questionId', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const testId = parseInt(req.params.testId, 10);
+    const questionId = parseInt(req.params.questionId, 10);
+    if (isNaN(testId) || isNaN(questionId) || testId <= 0 || questionId <= 0) {
+      return res.status(400).json({ error: 'Invalid test ID or question ID format.' });
+    }
+
+    const testRes = await db.execute({
+      sql: 'SELECT id, teacher_id FROM mcq_tests WHERE id = ?',
+      args: [testId]
+    });
+    const test = testRes.rows[0];
+    if (!test) {
+      return res.status(404).json({ error: 'MCQ test not found.' });
+    }
+
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+    if (Number(test.teacher_id) !== Number(req.user.id) && !isElevated) {
+      return res.status(403).json({ error: 'Unauthorized to delete questions from this test.' });
+    }
+
+    const delRes = await db.execute({
+      sql: 'DELETE FROM mcq_questions WHERE id = ? AND test_id = ?',
+      args: [questionId, testId]
+    });
+
+    if (delRes.rowsAffected === 0) {
+      return res.status(404).json({ error: 'Question not found for this test.' });
+    }
+
+    return res.json({ success: true, message: 'Question deleted.' });
+  } catch (err) {
+    console.error('Error deleting MCQ question:', err);
+    return res.status(500).json({ error: 'Failed to delete question.' });
+  }
+});
+
+// 5. POST /api/mcq/:testId/publish - Integrity check and publish test
+app.post('/api/mcq/:testId/publish', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const testId = parseInt(req.params.testId, 10);
+    if (isNaN(testId) || testId <= 0) {
+      return res.status(400).json({ error: 'Invalid test ID format.' });
+    }
+
+    const testRes = await db.execute({
+      sql: 'SELECT id, teacher_id, title, code, status FROM mcq_tests WHERE id = ?',
+      args: [testId]
+    });
+    const test = testRes.rows[0];
+    if (!test) {
+      return res.status(404).json({ error: 'MCQ test not found.' });
+    }
+
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+    if (Number(test.teacher_id) !== Number(req.user.id) && !isElevated) {
+      return res.status(403).json({ error: 'Unauthorized to publish this test.' });
+    }
+
+    const qRes = await db.execute({
+      sql: 'SELECT id, question_text, options, correct_index, points, order_index FROM mcq_questions WHERE test_id = ? ORDER BY order_index ASC',
+      args: [testId]
+    });
+
+    const questions = qRes.rows;
+    if (!questions || questions.length === 0) {
+      return res.status(400).json({ error: 'Cannot publish a test with no questions. Add at least 1 question.' });
+    }
+
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      if (!q.question_text || !q.question_text.trim()) {
+        return res.status(400).json({ error: `Cannot publish: Question #${i + 1} has empty question text.` });
+      }
+
+      let opts = q.options;
+      if (typeof opts === 'string') {
+        try {
+          opts = JSON.parse(opts);
+        } catch (_) {
+          opts = [];
+        }
+      }
+
+      if (!Array.isArray(opts) || opts.length < 2) {
+        return res.status(400).json({ error: `Cannot publish: Question #${i + 1} must have at least 2 options.` });
+      }
+
+      if (opts.some((opt) => !opt || !String(opt).trim())) {
+        return res.status(400).json({ error: `Cannot publish: Question #${i + 1} contains empty options.` });
+      }
+
+      const cIdx = Number(q.correct_index);
+      if (q.correct_index === null || q.correct_index === undefined || !Number.isInteger(cIdx) || cIdx < 0 || cIdx >= opts.length) {
+        return res.status(400).json({ error: `Cannot publish: Question #${i + 1} does not have a valid correct option selected.` });
+      }
+    }
+
+    await db.execute({
+      sql: "UPDATE mcq_tests SET status = 'published' WHERE id = ?",
+      args: [testId]
+    });
+
+    const link = `${req.protocol}://${req.get('host')}/mcq-test.html?code=${test.code}`;
+    return res.json({
+      success: true,
+      code: test.code,
+      link
+    });
+  } catch (err) {
+    console.error('Error publishing MCQ test:', err);
+    return res.status(500).json({ error: 'Failed to publish MCQ test.' });
+  }
+});
+
+// ----------------- STAGES 3 & 4: PUBLIC STUDENT-FACING MCQ ENDPOINTS -----------------
+
+// 1. GET /api/public/mcq/:code - Public test details with anti-cheat answer stripping
+app.get('/api/public/mcq/:code', async (req, res) => {
+  try {
+    const code = (req.params.code || '').trim();
+    if (!code) {
+      return res.status(400).json({ error: 'Test code is required.' });
+    }
+
+    const testRes = await db.execute({
+      sql: `SELECT t.id, t.title, t.teacher_id, t.audio_path, t.deadline, t.status, t.code, t.max_plays, u.name as teacher_name
+            FROM mcq_tests t
+            LEFT JOIN users u ON t.teacher_id = u.id
+            WHERE t.code = ? AND t.status = 'published'`,
+      args: [code]
+    });
+
+    const test = testRes.rows[0];
+    if (!test) {
+      return res.status(404).json({ error: 'MCQ test not found or not published.' });
+    }
+
+    const isPastDeadline = Boolean(test.deadline && Date.now() > new Date(test.deadline).getTime());
+
+    const qRes = await db.execute({
+      sql: `SELECT id, question_text, options, order_index
+            FROM mcq_questions
+            WHERE test_id = ?
+            ORDER BY order_index ASC, id ASC`,
+      args: [test.id]
+    });
+
+    // CRITICAL: Anti-cheat stripping of correct_index and points
+    const questions = qRes.rows.map((q) => {
+      let opts = q.options;
+      if (typeof opts === 'string') {
+        try {
+          opts = JSON.parse(opts);
+        } catch (_) {
+          opts = [];
+        }
+      }
+      return {
+        id: q.id,
+        question_text: q.question_text,
+        options: Array.isArray(opts) ? opts : []
+      };
+    });
+
+    let audioUrl = null;
+    if (test.audio_path) {
+      audioUrl = await generateSignedAudioUrl(test.audio_path);
+    }
+
+    return res.json({
+      success: true,
+      test: {
+        title: test.title,
+        teacher_name: test.teacher_name || 'Teacher',
+        deadline: test.deadline,
+        isPastDeadline,
+        max_plays: test.max_plays || 0
+      },
+      audioUrl,
+      questions
+    });
+  } catch (err) {
+    console.error('Error fetching public MCQ test:', err);
+    return res.status(500).json({ error: 'Failed to load MCQ test.' });
+  }
+});
+
+// 2. GET /api/public/mcq/:code/audio-refresh - Refresh pre-signed URL for prolonged student sessions
+app.get('/api/public/mcq/:code/audio-refresh', async (req, res) => {
+  try {
+    const code = (req.params.code || '').trim();
+    if (!code) {
+      return res.status(400).json({ error: 'Test code is required.' });
+    }
+
+    const testRes = await db.execute({
+      sql: "SELECT audio_path FROM mcq_tests WHERE code = ? AND status = 'published'",
+      args: [code]
+    });
+
+    const test = testRes.rows[0];
+    if (!test || !test.audio_path) {
+      return res.status(404).json({ error: 'Audio track not found for this test.' });
+    }
+
+    const audioUrl = await generateSignedAudioUrl(test.audio_path);
+    return res.json({ success: true, audioUrl });
+  } catch (err) {
+    console.error('Error refreshing audio URL:', err);
+    return res.status(500).json({ error: 'Failed to refresh audio stream.' });
+  }
+});
+
+// 3. GET /api/public/mcq/:code/status - Device duplicate submission check
+app.get('/api/public/mcq/:code/status', async (req, res) => {
+  try {
+    const code = (req.params.code || '').trim();
+    const deviceId = (req.query.deviceId || '').toString().trim();
+
+    if (!code) {
+      return res.status(400).json({ error: 'Test code is required.' });
+    }
+
+    const testRes = await db.execute({
+      sql: "SELECT id FROM mcq_tests WHERE code = ? AND status = 'published'",
+      args: [code]
+    });
+
+    const test = testRes.rows[0];
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found.' });
+    }
+
+    if (!deviceId) {
+      return res.json({ success: true, hasSubmitted: false });
+    }
+
+    const attemptRes = await db.execute({
+      sql: 'SELECT id FROM mcq_attempts WHERE test_id = ? AND device_id = ? LIMIT 1',
+      args: [test.id, deviceId]
+    });
+
+    return res.json({ success: true, hasSubmitted: attemptRes.rows.length > 0 });
+  } catch (err) {
+    console.error('Error checking MCQ status:', err);
+    return res.status(500).json({ error: 'Failed to check submission status.' });
+  }
+});
+
+// 4. POST /api/public/mcq/:code/submit - Server-side auto-grading and duplicate audit
+app.post(
+  '/api/public/mcq/:code/submit',
+  rateLimit({ windowMs: 60 * 1000, max: 10 }),
+  async (req, res) => {
+    try {
+      const code = (req.params.code || '').trim();
+      const { studentName, deviceId, answers } = req.body;
+      const clientIp = getClientIp(req);
+
+      if (!studentName || typeof studentName !== 'string' || !studentName.trim()) {
+        return res.status(400).json({ error: 'Please provide your full name before submitting.' });
+      }
+
+      const testRes = await db.execute({
+        sql: `SELECT t.id, t.title, t.teacher_id, t.deadline, t.status, t.code, u.name as teacher_name
+              FROM mcq_tests t
+              LEFT JOIN users u ON t.teacher_id = u.id
+              WHERE t.code = ? AND t.status = 'published'`,
+        args: [code]
+      });
+
+      const test = testRes.rows[0];
+      if (!test) {
+        return res.status(404).json({ error: 'MCQ test not found or submissions are closed.' });
+      }
+
+      // Check deadline
+      if (test.deadline && Date.now() > new Date(test.deadline).getTime()) {
+        return res.status(403).json({ error: 'The submission deadline has passed. Submissions are closed.' });
+      }
+
+      const cleanDeviceId = (deviceId || '').toString().trim();
+      if (cleanDeviceId) {
+        const existingDevice = await db.execute({
+          sql: 'SELECT id FROM mcq_attempts WHERE test_id = ? AND device_id = ? LIMIT 1',
+          args: [test.id, cleanDeviceId]
+        });
+        if (existingDevice.rows.length > 0) {
+          return res.status(409).json({ error: 'An assessment attempt from this device has already been recorded.' });
+        }
+      }
+
+      // Server-Side Auto-Grading (Query mcq_questions)
+      const qRes = await db.execute({
+        sql: 'SELECT id, correct_index, points FROM mcq_questions WHERE test_id = ? ORDER BY order_index ASC, id ASC',
+        args: [test.id]
+      });
+
+      const questions = qRes.rows;
+      let totalScore = 0;
+      let earnedScore = 0;
+      const cleanAnswers = (answers && typeof answers === 'object') ? answers : {};
+
+      for (const q of questions) {
+        const qPoints = Number(q.points) > 0 ? Number(q.points) : 1;
+        totalScore += qPoints;
+
+        const studentChoice = cleanAnswers[q.id] !== undefined ? Number(cleanAnswers[q.id]) : -1;
+        if (studentChoice === Number(q.correct_index)) {
+          earnedScore += qPoints;
+        }
+      }
+
+      // Format clean score string (e.g., "3/5" or "2.5/5")
+      const scoreString = `${earnedScore}/${totalScore}`;
+
+      // Scoped 10-Minute Duplicate Audit
+      // Rule 5: WHERE test_id = ? AND ip_address = ? AND submitted_at >= datetime('now', '-10 minutes')
+      const dupCheck = await db.execute({
+        sql: `SELECT id FROM mcq_attempts 
+              WHERE test_id = ? AND ip_address = ? AND submitted_at >= datetime('now', '-10 minutes') 
+              LIMIT 1`,
+        args: [test.id, clientIp]
+      });
+      const possibleDuplicate = dupCheck.rows.length > 0 ? 1 : 0;
+
+      // Insert attempt into database
+      await db.execute({
+        sql: `INSERT INTO mcq_attempts (test_id, student_name, device_id, ip_address, answers, score, possible_duplicate, submitted_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        args: [
+          test.id,
+          studentName.trim(),
+          cleanDeviceId || null,
+          clientIp,
+          JSON.stringify(cleanAnswers),
+          scoreString,
+          possibleDuplicate
+        ]
+      });
+
+      // Insert audit log into central submission_logs
+      try {
+        await db.execute({
+          sql: `INSERT INTO submission_logs (student_name, assignment_code, assignment_title, teacher_name, submitted_at)
+                VALUES (?, ?, ?, ?, datetime('now'))`,
+          args: [
+            studentName.trim(),
+            test.code,
+            test.title,
+            test.teacher_name || 'Teacher'
+          ]
+        });
+      } catch (logErr) {
+        console.warn('Central audit log notice for MCQ:', logErr.message);
+      }
+
+      return res.json({
+        success: true,
+        message: 'Assessment completed and submitted!',
+        score: scoreString
+      });
+    } catch (err) {
+      console.error('Error submitting MCQ assessment:', err);
+      return res.status(500).json({ error: 'Failed to process assessment submission.' });
+    }
+  }
+);
+
 // Static assets
 const publicDir = path.resolve(__dirname, 'public');
 app.use(express.static(publicDir));
@@ -1610,6 +2682,8 @@ app.get('/login', (req, res) => res.sendFile(path.join(publicDir, 'login.html'))
 app.get('/login.html', (req, res) => res.sendFile(path.join(publicDir, 'login.html')));
 app.get('/submit', (req, res) => res.sendFile(path.join(publicDir, 'submit.html')));
 app.get('/submit.html', (req, res) => res.sendFile(path.join(publicDir, 'submit.html')));
+app.get('/mcq-test', (req, res) => res.sendFile(path.join(publicDir, 'mcq-test.html')));
+app.get('/mcq-test.html', (req, res) => res.sendFile(path.join(publicDir, 'mcq-test.html')));
 app.get('/', authenticateToken, (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 app.get('/index.html', authenticateToken, (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 

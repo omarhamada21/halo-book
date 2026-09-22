@@ -927,6 +927,114 @@
       margin-bottom: 16px;
     }
 
+    /* MCQ Review & Creation Styles */
+    .mcq-question-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: border-color 0.2s;
+    }
+    .mcq-question-card:focus-within {
+      border-color: var(--pen);
+    }
+    .mcq-question-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .mcq-qnum {
+      font-family: 'Source Serif 4', serif;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--pen);
+    }
+    .mcq-points-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12.5px;
+      color: var(--ink-soft);
+    }
+    .mcq-points-input {
+      width: 56px;
+      padding: 4px 6px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 12.5px;
+      text-align: center;
+      outline: none;
+    }
+    .mcq-points-input:focus {
+      border-color: var(--pen);
+    }
+    .mcq-qtext-input {
+      width: 100%;
+      min-height: 50px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-family: 'Inter', sans-serif;
+      font-size: 13.5px;
+      color: var(--ink);
+      resize: vertical;
+      background: #fff;
+      outline: none;
+    }
+    .mcq-qtext-input:focus {
+      border-color: var(--pen);
+    }
+    .mcq-options-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .mcq-option-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #FAFBFC;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .mcq-option-row.correct {
+      background: #F0FDF4;
+      border-color: #86EFAC;
+    }
+    .mcq-radio {
+      cursor: pointer;
+      width: 16px;
+      height: 16px;
+      accent-color: #059669;
+    }
+    .mcq-opt-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-weight: 600;
+      font-size: 12.5px;
+      color: var(--pen);
+      width: 20px;
+    }
+    .mcq-opt-input {
+      flex: 1;
+      border: 1px solid transparent;
+      background: transparent;
+      padding: 4px 6px;
+      font-size: 13px;
+      color: var(--ink);
+      outline: none;
+      border-radius: 4px;
+    }
+    .mcq-opt-input:focus {
+      background: #fff;
+      border-color: var(--pen);
+    }
+
     footer {
       margin-top: 40px;
       text-align: center;
@@ -1070,6 +1178,10 @@
         width: 72% !important;
       }
 
+      #mcq-section {
+        display: none !important;
+      }
+
       body.printing-manual #portal-section {
         display: none !important;
       }
@@ -1111,9 +1223,9 @@
     </header>
 
     <div class="mode-switch">
-      <button class="mode-btn active" id="btn-mode-portal" onclick="switchMode('portal')">🔗 Student Submission Portal
-        (Live)</button>
+      <button class="mode-btn active" id="btn-mode-portal" onclick="switchMode('portal')">🔗 Student Submission Portal (Live)</button>
       <button class="mode-btn" id="btn-mode-manual" onclick="switchMode('manual')">📂 Manual Batch Upload</button>
+      <button class="mode-btn" id="btn-mode-mcq" onclick="switchMode('mcq')">🎧 Listening / MCQ Tests</button>
     </div>
 
     <div id="portal-section">
@@ -1321,6 +1433,143 @@
 
           <div class="results" id="results"></div>
           <div class="empty" id="empty-msg">No results yet — mark a set to see feedback here.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== MCQ SECTION (STAGE 2) ==================== -->
+    <div id="mcq-section" style="display: none;">
+      <!-- CREATION CARD -->
+      <div class="step form-group-creation" id="mcq-create-card">
+        <div class="step-head">
+          <div class="step-num">1</div>
+          <h2 class="step-title">Create Listening / MCQ Test with AI</h2>
+        </div>
+        <p class="step-desc">Upload your test paper PDF and marking scheme. For listening assessments, attach an audio track. AI will automatically formulate and organize multiple-choice questions.</p>
+
+        <div style="margin-left: 38px; margin-top: 16px;">
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Test / Exam Title</label>
+          <input type="text" id="mcq-title-input" placeholder="e.g. Unit 3 Listening & Reading Assessment"
+            style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 14px;" />
+
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Submission Deadline (12-Hour AM/PM — Cairo Time)</label>
+          <div class="picker-12h-wrap">
+            <input type="date" id="mcq-deadline-date" style="flex: 2; min-width: 140px;" />
+            <select id="mcq-deadline-hour" style="flex: 1;">
+              <option value="12">12</option>
+              <option value="01">01</option>
+              <option value="02">02</option>
+              <option value="03">03</option>
+              <option value="04">04</option>
+              <option value="05">05</option>
+              <option value="06">06</option>
+              <option value="07">07</option>
+              <option value="08">08</option>
+              <option value="09">09</option>
+              <option value="10">10</option>
+              <option value="11" selected>11</option>
+            </select>
+            <select id="mcq-deadline-minute" style="flex: 1;">
+              <option value="00">00</option>
+              <option value="15">15</option>
+              <option value="30">30</option>
+              <option value="45">45</option>
+              <option value="59" selected>59</option>
+            </select>
+            <select id="mcq-deadline-ampm" style="flex: 1;">
+              <option value="AM">AM</option>
+              <option value="PM" selected>PM</option>
+            </select>
+          </div>
+
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Test Paper PDF (Required)</label>
+          <div class="dropzone" id="mcq-pdf-dz" style="margin-left: 0; padding: 16px;">
+            <div><b>Drop test paper PDF here</b> or click to browse</div>
+            <span style="font-size:11.5px; color:var(--ink-soft); display:block; margin-top:4px;">(Supports .pdf files)</span>
+          </div>
+          <input type="file" id="mcq-pdf-file" accept=".pdf" style="display:none;" />
+          <div class="badge-grid" id="mcq-pdf-badge" style="margin-left: 0; margin-bottom: 14px;"></div>
+
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Marking Scheme / Answer Key (File or Text Required)</label>
+          <div class="dropzone" id="mcq-scheme-dz" style="margin-left: 0; padding: 16px;">
+            <div><b>Drop marking scheme files or photos here</b> or click to browse</div>
+            <span style="font-size:11.5px; color:var(--ink-soft); display:block; margin-top:4px;">(Supports .pdf, .png, .jpg, .docx, .txt)</span>
+          </div>
+          <input type="file" id="mcq-scheme-file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp" multiple style="display:none;" />
+          <div class="badge-grid" id="mcq-scheme-badges" style="margin-left: 0; margin-bottom: 6px;"></div>
+          <textarea id="mcq-scheme-text" placeholder="Or paste marking scheme / answer key criteria here..."
+            style="margin-left: 0; margin-bottom: 14px; min-height: 70px;"></textarea>
+
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Audio Track (Optional for Reading, Required for Listening)</label>
+          <div class="dropzone" id="mcq-audio-dz" style="margin-left: 0; padding: 16px;">
+            <div><b>Drop listening audio track here</b> or click to browse</div>
+            <span style="font-size:11.5px; color:var(--ink-soft); display:block; margin-top:4px;">(Supports .mp3, .wav, .m4a, .ogg)</span>
+          </div>
+          <input type="file" id="mcq-audio-file" accept=".mp3,.wav,.m4a,.ogg,audio/*" style="display:none;" />
+          <div class="badge-grid" id="mcq-audio-badge" style="margin-left: 0; margin-bottom: 14px;"></div>
+
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Max Audio Plays per Student (0 = Unlimited)</label>
+          <input type="number" id="mcq-max-plays" min="0" max="100" value="0"
+            style="width: 140px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13.5px; margin-bottom: 18px; background: #fff;" />
+        </div>
+
+        <button class="primary" id="mcq-generate-btn" onclick="generateMcqTest()">⚡ Generate MCQ Test with AI</button>
+
+        <div class="progress-wrap" id="mcq-progress-wrap" style="display:none; margin-top: 16px; margin-left: 38px;">
+          <div class="progress-bar">
+            <div class="progress-fill" id="mcq-progress-fill"></div>
+          </div>
+          <div class="progress-label" id="mcq-progress-label">Generating questions with Gemini AI...</div>
+        </div>
+      </div>
+
+      <!-- REVIEW & PUBLISH CARD -->
+      <div class="step" id="mcq-review-card" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <h2 class="step-title" id="mcq-review-title" style="margin: 0;">MCQ Test Review</h2>
+              <span id="mcq-review-status" class="pill-badge pill-amber">Draft</span>
+              <span id="mcq-autosave-indicator" style="font-size: 12px; font-weight: 600; color: #059669; display: none;">Saved</span>
+            </div>
+            <p class="step-desc" style="margin: 4px 0 0 0;">Review generated questions, adjust correct choices, edit prompts or marks, and publish the live student link.</p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="ghost" onclick="resetMcqCreationForm()">↩ Create Another Test</button>
+            <button type="button" class="primary" id="mcq-publish-btn" onclick="publishMcqTest()">🚀 Publish Test Link</button>
+          </div>
+        </div>
+
+        <!-- Audio Player Preview -->
+        <div id="mcq-preview-audio-container" style="display: none; background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 20px;">
+          <div style="font-size: 12.5px; font-weight: 600; color: var(--pen); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+            <span>🎧 Listening Audio Preview (Signed 1-Hour Stream)</span>
+          </div>
+          <audio id="mcq-preview-audio" controls style="width: 100%; height: 38px; outline: none;"></audio>
+        </div>
+
+        <!-- Published Shareable Link Box -->
+        <div class="link-box" id="mcq-published-link-box" style="display: none; margin-bottom: 20px;">
+          <div>
+            <div style="font-size: 11.5px; font-weight: bold; color: #065F46; text-transform: uppercase; margin-bottom: 2px;">
+              Shareable Student Test Link:
+            </div>
+            <div class="link-text" id="mcq-published-link-url"></div>
+          </div>
+          <button class="ghost" style="background:#fff; flex-shrink: 0;" onclick="copyMcqPublishedLink()">📋 Copy Link</button>
+        </div>
+
+        <!-- Questions Editor Container -->
+        <div id="mcq-questions-editor" style="display: flex; flex-direction: column; gap: 16px;"></div>
+
+        <!-- Footer Actions -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; gap: 12px;">
+          <button type="button" class="ghost" onclick="addBlankMcqQuestion()" style="font-weight: 600; border-style: dashed; padding: 9px 18px;">
+            ➕ Add Question
+          </button>
+          <button type="button" class="primary" id="mcq-publish-btn-bottom" onclick="publishMcqTest()">
+            🚀 Publish Test Link
+          </button>
         </div>
       </div>
     </div>

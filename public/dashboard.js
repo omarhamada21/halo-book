@@ -9,23 +9,34 @@ var targetStudentForAddPage = null;
 function switchMode(mode) {
   const btnPortal = document.getElementById('btn-mode-portal');
   const btnManual = document.getElementById('btn-mode-manual');
+  const btnMcq = document.getElementById('btn-mode-mcq');
   const secPortal = document.getElementById('portal-section');
   const secManual = document.getElementById('manual-section');
+  const secMcq = document.getElementById('mcq-section');
 
   if (mode === 'portal') {
-    btnPortal.classList.add('active');
-    btnManual.classList.remove('active');
-    secPortal.style.display = 'block';
-    secManual.style.display = 'none';
-  } else {
-    btnManual.classList.add('active');
-    btnPortal.classList.remove('active');
-    secManual.style.display = 'block';
-    secPortal.style.display = 'none';
+    if (btnPortal) btnPortal.classList.add('active');
+    if (btnManual) btnManual.classList.remove('active');
+    if (btnMcq) btnMcq.classList.remove('active');
+    if (secPortal) secPortal.style.display = 'block';
+    if (secManual) secManual.style.display = 'none';
+    if (secMcq) secMcq.style.display = 'none';
+  } else if (mode === 'manual') {
+    if (btnManual) btnManual.classList.add('active');
+    if (btnPortal) btnPortal.classList.remove('active');
+    if (btnMcq) btnMcq.classList.remove('active');
+    if (secManual) secManual.style.display = 'block';
+    if (secPortal) secPortal.style.display = 'none';
+    if (secMcq) secMcq.style.display = 'none';
+  } else if (mode === 'mcq') {
+    if (btnMcq) btnMcq.classList.add('active');
+    if (btnPortal) btnPortal.classList.remove('active');
+    if (btnManual) btnManual.classList.remove('active');
+    if (secMcq) secMcq.style.display = 'block';
+    if (secPortal) secPortal.style.display = 'none';
+    if (secManual) secManual.style.display = 'none';
   }
 }
-
-// ==================== SHARED RENDERING LOGIC ====================
 
 // ==================== MANUAL BATCH LOGIC ====================
 const schemeDz = document.getElementById('scheme-dz');

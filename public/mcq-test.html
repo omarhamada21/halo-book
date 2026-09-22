@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCQ Assessment — Mimir Marking</title>
+<link rel="icon" type="image/jpeg" href="/mimir.jpg">
+<link rel="shortcut icon" type="image/jpeg" href="/mimir.jpg">
+<link rel="apple-touch-icon" href="/mimir.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #16233F; --ink-soft: #4A5670; --paper: #E3E9F6;
+    --paper-line: #CBD6ED; --card: #FBFCFE; --pen: #1D3A66;
+    --pen-soft: #DDE3EE; --border: #C2CEE7;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: 'Inter', sans-serif; padding: 20px; }
+  .wrap { max-width: 620px; margin: 30px auto; }
+  
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 28px; box-shadow: 0 4px 14px rgba(0,0,0,0.06); margin-bottom: 20px;
+  }
+  
+  .tag {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase;
+    color: var(--pen); letter-spacing: 0.08em; font-weight: 600; margin-bottom: 6px;
+  }
+  h1 { font-family: 'Source Serif 4', serif; font-size: 24px; margin: 0 0 6px; color: var(--ink); }
+  .teacher-sub { font-size: 13.5px; color: var(--ink-soft); margin-bottom: 18px; }
+  
+  .deadline-box {
+    background: var(--pen-soft); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; font-size: 13px; color: var(--pen); margin-bottom: 18px; font-weight: 500;
+  }
+
+  .deadline-expired {
+    background: #FEE2E2 !important; border-color: #FCA5A5 !important;
+    color: #991B1B !important; font-weight: 600 !important;
+  }
+
+  /* Audio player box */
+  .audio-box {
+    background: #FAFBFD; border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-bottom: 20px;
+  }
+  .audio-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px; flex-wrap: wrap; gap: 8px;
+  }
+  .audio-title { font-size: 13.5px; font-weight: 600; color: var(--pen); }
+  .plays-badge {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600;
+    padding: 3px 8px; border-radius: 4px; background: var(--pen-soft); color: var(--pen);
+  }
+  .plays-locked {
+    background: #FEE2E2 !important; color: #991B1B !important; border: 1px solid #FCA5A5;
+  }
+
+  /* Question Cards */
+  .q-card {
+    border: 1px solid var(--border); background: #fff; border-radius: 10px;
+    padding: 18px; margin-bottom: 16px; transition: border-color 0.2s;
+  }
+  .q-card:focus-within { border-color: var(--pen); }
+  .q-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px;
+  }
+  .q-number {
+    font-family: 'Source Serif 4', serif; font-size: 15px; font-weight: 600; color: var(--pen);
+  }
+  .q-prompt {
+    font-size: 14px; line-height: 1.5; color: var(--ink); margin-bottom: 14px; white-space: pre-wrap;
+  }
+
+  .options-list { display: flex; flex-direction: column; gap: 8px; }
+  .opt-choice {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 6px; background: #FAFBFD;
+    cursor: pointer; transition: all 0.15s; user-select: none;
+  }
+  .opt-choice:hover { background: var(--pen-soft); border-color: var(--pen); }
+  .opt-choice.selected {
+    background: #EFF6FF; border-color: #3B82F6; box-shadow: 0 0 0 1px #3B82F6;
+  }
+  .opt-radio {
+    cursor: pointer; width: 16px; height: 16px; accent-color: var(--pen); margin: 0; padding: 0;
+  }
+  .opt-letter {
+    font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; color: var(--pen); width: 22px;
+  }
+  .opt-text { font-size: 13.5px; color: var(--ink); flex: 1; }
+
+  .form-group { margin-bottom: 18px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  input[type="text"] {
+    width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 14px; background: #fff; outline: none; font-family: 'Inter', sans-serif;
+  }
+  input[type="text"]:focus { border-color: var(--pen); box-shadow: 0 0 0 2px var(--pen-soft); }
+  
+  .btn-submit {
+    width: 100%; background: var(--ink); color: #fff; border: none; border-radius: 8px;
+    padding: 14px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 10px; transition: opacity 0.2s;
+  }
+  .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Success & Locked screens */
+  .center-banner { text-align: center; padding: 30px 14px; }
+  .center-banner h2 { font-family: 'Source Serif 4', serif; margin: 0 0 10px; }
+  .score-badge-large {
+    display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 26px;
+    font-weight: 700; color: #065F46; background: #ECFDF5; border: 2px solid #10B981;
+    padding: 10px 24px; border-radius: 12px; margin: 16px 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <!-- HEADER & TEST DETAILS CARD -->
+  <div class="card" id="test-header-card">
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+      <img src="/mimir.jpg" alt="Mimir" style="width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--pen); object-fit: cover; object-position: top center;">
+      <div class="tag" style="margin: 0;">Mimir Marking — Student Portal</div>
+    </div>
+    <h1 id="test-title">Loading Assessment...</h1>
+    <div class="teacher-sub" id="test-teacher"></div>
+    <div class="deadline-box" id="deadline-box" style="display: none;"></div>
+
+    <!-- AUDIO PLAYER BOX (Conditional) -->
+    <div class="audio-box" id="mcq-audio-box" style="display: none;">
+      <div class="audio-head">
+        <span class="audio-title">🎧 Listening Audio Track</span>
+        <span class="plays-badge" id="audio-plays-notice" style="display: none;"></span>
+      </div>
+      <audio id="mcq-audio-player" controls preload="metadata" style="width: 100%; height: 40px; margin-top: 6px; outline: none;"></audio>
+      <div id="audio-locked-msg" style="display: none; color: #991B1B; font-size: 12px; font-weight: 600; margin-top: 6px;"></div>
+    </div>
+  </div>
+
+  <!-- ASSESSMENT FORM CARD -->
+  <div class="card" id="mcq-form-card" style="display: none;">
+    <form id="student-form" onsubmit="handleAssessmentSubmit(event)">
+      <div class="form-group">
+        <label for="student-name">Your Full Name</label>
+        <input type="text" id="student-name" required placeholder="e.g. Fares Ahmed" autocomplete="name" maxlength="80" />
+        <small style="color:var(--ink-soft); font-size:11.5px; margin-top:4px; display:block;">
+          ⚠️ <b>Notice:</b> Submissions are locked to 1 per device/session. Once submitted, your answers will be automatically graded and recorded.
+        </small>
+      </div>
+
+      <div id="mcq-questions-container"></div>
+
+      <button type="submit" class="btn-submit" id="mcq-submit-btn">🚀 Submit Assessment & View Score</button>
+    </form>
+  </div>
+
+  <!-- SUCCESS & SCORE CARD -->
+  <div class="card center-banner" id="mcq-success-screen" style="display: none;">
+    <h2 style="color: #059669;">✓ Assessment Completed!</h2>
+    <p style="color: var(--ink-soft); line-height: 1.5; font-size: 14px; margin: 0 0 14px;">
+      Thank you, <b id="submitted-student-name"></b>. Your assessment has been auto-graded and safely delivered to your teacher.
+    </p>
+    <div>
+      <div style="font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); font-weight: 600;">Awarded Score</div>
+      <div class="score-badge-large" id="awarded-score-display">0/0</div>
+    </div>
+    <p style="font-size: 12.5px; color: var(--ink-soft); margin-top: 10px;">
+      Your responses have been archived. You may now close this page.
+    </p>
+  </div>
+
+  <!-- ALREADY SUBMITTED / LOCKED CARD -->
+  <div class="card center-banner" id="mcq-locked-screen" style="display: none;">
+    <h2 style="color: #D97706;">⚠️ Assessment Already Recorded</h2>
+    <p style="color: var(--ink-soft); line-height: 1.5; font-size: 14px; max-width: 480px; margin: 0 auto 12px;">
+      An assessment attempt from this device has already been submitted for this test. Resubmissions are locked to preserve exam integrity.
+    </p>
+    <p style="font-size: 12.5px; color: var(--ink-soft);">
+      If you experienced an error or require a re-take, please contact your teacher directly.
+    </p>
+  </div>
+</div>
+
+<script>
+  const urlParams = new URLSearchParams(window.location.search);
+  const testCode = urlParams.get('code') || '';
+
+  function getOrCreateDeviceId() {
+    let stored = localStorage.getItem('mimir_device_token');
+    if (stored) return stored;
+
+    const screenData = `${screen.width}x${screen.height}x${screen.colorDepth}`;
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    const raw = `${screenData}_${timezone}_${navigator.language}_${crypto.randomUUID()}`;
+    stored = 'dev_' + btoa(raw).replace(/[^a-zA-Z0-9]/g, '').slice(0, 32);
+    
+    try { localStorage.setItem('mimir_device_token', stored); } catch (_) {}
+    return stored;
+  }
+
+  const clientDeviceId = getOrCreateDeviceId();
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function formatCairoDateTime(dateObj) {
+    return dateObj.toLocaleString('en-US', {
+      timeZone: 'Africa/Cairo',
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit', hour12: true
+    });
+  }
+
+  let mcqQuestions = [];
+  let testData = null;
+  let playCount = 0;
+  let maxPlaysLimit = 0;
+
+  if (!testCode) {
+    document.getElementById('test-title').textContent = 'Invalid Assessment Link';
+    document.getElementById('test-teacher').textContent = 'No test code provided in URL.';
+  } else {
+    initMcqPage();
+  }
+
+  async function initMcqPage() {
+    try {
+      // 1. Fetch test details
+      const res = await fetch(`/api/public/mcq/${encodeURIComponent(testCode)}`);
+      const d = await res.json();
+
+      if (!d.success || !d.test) {
+        document.getElementById('test-title').textContent = d.error || 'Test Not Found';
+        document.getElementById('test-teacher').textContent = 'This exam link may be invalid or not yet published.';
+        return;
+      }
+
+      testData = d.test;
+      mcqQuestions = d.questions || [];
+      maxPlaysLimit = testData.max_plays || 0;
+
+      document.getElementById('test-title').textContent = testData.title;
+      document.getElementById('test-teacher').textContent = `Teacher: ${testData.teacher_name || 'Teacher'}`;
+
+      // Deadline Display
+      if (testData.deadline) {
+        const dl = new Date(testData.deadline);
+        const dlBox = document.getElementById('deadline-box');
+        dlBox.style.display = 'block';
+        const formattedCairo = formatCairoDateTime(dl);
+
+        if (testData.isPastDeadline || Date.now() > dl.getTime()) {
+          dlBox.className = 'deadline-box deadline-expired';
+          dlBox.innerHTML = `⛔ <b>Submissions Closed:</b> The deadline passed on ${formattedCairo} (Cairo Time).`;
+          return;
+        } else {
+          dlBox.textContent = `⏳ Submission Deadline: ${formattedCairo} (Cairo Time)`;
+        }
+      }
+
+      // Check device submission status
+      const statusRes = await fetch(`/api/public/mcq/${encodeURIComponent(testCode)}/status?deviceId=${encodeURIComponent(clientDeviceId)}`);
+      const statusData = await statusRes.json();
+      if (statusData && statusData.hasSubmitted) {
+        document.getElementById('mcq-locked-screen').style.display = 'block';
+        return;
+      }
+
+      // Audio setup
+      if (d.audioUrl) {
+        setupAudioPlayer(d.audioUrl);
+      }
+
+      // Render questions
+      renderStudentQuestions();
+      document.getElementById('mcq-form-card').style.display = 'block';
+    } catch (err) {
+      console.error('Failed to load assessment:', err);
+      document.getElementById('test-title').textContent = 'Error connecting to server';
+    }
+  }
+
+  function setupAudioPlayer(audioUrl) {
+    const audioBox = document.getElementById('mcq-audio-box');
+    const audioPlayer = document.getElementById('mcq-audio-player');
+    const noticeEl = document.getElementById('audio-plays-notice');
+    const lockedMsg = document.getElementById('audio-locked-msg');
+
+    audioPlayer.src = audioUrl;
+    audioBox.style.display = 'block';
+
+    if (maxPlaysLimit > 0) {
+      noticeEl.style.display = 'inline-block';
+      noticeEl.textContent = `Plays: 0 of ${maxPlaysLimit}`;
+    }
+
+    audioPlayer.addEventListener('ended', () => {
+      playCount += 1;
+      if (maxPlaysLimit > 0) {
+        noticeEl.textContent = `Plays: ${playCount} of ${maxPlaysLimit}`;
+        if (playCount >= maxPlaysLimit) {
+          audioPlayer.pause();
+          audioPlayer.removeAttribute('controls');
+          audioPlayer.style.pointerEvents = 'none';
+          audioPlayer.style.opacity = '0.5';
+          noticeEl.className = 'plays-badge plays-locked';
+          noticeEl.textContent = `Plays: ${playCount} of ${maxPlaysLimit} (Locked)`;
+          lockedMsg.style.display = 'block';
+          lockedMsg.textContent = `⛔ Maximum plays reached (${maxPlaysLimit}/${maxPlaysLimit}). Audio playback is now locked.`;
+        }
+      }
+    });
+
+    // Auto-refresh signed URL if error/expired occurs during listening
+    audioPlayer.addEventListener('error', async () => {
+      if (maxPlaysLimit > 0 && playCount >= maxPlaysLimit) return;
+      try {
+        const refRes = await fetch(`/api/public/mcq/${encodeURIComponent(testCode)}/audio-refresh`);
+        const refData = await refRes.json();
+        if (refData.success && refData.audioUrl) {
+          const curTime = audioPlayer.currentTime || 0;
+          audioPlayer.src = refData.audioUrl;
+          audioPlayer.currentTime = curTime;
+        }
+      } catch (e) {
+        console.warn('Audio refresh failed:', e);
+      }
+    });
+  }
+
+  const optionLetters = ['A', 'B', 'C', 'D'];
+
+  function renderStudentQuestions() {
+    const container = document.getElementById('mcq-questions-container');
+    if (!container) return;
+
+    if (mcqQuestions.length === 0) {
+      container.innerHTML = '<p style="color: var(--ink-soft); text-align: center; padding: 20px;">No questions in this test.</p>';
+      return;
+    }
+
+    container.innerHTML = mcqQuestions.map((q, idx) => {
+      const opts = Array.isArray(q.options) ? q.options : [];
+      return `
+        <div class="q-card" id="q-card-${q.id}">
+          <div class="q-header">
+            <span class="q-number">Question ${idx + 1} of ${mcqQuestions.length}</span>
+          </div>
+          <div class="q-prompt">${escapeHtml(q.question_text || '')}</div>
+          <div class="options-list">
+            ${opts.map((optText, optIdx) => {
+              const letter = optionLetters[optIdx] || String(optIdx + 1);
+              return `
+                <div class="opt-choice" id="opt-choice-${q.id}-${optIdx}" onclick="selectStudentOption(${q.id}, ${optIdx})">
+                  <input type="radio" name="q_${q.id}" id="opt-radio-${q.id}-${optIdx}" value="${optIdx}" class="opt-radio"
+                    onclick="event.stopPropagation(); selectStudentOption(${q.id}, ${optIdx});" />
+                  <span class="opt-letter">${letter}.</span>
+                  <span class="opt-text">${escapeHtml(optText)}</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function selectStudentOption(questionId, optIdx) {
+    const radio = document.getElementById(`opt-radio-${questionId}-${optIdx}`);
+    if (radio) radio.checked = true;
+
+    // Highlight selected row
+    const q = mcqQuestions.find(item => item.id === questionId);
+    const count = q && Array.isArray(q.options) ? q.options.length : 4;
+
+    for (let i = 0; i < count; i++) {
+      const row = document.getElementById(`opt-choice-${questionId}-${i}`);
+      if (row) {
+        if (i === optIdx) row.classList.add('selected');
+        else row.classList.remove('selected');
+      }
+    }
+  }
+
+  async function handleAssessmentSubmit(e) {
+    e.preventDefault();
+
+    const nameInput = document.getElementById('student-name');
+    const studentName = (nameInput?.value || '').trim();
+    if (!studentName) {
+      alert('Please enter your full name before submitting.');
+      nameInput?.focus();
+      return;
+    }
+
+    // Collect answers
+    const answers = {};
+    let unansweredCount = 0;
+
+    for (const q of mcqQuestions) {
+      const radios = document.getElementsByName(`q_${q.id}`);
+      let chosen = -1;
+      for (let r = 0; r < radios.length; r++) {
+        if (radios[r].checked) {
+          chosen = parseInt(radios[r].value, 10);
+          break;
+        }
+      }
+      if (chosen !== -1) {
+        answers[q.id] = chosen;
+      } else {
+        unansweredCount += 1;
+      }
+    }
+
+    if (unansweredCount > 0) {
+      const confirmed = confirm(`You have left ${unansweredCount} question(s) unanswered. Are you sure you want to submit your assessment now?`);
+      if (!confirmed) return;
+    }
+
+    const submitBtn = document.getElementById('mcq-submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ Grading and submitting...';
+
+    try {
+      const res = await fetch(`/api/public/mcq/${encodeURIComponent(testCode)}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentName,
+          deviceId: clientDeviceId,
+          answers
+        })
+      });
+
+      const data = await res.json();
+
+      if (res.status === 409) {
+        document.getElementById('mcq-form-card').style.display = 'none';
+        document.getElementById('mcq-locked-screen').style.display = 'block';
+        return;
+      }
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Submission failed.');
+      }
+
+      // Success screen
+      document.getElementById('mcq-form-card').style.display = 'none';
+      const audioBox = document.getElementById('mcq-audio-box');
+      if (audioBox) audioBox.style.display = 'none';
+
+      document.getElementById('submitted-student-name').textContent = studentName;
+      document.getElementById('awarded-score-display').textContent = data.score || 'Recorded';
+      document.getElementById('mcq-success-screen').style.display = 'block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      alert('Submission Error: ' + err.message);
+      submitBtn.disabled = false;
+      submitBtn.textContent = '🚀 Submit Assessment & View Score';
+    }
+  }
+</script>
+</body>
+</html>
