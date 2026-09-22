@@ -2617,6 +2617,63 @@ app.post('/api/mcq/:testId/publish', authenticateToken, requireApprovedUser, asy
   }
 });
 
+// 6. DELETE /api/mcq/:testId - Complete deletion of MCQ test, related rows, and S3 audio
+app.delete('/api/mcq/:testId', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const testId = parseInt(req.params.testId, 10);
+    if (isNaN(testId) || testId <= 0) {
+      return res.status(400).json({ error: 'Invalid test ID format.' });
+    }
+
+    const testRes = await db.execute({
+      sql: 'SELECT id, teacher_id, audio_path FROM mcq_tests WHERE id = ?',
+      args: [testId]
+    });
+    const test = testRes.rows[0];
+    if (!test) {
+      return res.status(404).json({ error: 'MCQ test not found.' });
+    }
+
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+    if (Number(test.teacher_id) !== Number(req.user.id) && !isElevated) {
+      return res.status(403).json({ error: 'Unauthorized to delete this MCQ test.' });
+    }
+
+    // S3 Storage cleanup
+    if (test.audio_path) {
+      try {
+        await deleteAudioFromFilebase(test.audio_path);
+      } catch (s3Err) {
+        console.warn(`[MCQ Delete] S3 audio cleanup error for ${test.audio_path}:`, s3Err.message);
+      }
+    }
+
+    // Manual cascade deletion because foreign_keys pragma is OFF
+    await db.execute({
+      sql: 'DELETE FROM mcq_attempts WHERE test_id = ?',
+      args: [testId]
+    });
+
+    await db.execute({
+      sql: 'DELETE FROM mcq_questions WHERE test_id = ?',
+      args: [testId]
+    });
+
+    await db.execute({
+      sql: 'DELETE FROM mcq_tests WHERE id = ?',
+      args: [testId]
+    });
+
+    return res.json({
+      success: true,
+      message: 'MCQ test and all associated submissions deleted successfully.'
+    });
+  } catch (err) {
+    console.error('Error deleting MCQ test:', err);
+    return res.status(500).json({ error: 'Failed to delete MCQ test.' });
+  }
+});
+
 // ----------------- STAGES 3 & 4: PUBLIC STUDENT-FACING MCQ ENDPOINTS -----------------
 
 // 1. GET /api/public/mcq/:code - Public test details with anti-cheat answer stripping

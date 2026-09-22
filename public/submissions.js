@@ -721,6 +721,11 @@ function switchSubmissionsView(mode) {
   const btnMcq = document.getElementById('btn-sub-view-mcq');
   const selectEssay = document.getElementById('past-assignments-select');
   const selectMcq = document.getElementById('mcq-tests-select');
+  const btnLogs = document.getElementById('portal-btn-logs') || document.getElementById('btn-view-logs');
+  const bundleTabs = document.getElementById('bundle-task-tabs');
+  const btnEditDdl = document.getElementById('portal-btn-edit-deadline');
+  const btnManageBundle = document.getElementById('portal-btn-manage-bundle');
+  const btnDelForm = document.getElementById('portal-btn-delete-form');
 
   if (mode === 'mcq') {
     if (btnMcq) {
@@ -735,6 +740,26 @@ function switchSubmissionsView(mode) {
     }
     if (selectEssay) selectEssay.style.display = 'none';
     if (selectMcq) selectMcq.style.display = 'block';
+
+    // Issue 1: Hide "View Submission Logs" button in MCQ view
+    if (btnLogs) btnLogs.style.display = 'none';
+
+    // Issue 2: Explicitly hide and empty package task tabs container
+    if (bundleTabs) {
+      bundleTabs.style.display = 'none';
+      bundleTabs.innerHTML = '';
+    }
+
+    // Issue 2: Hide essay-only controls
+    if (btnEditDdl) btnEditDdl.style.display = 'none';
+    if (btnManageBundle) btnManageBundle.style.display = 'none';
+    if (btnDelForm) btnDelForm.style.display = 'none';
+
+    // Show delete MCQ test button if test is currently selected
+    const btnDeleteMcq = document.getElementById('btn-delete-mcq-test');
+    if (btnDeleteMcq) {
+      btnDeleteMcq.style.display = (activeMcqCode && activeMcqTestObj) ? 'inline-block' : 'none';
+    }
 
     if (typeof stopLivePolling === 'function') stopLivePolling();
     loadTeacherMcqTests();
@@ -760,6 +785,18 @@ function switchSubmissionsView(mode) {
     }
     if (selectEssay) selectEssay.style.display = 'block';
     if (selectMcq) selectMcq.style.display = 'none';
+
+    // Issue 1: Restore "View Submission Logs" button in Essay mode
+    if (btnLogs) btnLogs.style.display = '';
+
+    // Restore essay-only controls
+    if (btnEditDdl) btnEditDdl.style.display = '';
+    if (btnManageBundle) btnManageBundle.style.display = '';
+    if (btnDelForm) btnDelForm.style.display = '';
+
+    // Hide delete MCQ test button in Essay mode
+    const btnDeleteMcq = document.getElementById('btn-delete-mcq-test');
+    if (btnDeleteMcq) btnDeleteMcq.style.display = 'none';
 
     stopMcqLivePolling();
 
@@ -817,6 +854,8 @@ async function loadSelectedMcqTest(code) {
   if (!code) {
     const resultsCard = document.getElementById('portal-results-card');
     if (resultsCard) resultsCard.style.display = 'none';
+    const btnDeleteMcq = document.getElementById('btn-delete-mcq-test');
+    if (btnDeleteMcq) btnDeleteMcq.style.display = 'none';
     stopMcqLivePolling();
     activeMcqCode = null;
     return;
@@ -873,9 +912,12 @@ async function loadSelectedMcqTest(code) {
       const linkBox = document.getElementById('generated-link-box');
       if (linkBox) linkBox.style.display = 'flex';
 
-      // Hide essay bundle elements
+      // Hide and empty essay bundle task tabs
       const bundleTabs = document.getElementById('bundle-task-tabs');
-      if (bundleTabs) bundleTabs.style.display = 'none';
+      if (bundleTabs) {
+        bundleTabs.style.display = 'none';
+        bundleTabs.innerHTML = '';
+      }
 
       const btnEditDdl = document.getElementById('portal-btn-edit-deadline');
       const btnManageBundle = document.getElementById('portal-btn-manage-bundle');
@@ -883,6 +925,14 @@ async function loadSelectedMcqTest(code) {
       if (btnEditDdl) btnEditDdl.style.display = 'none';
       if (btnManageBundle) btnManageBundle.style.display = 'none';
       if (btnDelForm) btnDelForm.style.display = 'none';
+
+      // Show delete MCQ test button for active test
+      const btnDeleteMcq = document.getElementById('btn-delete-mcq-test');
+      if (btnDeleteMcq) btnDeleteMcq.style.display = 'inline-block';
+
+      // Hide submission logs button in MCQ mode
+      const btnLogs = document.getElementById('portal-btn-logs') || document.getElementById('btn-view-logs');
+      if (btnLogs) btnLogs.style.display = 'none';
 
       // Show MCQ table headers and hide essay headers
       const essayHeaders = document.getElementById('portal-table-headers-essay');
@@ -1064,6 +1114,50 @@ async function deleteMcqAttempt(attemptId, studentName) {
   }
 }
 
+async function confirmDeleteCurrentMcqTest() {
+  if (!activeMcqTestObj || !activeMcqTestObj.id) {
+    alert('No active MCQ assessment selected to delete.');
+    return;
+  }
+
+  const confirmed = await showConfirmModal(
+    'Are you sure you want to delete this MCQ Assessment? This will permanently remove the test, all audio references, and all student attempts. This action cannot be undone.',
+    'Delete MCQ Assessment'
+  );
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`/api/mcq/${activeMcqTestObj.id}`, {
+      method: 'DELETE'
+    });
+    const d = await res.json();
+    if (d.success) {
+      showToast('MCQ test deleted successfully.');
+      stopMcqLivePolling();
+      activeMcqCode = null;
+      activeMcqTestObj = null;
+      mcqAttemptsData = [];
+      mcqQuestionsData = [];
+
+      const selectMcq = document.getElementById('mcq-tests-select');
+      if (selectMcq) selectMcq.value = '';
+
+      const resultsCard = document.getElementById('portal-results-card');
+      if (resultsCard) resultsCard.style.display = 'none';
+
+      const btnDeleteMcq = document.getElementById('btn-delete-mcq-test');
+      if (btnDeleteMcq) btnDeleteMcq.style.display = 'none';
+
+      await loadTeacherMcqTests();
+    } else {
+      alert(d.error || 'Failed to delete MCQ test.');
+    }
+  } catch (err) {
+    console.error('Error deleting MCQ test:', err);
+    alert('Network error while deleting MCQ test.');
+  }
+}
+
 // Global window exports
 window.renderCardsAndSummaryTable = renderCardsAndSummaryTable;
 window.startLivePolling = startLivePolling;
@@ -1083,6 +1177,7 @@ window.loadSelectedMcqTest = loadSelectedMcqTest;
 window.fetchLiveMcqAttempts = fetchLiveMcqAttempts;
 window.renderMcqAttemptsTable = renderMcqAttemptsTable;
 window.deleteMcqAttempt = deleteMcqAttempt;
+window.confirmDeleteCurrentMcqTest = confirmDeleteCurrentMcqTest;
 window.startMcqLivePolling = startMcqLivePolling;
 window.stopMcqLivePolling = stopMcqLivePolling;
 

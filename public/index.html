@@ -1318,6 +1318,7 @@
               <button type="button" class="ghost ghost-danger" id="portal-btn-delete-form"
                 style="padding: 2px 8px; font-size: 11px; border-radius: 4px;" onclick="deleteActiveAssignment()">🗑️
                 Delete Form</button>
+              <button type="button" id="btn-delete-mcq-test" class="ghost" style="display: none; color: var(--danger, #dc2626); border-color: rgba(220, 38, 38, 0.3); font-size: 13px; padding: 6px 12px;" onclick="confirmDeleteCurrentMcqTest()">🗑️ Delete Test</button>
             </div>
             <div style="font-size: 12px; color: #059669; font-weight: 600; margin-top: 4px;">🟢 Live syncing —
               auto-updating as students submit</div>
@@ -1326,8 +1327,7 @@
             <button class="ghost" onclick="printReport('full')">📄 Full Report (With Marks)</button>
             <button class="ghost ghost-feedback" onclick="printReport('feedback')">📝 Feedback Report (No
               Marks)</button>
-            <button class="ghost" id="portal-btn-logs" onclick="toggleSubmissionLogsModal()" style="font-weight: 600;">🕒 View Submission
-              Logs</button>
+            <button class="ghost btn-view-logs" id="portal-btn-logs" onclick="toggleSubmissionLogsModal()" style="font-weight: 600;">🕒 View Submission Logs</button>
           </div>
         </div>
 

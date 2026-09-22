@@ -191,9 +191,13 @@ function loadSelectedAssignment(selectedCode) {
   const btnEditDdl = document.getElementById('portal-btn-edit-deadline');
   const btnManageBundle = document.getElementById('portal-btn-manage-bundle');
   const btnDelForm = document.getElementById('portal-btn-delete-form');
+  const btnLogs = document.getElementById('portal-btn-logs') || document.getElementById('btn-view-logs');
+  const btnDeleteMcq = document.getElementById('btn-delete-mcq-test');
   if (btnEditDdl) btnEditDdl.style.display = '';
   if (btnManageBundle) btnManageBundle.style.display = '';
   if (btnDelForm) btnDelForm.style.display = '';
+  if (btnLogs) btnLogs.style.display = '';
+  if (btnDeleteMcq) btnDeleteMcq.style.display = 'none';
 
   const fullDisplayTitle = getFullActiveTitle();
   const assignmentObj = allAssignmentsMap[selectedCode];
@@ -217,7 +221,11 @@ function loadSelectedAssignment(selectedCode) {
         }
       }).catch(() => {});
   } else {
-    document.getElementById('bundle-task-tabs').style.display = 'none';
+    const tabsContainer = document.getElementById('bundle-task-tabs');
+    if (tabsContainer) {
+      tabsContainer.style.display = 'none';
+      tabsContainer.innerHTML = '';
+    }
   }
 
   const linkParam = assignmentObj && assignmentObj.bundle_code ? `bundle=${assignmentObj.bundle_code}` : `code=${selectedCode}`;
