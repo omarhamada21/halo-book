@@ -336,6 +336,14 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024 }
 });
 
+const mcqUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB per file to safely accommodate .wav / high-bitrate audio
+    fieldSize: 10 * 1024 * 1024
+  }
+});
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ----------------- AUTHENTICATION & ACCESS CONTROL -----------------
@@ -1821,9 +1829,12 @@ app.post(
   authenticateToken,
   requireApprovedUser,
   (req, res, next) => {
-    upload.any()(req, res, (err) => {
+    mcqUpload.any()(req, res, (err) => {
       if (err) {
         console.error('Multer file upload error on /api/mcq/generate:', err);
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ success: false, error: 'File too large. Maximum allowed file size is 100MB.' });
+        }
         return res.status(400).json({ success: false, error: `File upload error: ${err.message}` });
       }
       next();

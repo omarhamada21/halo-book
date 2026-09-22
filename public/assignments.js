@@ -718,7 +718,13 @@ function initMcqFileHandlers() {
     audioDz.addEventListener('click', () => audioInput.click());
     audioInput.addEventListener('change', (e) => {
       if (e.target.files && e.target.files[0]) {
-        mcqAudioFile = e.target.files[0];
+        const file = e.target.files[0];
+        if (file.size > 100 * 1024 * 1024) {
+          alert('The selected audio file exceeds the 100MB limit. Please compress it or use an MP3 version.');
+          audioInput.value = '';
+          return;
+        }
+        mcqAudioFile = file;
         renderMcqAudioBadge();
       }
     });
@@ -728,7 +734,12 @@ function initMcqFileHandlers() {
       e.preventDefault();
       audioDz.classList.remove('drag');
       if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        mcqAudioFile = e.dataTransfer.files[0];
+        const file = e.dataTransfer.files[0];
+        if (file.size > 100 * 1024 * 1024) {
+          alert('The selected audio file exceeds the 100MB limit. Please compress it or use an MP3 version.');
+          return;
+        }
+        mcqAudioFile = file;
         renderMcqAudioBadge();
       }
     });
@@ -835,6 +846,10 @@ async function generateMcqTest() {
   if (schemeText) fd.append('markingScheme', schemeText);
 
   if (mcqAudioFile) {
+    if (mcqAudioFile.size > 100 * 1024 * 1024) {
+      alert('The selected audio file exceeds the 100MB limit. Please compress it or use an MP3 version.');
+      return;
+    }
     fd.append('audio', mcqAudioFile);
   }
 
