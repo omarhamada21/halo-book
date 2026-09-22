@@ -15,6 +15,8 @@ import crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import fs from 'fs';
+import os from 'os';
 
 const require = createRequire(import.meta.url);
 
@@ -198,6 +200,7 @@ async function initDatabase() {
         teacher_id INTEGER NOT NULL,
         title TEXT NOT NULL,
         audio_path TEXT,
+        transcript TEXT,
         deadline TEXT,
         status TEXT DEFAULT 'draft',
         code TEXT UNIQUE NOT NULL,
@@ -232,6 +235,7 @@ async function initDatabase() {
         answers TEXT,
         score REAL DEFAULT 0,
         possible_duplicate INTEGER DEFAULT 0,
+        diagnostic_feedback TEXT,
         submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (test_id) REFERENCES mcq_tests(id)
       );
@@ -251,6 +255,8 @@ async function initDatabase() {
       'ALTER TABLE submissions ADD COLUMN ip_address TEXT;',
       'ALTER TABLE submissions ADD COLUMN possible_duplicate INTEGER DEFAULT 0;',
       'ALTER TABLE mcq_tests ADD COLUMN max_plays INTEGER DEFAULT 0;',
+      'ALTER TABLE mcq_tests ADD COLUMN transcript TEXT;',
+      'ALTER TABLE mcq_attempts ADD COLUMN diagnostic_feedback TEXT;',
       "ALTER TABLE mcq_questions ADD COLUMN question_type TEXT DEFAULT 'mcq';",
       'ALTER TABLE mcq_questions ADD COLUMN acceptable_answers TEXT;',
       `CREATE TABLE IF NOT EXISTS mcq_tests (
@@ -258,6 +264,7 @@ async function initDatabase() {
         teacher_id INTEGER NOT NULL,
         title TEXT NOT NULL,
         audio_path TEXT,
+        transcript TEXT,
         deadline TEXT,
         status TEXT DEFAULT 'draft',
         code TEXT UNIQUE NOT NULL,
@@ -286,6 +293,7 @@ async function initDatabase() {
         answers TEXT,
         score REAL DEFAULT 0,
         possible_duplicate INTEGER DEFAULT 0,
+        diagnostic_feedback TEXT,
         submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (test_id) REFERENCES mcq_tests(id)
       );`
@@ -1818,6 +1826,60 @@ async function deleteAudioFromFilebase(objectKey) {
   }
 }
 
+// ----------------- UNIVERSAL AUDIO TRANSCRIBER -----------------
+// Writes buffer to temp file, streams to Google Gen AI Files API, transcribes with gemini-2.5-flash / fallback models,
+// and ensures both local and remote files are cleaned up in a finally block.
+async function transcribeListeningAudio(audioBuffer, originalName, mimeType) {
+  if (!audioBuffer || audioBuffer.length === 0) return null;
+  const safeName = originalName ? path.basename(originalName) : 'audio.mp3';
+  const tempPath = path.join(os.tmpdir(), `mimir_audio_${Date.now()}_${safeName}`);
+  let uploadRes = null;
+
+  try {
+    fs.writeFileSync(tempPath, audioBuffer);
+    const resolvedMime = mimeType || 'audio/mp3';
+
+    uploadRes = await ai.files.upload({
+      file: tempPath,
+      mimeType: resolvedMime
+    });
+
+    const models = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
+    let transcript = null;
+
+    for (const model of models) {
+      try {
+        const response = await ai.models.generateContent({
+          model: model,
+          contents: [
+            {
+              fileData: {
+                fileUri: uploadRes.uri,
+                mimeType: uploadRes.mimeType || resolvedMime
+              }
+            },
+            'You are an expert exam transcriber. Transcribe this listening exam track verbatim from beginning to end with exact dialogue, speaker labels (e.g. Speaker 1, Lara, Interviewer), and audio markers. Output pure verbatim transcript text.'
+          ]
+        });
+        transcript = response.text ? response.text.trim() : null;
+        if (transcript) break;
+      } catch (err) {
+        console.warn(`[Transcription Model ${model} Notice]:`, err.message);
+      }
+    }
+
+    return transcript;
+  } catch (err) {
+    console.warn('Audio transcription warning:', err.message);
+    return null;
+  } finally {
+    if (uploadRes && uploadRes.name) {
+      try { await ai.files.delete({ name: uploadRes.name }); } catch (_) {}
+    }
+    try { fs.unlinkSync(tempPath); } catch (_) {}
+  }
+}
+
 async function generateUniqueMcqCode() {
   for (let i = 0; i < 10; i++) {
     const code = crypto.randomBytes(4).toString('hex');
@@ -1871,6 +1933,7 @@ app.post(
 
       const audioFile = files.find((f) => f.fieldname === 'audio');
       let audioPath = null;
+      let audioTranscript = null;
 
       // Handle audio upload to Filebase S3 if audio file is present
       if (audioFile) {
@@ -1889,6 +1952,16 @@ app.post(
         } catch (uploadErr) {
           console.error('Filebase upload failed:', uploadErr);
           return res.status(500).json({ success: false, error: `Failed to upload audio to Filebase: ${uploadErr.message}` });
+        }
+
+        // Dedicated Universal Audio Transcriber via Gemini Files API
+        try {
+          audioTranscript = await transcribeListeningAudio(audioFile.buffer, audioFile.originalname, audioFile.mimetype);
+          if (audioTranscript) {
+            console.log(`[Universal Transcriber] Transcribed ${audioFile.originalname} (${audioTranscript.length} chars)`);
+          }
+        } catch (tErr) {
+          console.warn('[Universal Transcriber Notice]: Failed to transcribe listening audio:', tErr.message);
         }
       }
 
@@ -1934,6 +2007,10 @@ app.post(
 
       if (markingSchemeText) {
         markingSchemePromptAddon += `\n\nMARKING SCHEME / ANSWER KEY (TEXT):\n${markingSchemeText}`;
+      }
+
+      if (audioTranscript) {
+        markingSchemePromptAddon += `\n\nVERBATIM AUDIO TRANSCRIPT (EXAM LISTENING PASSAGE):\n${audioTranscript}`;
       }
 
       // 3. Prompt instructing Gemini to convert PDF questions into MCQ JSON array
@@ -2113,9 +2190,9 @@ ${markingSchemePromptAddon}`;
         try {
           testCode = await generateUniqueMcqCode();
           const testInsert = await db.execute({
-            sql: `INSERT INTO mcq_tests (teacher_id, title, audio_path, deadline, status, code, max_plays)
-                  VALUES (?, ?, ?, ?, 'draft', ?, ?)`,
-            args: [req.user.id, title.trim(), audioPath, deadlineVal, testCode, maxPlays]
+            sql: `INSERT INTO mcq_tests (teacher_id, title, audio_path, transcript, deadline, status, code, max_plays)
+                  VALUES (?, ?, ?, ?, ?, 'draft', ?, ?)`,
+            args: [req.user.id, title.trim(), audioPath, audioTranscript, deadlineVal, testCode, maxPlays]
           });
           testId = Number(testInsert.lastInsertRowid);
           break;
@@ -2152,7 +2229,7 @@ ${markingSchemePromptAddon}`;
       }
 
       const testRowRes = await db.execute({
-        sql: 'SELECT id, teacher_id, title, audio_path, deadline, status, code, created_at, max_plays FROM mcq_tests WHERE id = ?',
+        sql: 'SELECT id, teacher_id, title, audio_path, transcript, deadline, status, code, created_at, max_plays FROM mcq_tests WHERE id = ?',
         args: [testId]
       });
 
@@ -2219,7 +2296,7 @@ app.get('/api/mcq/:code/attempts', authenticateToken, requireApprovedUser, async
     }
 
     const testRes = await db.execute({
-      sql: 'SELECT id, code, title, deadline, status, teacher_id FROM mcq_tests WHERE code = ?',
+      sql: 'SELECT id, code, title, audio_path, transcript, deadline, status, teacher_id FROM mcq_tests WHERE code = ?',
       args: [code]
     });
     const test = testRes.rows[0];
@@ -2233,7 +2310,7 @@ app.get('/api/mcq/:code/attempts', authenticateToken, requireApprovedUser, async
     }
 
     const attemptsRes = await db.execute({
-      sql: `SELECT id, student_name, device_id, ip_address, answers, score, possible_duplicate, submitted_at
+      sql: `SELECT id, student_name, device_id, ip_address, answers, score, possible_duplicate, diagnostic_feedback, submitted_at
             FROM mcq_attempts
             WHERE test_id = ?
             ORDER BY submitted_at ASC, id ASC`,
@@ -2249,9 +2326,20 @@ app.get('/api/mcq/:code/attempts', authenticateToken, requireApprovedUser, async
           parsedAnswers = {};
         }
       }
+
+      let parsedDiagnostics = att.diagnostic_feedback;
+      if (typeof parsedDiagnostics === 'string') {
+        try {
+          parsedDiagnostics = JSON.parse(parsedDiagnostics);
+        } catch (_) {
+          parsedDiagnostics = null;
+        }
+      }
+
       return {
         ...att,
-        answers: parsedAnswers && typeof parsedAnswers === 'object' ? parsedAnswers : {}
+        answers: parsedAnswers && typeof parsedAnswers === 'object' ? parsedAnswers : {},
+        diagnostic_feedback: Array.isArray(parsedDiagnostics) ? parsedDiagnostics : null
       };
     });
 
@@ -2342,6 +2430,306 @@ app.delete('/api/mcq/:code/attempts/:attemptId', authenticateToken, requireAppro
   }
 });
 
+// 4. POST /api/mcq/:testId/attempts/:attemptId/diagnose - Universal Listening Skills Diagnostic Engine
+app.post('/api/mcq/:testId/attempts/:attemptId/diagnose', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const testParam = req.params.testId;
+    const attemptId = parseInt(req.params.attemptId, 10);
+    if (!testParam || isNaN(attemptId) || attemptId <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid test identifier or attempt ID.' });
+    }
+
+    // Lookup test by numeric id or code
+    const isNumericId = !isNaN(parseInt(testParam, 10)) && String(parseInt(testParam, 10)) === String(testParam).trim();
+    const testQuery = isNumericId
+      ? 'SELECT id, code, title, audio_path, transcript, teacher_id FROM mcq_tests WHERE id = ?'
+      : 'SELECT id, code, title, audio_path, transcript, teacher_id FROM mcq_tests WHERE code = ?';
+    const testArg = isNumericId ? parseInt(testParam, 10) : String(testParam).trim();
+
+    const testRes = await db.execute({ sql: testQuery, args: [testArg] });
+    const test = testRes.rows[0];
+    if (!test) {
+      return res.status(404).json({ success: false, error: 'MCQ assessment not found.' });
+    }
+
+    const isElevated = ['root', 'admin'].includes(req.user.role);
+    if (Number(test.teacher_id) !== Number(req.user.id) && !isElevated) {
+      return res.status(403).json({ success: false, error: 'Unauthorized to run diagnostics on this test.' });
+    }
+
+    // Universal Rule 2: Must be a Listening Assessment with an audio track
+    if (!test.audio_path) {
+      return res.status(400).json({
+        success: false,
+        error: 'Diagnostics are only supported for Listening Assessments that contain an audio track.'
+      });
+    }
+
+    // Verify transcript
+    const transcript = test.transcript;
+    if (!transcript || !transcript.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Audio transcript is missing for this test. Diagnostics require a verbatim audio transcript.'
+      });
+    }
+
+    // Fetch student attempt
+    const attemptRes = await db.execute({
+      sql: 'SELECT id, student_name, answers, score, diagnostic_feedback FROM mcq_attempts WHERE id = ? AND test_id = ?',
+      args: [attemptId, test.id]
+    });
+    const attempt = attemptRes.rows[0];
+    if (!attempt) {
+      return res.status(404).json({ success: false, error: 'Student attempt record not found.' });
+    }
+
+    let studentAnswers = attempt.answers;
+    if (typeof studentAnswers === 'string') {
+      try { studentAnswers = JSON.parse(studentAnswers); } catch (_) { studentAnswers = {}; }
+    }
+    if (!studentAnswers || typeof studentAnswers !== 'object') studentAnswers = {};
+
+    // Fetch questions
+    const qRes = await db.execute({
+      sql: `SELECT id, question_type, question_text, options, correct_index, acceptable_answers, points, order_index
+            FROM mcq_questions
+            WHERE test_id = ?
+            ORDER BY order_index ASC, id ASC`,
+      args: [test.id]
+    });
+    const questions = qRes.rows;
+
+    // Strict Marking Separation: Identify mistakes per the official marking scheme
+    const mistakesList = [];
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const qPoints = Number(q.points) > 0 ? Number(q.points) : 1;
+      const qType = q.question_type || 'mcq';
+
+      if (qType === 'fill_blank') {
+        const rawAns = studentAnswers[q.id] !== undefined && studentAnswers[q.id] !== null ? String(studentAnswers[q.id]) : '';
+        const studentAns = rawAns.trim().toLowerCase().replace(/['"]/g, '');
+        let acceptable = q.acceptable_answers;
+        if (typeof acceptable === 'string') {
+          try { acceptable = JSON.parse(acceptable); } catch (_) { acceptable = []; }
+        }
+        if (!Array.isArray(acceptable)) acceptable = [];
+        const normalizedAcceptable = acceptable
+          .map((a) => (a !== null && a !== undefined ? String(a).trim().toLowerCase().replace(/['"]/g, '') : ''))
+          .filter(Boolean);
+
+        if (!studentAns || !normalizedAcceptable.includes(studentAns)) {
+          mistakesList.push({
+            question_id: q.id,
+            question_number: i + 1,
+            question_type: 'fill_blank',
+            question_text: q.question_text,
+            student_answer: rawAns.trim() || '(empty)',
+            correct_answer: acceptable.join(', '),
+            points_possible: qPoints,
+            points_awarded: 0
+          });
+        }
+      } else {
+        // 'mcq' or 'matching'
+        const rawVal = studentAnswers[q.id];
+        const studentChoice = rawVal !== undefined && rawVal !== null && rawVal !== '' ? parseInt(rawVal, 10) : -1;
+        if (isNaN(studentChoice) || studentChoice !== Number(q.correct_index)) {
+          let opts = q.options;
+          if (typeof opts === 'string') {
+            try { opts = JSON.parse(opts); } catch (_) { opts = []; }
+          }
+          if (!Array.isArray(opts)) opts = [];
+
+          const correctOption = opts[q.correct_index] || `Option ${Number(q.correct_index) + 1}`;
+          const studentOption = studentChoice >= 0 && opts[studentChoice] ? opts[studentChoice] : (studentChoice >= 0 ? `Option ${studentChoice + 1}` : '(unanswered)');
+
+          mistakesList.push({
+            question_id: q.id,
+            question_number: i + 1,
+            question_type: qType,
+            question_text: q.question_text,
+            student_answer: studentOption,
+            correct_answer: correctOption,
+            points_possible: qPoints,
+            points_awarded: 0
+          });
+        }
+      }
+    }
+
+    // If 0 mistakes, student has full marks
+    if (mistakesList.length === 0) {
+      await db.execute({
+        sql: 'UPDATE mcq_attempts SET diagnostic_feedback = ? WHERE id = ?',
+        args: [JSON.stringify([]), attemptId]
+      });
+      return res.json({
+        success: true,
+        diagnostics: [],
+        message: 'Perfect score! 0 listening mistakes detected.'
+      });
+    }
+
+    // Send to Gemini with Complete IG Grade 9 Listening Skills Framework directly embedded
+    const systemInstruction = `You are the Universal English Listening Diagnostic Examiner for Mimir Marking.
+Analyze the student's listening mistakes using the embedded IG Grade 9 Listening Skills Framework.
+
+CORE RULE:
+Scoring and points are already finalized strictly per the official Marking Scheme. Your role is purely analytical: pinpoint WHY the mistake occurred, identify which specific listening sub-skill and trap caused the error, and provide an actionable diagnostic intervention strategy.
+
+================================================================================
+EMBEDDED FRAMEWORK: IG GRADE 9 LISTENING SKILLS TAXONOMY
+================================================================================
+
+1. Vocabulary in Context
+   - Sub-skills: Context meaning, Synonyms, Collocations, Phrasal verbs, Pronunciation
+   - Pedagogical Trap: The student hears a word in spoken English (e.g. hears "purchase") but fails to recognize its target synonym/meaning (e.g. "buy").
+   - Recommended Intervention: Synonym listening practice & vocabulary matching.
+
+2. Gist & Main Idea
+   - Sub-skills: General topic, Speaker's purpose, Main point, Summarizing
+   - Pedagogical Trap: The student gets distracted by isolated, minor details and misses the overall message or communicative purpose of the speaker.
+   - Recommended Intervention: Topic identification drills without note-taking on isolated numbers.
+
+3. Specific Information
+   - Sub-skills: Names, Numbers, Dates, Places, Reasons, Examples, Facts / details
+   - Pedagogical Trap: The student misidentifies an exact date, time, quantity, name, or location mentioned in the dialogue.
+   - Recommended Intervention: Date/number listening drills and targeted fact-extraction practice.
+
+4. Paraphrasing
+   - Sub-skills: Recognizing synonyms, Rephrased ideas, Equivalent meaning, Matching question wording to spoken information
+   - Pedagogical Trap: The student listens for exact keywords from the question paper instead of recognizing rephrased speech (e.g., question says "rise", but dialogue says "increase").
+   - Recommended Intervention: Paraphrase mapping drills between exam text and audio script.
+
+5. Inference
+   - Sub-skills: Implied meaning, Context clues, Connecting information, Drawing conclusions
+   - Pedagogical Trap: The student fails to read between the lines to deduce unstated feelings, hidden intentions, or indirect conclusions.
+   - Recommended Intervention: Context-clue inference tasks and deduction exercises.
+
+6. Opinion & Attitude
+   - Sub-skills: Opinion, Feelings, Tone, Agreement / disagreement, Attitude
+   - Pedagogical Trap: The student fails to recognize whether a speaker is supportive, critical, neutral, or hesitant due to subtle intonation or hedging qualifiers.
+   - Recommended Intervention: Tone and attitude analysis listening exercises.
+
+7. Distractors
+   - Sub-skills: Corrections (self-repair), Changed information, Irrelevant details, Misleading options
+   - Pedagogical Trap: The speaker mentions false or earlier information first, then corrects it (e.g., "I wanted tea, but actually had coffee"). The student prematurely chooses the first mentioned option.
+   - Recommended Intervention: Correction & distractor drills focusing on pivot words like "actually", "instead", "rather", or "however".
+
+8. Multiple Speakers
+   - Sub-skills: Speaker identification, Matching speaker to opinion, Distinguishing viewpoints, Tracking different speakers
+   - Pedagogical Trap: In dialogues or matching tasks (Speakers 1–5), the student confuses who expressed which viewpoint.
+   - Recommended Intervention: Multi-speaker identification and perspective-tracking drills.
+
+9. Sequencing & Development
+   - Sub-skills: Stages, Transitions, Changes in topic, Chronological order
+   - Pedagogical Trap: The student confuses the chronological sequence of events or misses transition signposts indicating a new stage.
+   - Recommended Intervention: Chronological timeline mapping and transition-word tracking.
+
+10. Processing Speed
+    - Sub-skills: Fast speech, Maintaining attention, Following information, Moving between pieces of information
+    - Pedagogical Trap: The student loses track during rapid delivery, connected speech (elision/assimilation), or fast topic transitions.
+    - Recommended Intervention: Speed-building listening drills and connected-speech awareness practice.
+
+11. Answer Accuracy
+    - Sub-skills: Spelling, Grammar / answer form, Following instructions, Checking answers
+    - Pedagogical Trap: Exceeded word count limit (e.g., "NO MORE THAN ONE WORD"), spelling errors that alter word meaning, singular vs plural confusion.
+    - Recommended Intervention: Form-checking drills, singular/plural listening verification, and word-limit compliance checks.
+
+12. Listening Strategies
+    - Sub-skills: Prediction, Keywords, Anticipating vocabulary, Using first listening effectively, Using second listening for confirmation, Checking answers
+    - Pedagogical Trap: Failure to pre-read questions to predict word category or grammatical form, or failing to use the second listen for verification.
+    - Recommended Intervention: Pre-listening prediction drills and dual-pass listening strategy coaching.
+
+================================================================================
+DIAGNOSTIC PIPELINE PATTERN:
+Main Skill -> Sub-skill -> Observable Error -> Diagnosis -> Intervention Strategy -> Retest Recommendation
+================================================================================`;
+
+    const promptText = `AUDIO TRANSCRIPT:
+${transcript}
+
+STUDENT MISTAKES DATA:
+${JSON.stringify(mistakesList, null, 2)}
+
+OUTPUT REQUIREMENT (Strict JSON):
+Return a JSON object with a "diagnostics" array containing an entry for every mistake listed above:
+{
+  "diagnostics": [
+    {
+      "question_id": 1,
+      "main_skill": "Distractors",
+      "sub_skill": "Recognizing corrections",
+      "observable_error": "Selected initial statement before the speaker corrected themselves",
+      "spoken_quote": "Exact sentence spoken in the audio transcript",
+      "diagnosis_and_strategy": "2-3 sentences explaining why this option was a trap and the exact strategy to catch it in future tests.",
+      "intervention": "Distractor & self-correction listening drills focusing on pivot words like 'actually' or 'instead'.",
+      "retest_type": "New correction item"
+    }
+  ]
+}`;
+
+    const models = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
+    let rawOutput = null;
+
+    for (const modelName of models) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: [
+            { role: 'user', parts: [{ text: `${systemInstruction}\n\n${promptText}` }] }
+          ],
+          config: {
+            responseMimeType: 'application/json'
+          }
+        });
+        rawOutput = response.text;
+        if (rawOutput) break;
+      } catch (gemErr) {
+        console.warn(`[Diagnostic Model ${modelName} Warning]:`, gemErr.message);
+      }
+    }
+
+    if (!rawOutput) {
+      throw new Error('Failed to generate diagnostic feedback from Gemini.');
+    }
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(rawOutput);
+    } catch (_) {
+      const match = rawOutput.match(/\{[\s\S]*\}/);
+      if (match) parsed = JSON.parse(match[0]);
+    }
+
+    const rawDiagnostics = parsed && Array.isArray(parsed.diagnostics) ? parsed.diagnostics : [];
+    const diagnostics = rawDiagnostics.map((d) => {
+      const mistake = mistakesList.find((m) => m.question_id === d.question_id || m.question_number === d.question_id) || {};
+      return {
+        ...d,
+        student_answer: d.student_answer || mistake.student_answer || '',
+        correct_answer: d.correct_answer || mistake.correct_answer || '',
+        question_number: d.question_number || mistake.question_number || d.question_id
+      };
+    });
+
+    await db.execute({
+      sql: 'UPDATE mcq_attempts SET diagnostic_feedback = ? WHERE id = ?',
+      args: [JSON.stringify(diagnostics), attemptId]
+    });
+
+    return res.json({
+      success: true,
+      diagnostics
+    });
+  } catch (err) {
+    console.error('Error running listening diagnostics:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Diagnostic generation failed.' });
+  }
+});
+
 // ----------------- STAGE 2: TEACHER REVIEW & PUBLISH ENDPOINTS -----------------
 
 // 1. GET /api/mcq/:testId - Teacher view of test, questions, and fresh signed audio URL
@@ -2353,7 +2741,7 @@ app.get('/api/mcq/:testId', authenticateToken, requireApprovedUser, async (req, 
     }
 
     const testRes = await db.execute({
-      sql: 'SELECT id, teacher_id, title, audio_path, deadline, status, code, created_at, max_plays FROM mcq_tests WHERE id = ?',
+      sql: 'SELECT id, teacher_id, title, audio_path, transcript, deadline, status, code, created_at, max_plays FROM mcq_tests WHERE id = ?',
       args: [testId]
     });
 
