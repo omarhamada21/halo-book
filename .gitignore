@@ -3,3 +3,7 @@ node_modules/
 halobook.db
 halobook.db-wal
 halobook.db-shm
+.env
+*.db
+mimirmarking.db
+node_modules/

@@ -853,6 +853,23 @@ async function generateMcqTest() {
       body: fd
     });
 
+    if (res.status === 401 || res.status === 403) {
+      btn.disabled = false;
+      btn.textContent = '⚡ Generate MCQ Test with AI';
+      if (progressWrap) progressWrap.style.display = 'none';
+      if (progressFill) progressFill.style.width = '0%';
+      alert('Your session has expired or authentication is required. Please log in again.');
+      window.location.replace('/login.html');
+      return;
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const rawText = await res.text();
+      console.error('Non-JSON response from server:', rawText);
+      throw new Error(`Server returned status ${res.status} with non-JSON content. Check server logs.`);
+    }
+
     const data = await res.json();
     if (!res.ok || !data.success) {
       throw new Error(data.error || 'Failed to generate MCQ test.');
@@ -870,6 +887,9 @@ async function generateMcqTest() {
     await loadMcqReview(data.test.id);
   } catch (err) {
     console.error('MCQ generation error:', err);
+    if (typeof showToast === 'function') {
+      showToast('Error: ' + err.message, 'error');
+    }
     alert('Error: ' + err.message);
   } finally {
     btn.disabled = false;
@@ -882,6 +902,19 @@ async function generateMcqTest() {
 async function loadMcqReview(testId) {
   try {
     const res = await fetch(`/api/mcq/${testId}`);
+    if (res.status === 401 || res.status === 403) {
+      alert('Your session has expired. Please log in again.');
+      window.location.replace('/login.html');
+      return;
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const rawText = await res.text();
+      console.error('Non-JSON response from server:', rawText);
+      throw new Error(`Server returned status ${res.status} with non-JSON content.`);
+    }
+
     const data = await res.json();
     if (!res.ok || !data.success) {
       throw new Error(data.error || 'Failed to load test details.');

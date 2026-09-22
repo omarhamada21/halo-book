@@ -343,9 +343,10 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Auto-promotes configured ROOT_EMAIL and ADMIN_EMAILS so designated admins retain elevated privileges across redeploys.
 async function authenticateToken(req, res, next) {
   const token = req.cookies.halo_token || (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
+  const isApi = (req.originalUrl && req.originalUrl.startsWith('/api/')) || req.path.startsWith('/api/');
 
   if (!token) {
-    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Unauthorized. Please login.' });
+    if (isApi) return res.status(401).json({ success: false, error: 'Authentication required. Please log in.' });
     return res.redirect('/login.html');
   }
 
@@ -359,7 +360,7 @@ async function authenticateToken(req, res, next) {
     const dbUser = result.rows[0];
     if (!dbUser) {
       res.clearCookie('halo_token');
-      if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'User not found.' });
+      if (isApi) return res.status(401).json({ success: false, error: 'Authentication required. Please log in.' });
       return res.redirect('/login.html');
     }
 
@@ -385,18 +386,26 @@ async function authenticateToken(req, res, next) {
     req.user = userObj;
     next();
   } catch (err) {
-    if (req.path.startsWith('/api/')) return res.status(403).json({ error: 'Session expired.' });
+    if (isApi) return res.status(403).json({ success: false, error: 'Session expired. Please log in again.' });
     return res.redirect('/login.html');
   }
 }
 
 function requireApprovedUser(req, res, next) {
-  if (['root', 'admin'].includes(req.user.role) || req.user.status === 'approved') return next();
+  if (['root', 'admin'].includes(req.user?.role) || req.user?.status === 'approved') return next();
+  const isApi = (req.originalUrl && req.originalUrl.startsWith('/api/')) || req.path.startsWith('/api/');
+  if (isApi) {
+    return res.status(403).json({ success: false, error: 'Your account is pending approval.' });
+  }
   return res.status(403).json({ error: 'Access Denied: Your account is pending authorization by an administrator.' });
 }
 
 function requireAdmin(req, res, next) {
   if (!req.user || !['root', 'admin'].includes(req.user.role)) {
+    const isApi = (req.originalUrl && req.originalUrl.startsWith('/api/')) || req.path.startsWith('/api/');
+    if (isApi) {
+      return res.status(403).json({ success: false, error: 'Administrator authorization required.' });
+    }
     return res.status(403).json({ error: 'Administrator authorization required.' });
   }
   next();
@@ -1811,38 +1820,47 @@ app.post(
   '/api/mcq/generate',
   authenticateToken,
   requireApprovedUser,
-  upload.any(),
+  (req, res, next) => {
+    upload.any()(req, res, (err) => {
+      if (err) {
+        console.error('Multer file upload error on /api/mcq/generate:', err);
+        return res.status(400).json({ success: false, error: `File upload error: ${err.message}` });
+      }
+      next();
+    });
+  },
   async (req, res) => {
+    let uploadedAudioKey = null;
     try {
       const { title, deadline } = req.body;
       const maxPlays = Math.max(0, parseInt(req.body.maxPlays || req.body.max_plays, 10) || 0);
       const files = req.files || [];
 
       if (!title || !title.trim()) {
-        return res.status(400).json({ error: 'Test title is required.' });
+        return res.status(400).json({ success: false, error: 'Test title is required.' });
       }
 
       const pdfFile = files.find((f) => f.fieldname === 'pdf');
       if (!pdfFile || !isPdf(pdfFile)) {
-        return res.status(400).json({ error: 'A test PDF file is required (fieldname "pdf").' });
+        return res.status(400).json({ success: false, error: 'A test PDF file is required (fieldname "pdf").' });
       }
 
       const markingSchemeFile = files.find((f) => f.fieldname === 'markingScheme' || f.fieldname === 'marking_scheme');
       const markingSchemeText = (req.body.markingScheme || req.body.marking_scheme || '').toString().trim();
 
       if (!markingSchemeFile && !markingSchemeText) {
-        return res.status(400).json({ error: 'A marking scheme is required as either a file ("markingScheme") or text.' });
+        return res.status(400).json({ success: false, error: 'A marking scheme is required as either a file ("markingScheme") or text.' });
       }
 
       const audioFile = files.find((f) => f.fieldname === 'audio');
       let audioPath = null;
-      let uploadedAudioKey = null;
 
       // Handle audio upload to Filebase S3 if audio file is present
       if (audioFile) {
         const missing = getMissingFilebaseEnvVars();
         if (missing.length > 0) {
           return res.status(500).json({
+            success: false,
             error: `Filebase S3 configuration is incomplete. Missing required environment variable(s): ${missing.join(', ')}`
           });
         }
@@ -1853,7 +1871,7 @@ app.post(
           uploadedAudioKey = objectKey;
         } catch (uploadErr) {
           console.error('Filebase upload failed:', uploadErr);
-          return res.status(500).json({ error: `Failed to upload audio to Filebase: ${uploadErr.message}` });
+          return res.status(500).json({ success: false, error: `Failed to upload audio to Filebase: ${uploadErr.message}` });
         }
       }
 
@@ -1951,9 +1969,11 @@ ${markingSchemePromptAddon}`;
       try {
         rawOutput = await callGemini(inputPayload, mcqConfig);
       } catch (aiErr) {
-        if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
+        if (uploadedAudioKey) {
+          try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) {}
+        }
         console.error('Gemini MCQ generation call error:', aiErr);
-        return res.status(502).json({ error: `AI question generation failed: ${aiErr.message || 'Gemini service error.'}` });
+        return res.status(502).json({ success: false, error: `AI question generation failed: ${aiErr.message || 'Gemini service error.'}` });
       }
 
       // Parse and Validate JSON
@@ -1965,39 +1985,51 @@ ${markingSchemePromptAddon}`;
         }
         parsedQuestions = JSON.parse(cleanText);
       } catch (parseErr) {
-        if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
+        if (uploadedAudioKey) {
+          try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) {}
+        }
         console.error('MCQ JSON parse error:', parseErr, 'Raw output:', rawOutput);
-        return res.status(422).json({ error: 'Failed to parse AI output into valid JSON questions.' });
+        return res.status(422).json({ success: false, error: 'Failed to parse AI output into valid JSON questions.' });
       }
 
       if (!Array.isArray(parsedQuestions) || parsedQuestions.length === 0) {
-        if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
-        return res.status(422).json({ error: 'AI returned an empty or invalid question set. Expected a non-empty array of questions.' });
+        if (uploadedAudioKey) {
+          try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) {}
+        }
+        return res.status(422).json({ success: false, error: 'AI returned an empty or invalid question set. Expected a non-empty array of questions.' });
       }
 
       const validatedQuestions = [];
       for (let i = 0; i < parsedQuestions.length; i++) {
         const item = parsedQuestions[i];
         if (!item || typeof item.question !== 'string' || !item.question.trim()) {
-          if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
-          return res.status(422).json({ error: `Question #${i + 1} has missing or empty question text.` });
+          if (uploadedAudioKey) {
+            try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) {}
+          }
+          return res.status(422).json({ success: false, error: `Question #${i + 1} has missing or empty question text.` });
         }
 
         if (!Array.isArray(item.options) || item.options.length !== 4) {
-          if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
-          return res.status(422).json({ error: `Question #${i + 1} must have exactly 4 options.` });
+          if (uploadedAudioKey) {
+            try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) {}
+          }
+          return res.status(422).json({ success: false, error: `Question #${i + 1} must have exactly 4 options.` });
         }
 
         const cleanOptions = item.options.map((opt) => (opt !== null && opt !== undefined ? String(opt).trim() : ''));
         if (cleanOptions.some((opt) => !opt)) {
-          if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
-          return res.status(422).json({ error: `Question #${i + 1} contains empty or invalid option strings.` });
+          if (uploadedAudioKey) {
+            try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) {}
+          }
+          return res.status(422).json({ success: false, error: `Question #${i + 1} contains empty or invalid option strings.` });
         }
 
         const correctIdx = Number(item.correct_index);
         if (!Number.isInteger(correctIdx) || correctIdx < 0 || correctIdx > 3) {
-          if (uploadedAudioKey) await deleteAudioFromFilebase(uploadedAudioKey);
-          return res.status(422).json({ error: `Question #${i + 1} has an invalid correct_index (${item.correct_index}). Must be 0, 1, 2, or 3.` });
+          if (uploadedAudioKey) {
+            try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) {}
+          }
+          return res.status(422).json({ success: false, error: `Question #${i + 1} has an invalid correct_index (${item.correct_index}). Must be 0, 1, 2, or 3.` });
         }
 
         const rawPoints = Number(item.points);
@@ -2074,10 +2106,12 @@ ${markingSchemePromptAddon}`;
       });
     } catch (err) {
       if (uploadedAudioKey) {
-        await deleteAudioFromFilebase(uploadedAudioKey);
+        try {
+          await deleteAudioFromFilebase(uploadedAudioKey);
+        } catch (_) {}
       }
       console.error('MCQ Generation Endpoint Error:', err);
-      return res.status(500).json({ error: err.message || 'Internal server error generating MCQ test.' });
+      return res.status(500).json({ success: false, error: err.message || 'MCQ generation failed.' });
     }
   }
 );
@@ -2840,9 +2874,28 @@ app.get('/mcq-test.html', (req, res) => res.sendFile(path.join(publicDir, 'mcq-t
 app.get('/', authenticateToken, (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 app.get('/index.html', authenticateToken, (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 
+// 404 Catch-All
 app.use((req, res) => {
-  if (req.accepts('html')) res.redirect('/login.html');
-  else res.status(404).json({ error: 'Not found' });
+  const isApi = (req.originalUrl && req.originalUrl.startsWith('/api/')) || req.path.startsWith('/api/');
+  if (isApi) {
+    return res.status(404).json({ success: false, error: 'API route not found' });
+  }
+  if (req.accepts('html')) return res.redirect('/login.html');
+  return res.status(404).json({ success: false, error: 'Not found' });
+});
+
+// Global Error Handler (guarantees unhandled errors on /api/* return JSON)
+app.use((err, req, res, next) => {
+  console.error('Unhandled server error:', err);
+  const isApi = (req.originalUrl && req.originalUrl.startsWith('/api/')) || req.path.startsWith('/api/');
+  if (isApi) {
+    return res.status(err.status || 500).json({
+      success: false,
+      error: err.message || 'Internal server error.'
+    });
+  }
+  if (req.accepts('html')) return res.redirect('/login.html');
+  return res.status(500).json({ success: false, error: 'Internal server error.' });
 });
 
 app.listen(port, () => {
