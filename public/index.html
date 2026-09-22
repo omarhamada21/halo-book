@@ -1046,10 +1046,38 @@
     }
 
     /* Web Print Styles */
+    html, body {
+      overflow: visible !important;
+      height: auto !important;
+      min-height: 100% !important;
+    }
+    .report-sheet, .printable-report, .report-container {
+      overflow: visible !important;
+      height: auto !important;
+      max-height: none !important;
+      box-shadow: none !important;
+      page-break-inside: auto;
+    }
+    .report-table-wrapper, .table-responsive, .breakdown-box {
+      overflow: visible !important;
+      max-height: none !important;
+    }
+
     @media print {
+      body, .report-container, .report-table-wrapper {
+        overflow: visible !important;
+        height: auto !important;
+      }
+
       body {
         background: #fff !important;
         color: #000 !important;
+      }
+
+      .report-sheet, .printable-report, .report-container, .report-table-wrapper, .breakdown-box {
+        overflow: visible !important;
+        height: auto !important;
+        max-height: none !important;
       }
 
       .top-nav,

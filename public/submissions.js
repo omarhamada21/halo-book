@@ -540,132 +540,312 @@ async function fetchLiveSubmissions() {
   }
 }
 
+// ==========================================
+// REPORT PRINTING & DIAGNOSTIC UTILITIES
+// ==========================================
+
+function getAuthHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  const token = (typeof localStorage !== 'undefined' && localStorage.getItem('token')) ||
+                (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('token'));
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+function ensurePrintStylesInjected() {
+  let styleEl = document.getElementById('mimir-report-print-styles');
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'mimir-report-print-styles';
+    styleEl.textContent = `
+      html, body {
+        overflow: visible !important;
+        height: auto !important;
+        min-height: 100% !important;
+      }
+      .report-sheet, .printable-report, .report-container {
+        overflow: visible !important;
+        height: auto !important;
+        max-height: none !important;
+        box-shadow: none !important;
+        page-break-inside: auto;
+      }
+      .report-table-wrapper, .table-responsive, .breakdown-box {
+        overflow: visible !important;
+        max-height: none !important;
+      }
+      @media print {
+        body, .report-container, .report-table-wrapper {
+          overflow: visible !important;
+          height: auto !important;
+        }
+      }
+    `;
+    document.head.appendChild(styleEl);
+  }
+}
+
+function resizeReportIframes() {
+  document.querySelectorAll('iframe').forEach((iframe) => {
+    try {
+      const doc = iframe.contentWindow?.document || iframe.contentDocument;
+      if (doc && doc.body) {
+        iframe.style.height = `${doc.body.scrollHeight + 30}px`;
+        iframe.style.maxHeight = 'none';
+        iframe.style.overflow = 'visible';
+      }
+    } catch (_) {}
+  });
+}
+
+const inFlightDiagnostics = new Set();
+
+async function autoTriggerListeningDiagnostics(testId, attemptId) {
+  try {
+    const res = await fetch(`/api/mcq/${testId}/attempts/${attemptId}/diagnose`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    const d = await res.json();
+    if (d.success) {
+      if (typeof fetchLiveMcqAttempts === 'function') {
+        await fetchLiveMcqAttempts();
+      }
+    }
+  } catch (err) {
+    console.warn('Auto-diagnostic trigger failed for attempt', attemptId, err);
+  } finally {
+    setTimeout(() => {
+      inFlightDiagnostics.delete(attemptId);
+    }, 30000);
+  }
+}
+
+function resolveMcqQuestionAnswers(q, rawStudentVal, optionLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) {
+  const qType = q.question_type || 'mcq';
+  let isMistake = false;
+  let isUnanswered = false;
+  let html = '';
+  let studentDisplayText = '';
+  let correctDisplayText = '';
+
+  if (qType === 'fill_blank') {
+    const studentAns = (rawStudentVal !== undefined && rawStudentVal !== null) ? String(rawStudentVal).trim() : '';
+    const acceptable = Array.isArray(q.acceptable_answers) ? q.acceptable_answers : [];
+    const normStudent = studentAns.toLowerCase().replace(/['"]/g, '');
+    const isCorrect = normStudent !== '' && acceptable.some((a) => (a || '').toString().trim().toLowerCase().replace(/['"]/g, '') === normStudent);
+
+    studentDisplayText = studentAns || '(empty)';
+    correctDisplayText = `[${acceptable.join(', ')}]`;
+
+    if (!studentAns) {
+      isMistake = true;
+      isUnanswered = true;
+      html = `⚪ <span style="color: #6B7280;">(empty)</span> &rarr; Expected: <strong style="color: #166534;">[${escapeHtml(acceptable.join(', '))}]</strong>`;
+    } else if (isCorrect) {
+      html = `<span style="font-weight: 700; color: #166534;">✓</span> <strong style="color: #166534;">"${escapeHtml(studentAns)}"</strong>`;
+    } else {
+      isMistake = true;
+      html = `<span style="font-weight: 700; color: #991b1b;">✕</span> <del style="color: #991b1b;">"${escapeHtml(studentAns)}"</del> &rarr; Correct: <strong style="color: #166534;">[${escapeHtml(acceptable.join(', '))}]</strong>`;
+    }
+  } else if (qType === 'matching') {
+    const studentAns = (rawStudentVal !== undefined && rawStudentVal !== null && rawStudentVal !== '') ? rawStudentVal : -1;
+    const studentNum = Number(studentAns);
+    const correctAns = q.correct_index;
+    const correctNum = Number(correctAns);
+
+    const isAnswered = studentAns !== -1 && !isNaN(studentNum) && studentNum >= 0;
+    const isCorrect = isAnswered && studentNum === correctNum;
+
+    const studentText = isAnswered
+      ? ((q.options && q.options[studentNum] !== undefined) ? q.options[studentNum] : (optionLetters[studentNum] || `Option ${studentNum + 1}`))
+      : '(unanswered)';
+    const correctText = (q.options && q.options[correctNum] !== undefined)
+      ? q.options[correctNum]
+      : (optionLetters[correctNum] || `Option ${correctNum + 1}`);
+
+    studentDisplayText = studentText;
+    correctDisplayText = correctText;
+
+    if (!isAnswered) {
+      isMistake = true;
+      isUnanswered = true;
+      html = `⚪ <span style="color: #6B7280;">Unanswered</span> &bull; Correct: <strong style="color: #166534;">${escapeHtml(correctText)}</strong>`;
+    } else if (isCorrect) {
+      html = `<span style="font-weight: 700; color: #166534;">✓</span> <strong style="color: #166534;">${escapeHtml(correctText)}</strong>`;
+    } else {
+      isMistake = true;
+      html = `<span style="font-weight: 700; color: #991b1b;">✕</span> <del style="color: #991b1b;">${escapeHtml(studentText)}</del> &rarr; Correct: <strong style="color: #166534;">${escapeHtml(correctText)}</strong>`;
+    }
+  } else {
+    // Standard MCQ
+    const studentAns = (rawStudentVal !== undefined && rawStudentVal !== null && rawStudentVal !== '') ? rawStudentVal : -1;
+    const studentNum = Number(studentAns);
+    const correctAns = q.correct_index;
+    const correctNum = Number(correctAns);
+
+    const isAnswered = studentAns !== -1 && !isNaN(studentNum) && studentNum >= 0;
+    const isCorrect = isAnswered && studentNum === correctNum;
+
+    const studentText = isAnswered
+      ? ((q.options && q.options[studentNum] !== undefined) ? q.options[studentNum] : (optionLetters[studentNum] || `Option ${studentNum + 1}`))
+      : '(unanswered)';
+    const correctText = (q.options && q.options[correctNum] !== undefined)
+      ? q.options[correctNum]
+      : (optionLetters[correctNum] || `Option ${correctNum + 1}`);
+
+    studentDisplayText = studentText;
+    correctDisplayText = correctText;
+
+    if (!isAnswered) {
+      isMistake = true;
+      isUnanswered = true;
+      html = `⚪ <span style="color: #6B7280;">Unanswered</span> &bull; Correct: <strong style="color: #166534;">${escapeHtml(correctText)}</strong>`;
+    } else if (isCorrect) {
+      html = `<span style="font-weight: 700; color: #166534;">✓</span> <strong style="color: #166534;">${escapeHtml(correctText)}</strong>`;
+    } else {
+      isMistake = true;
+      html = `<span style="font-weight: 700; color: #991b1b;">✕</span> <del style="color: #991b1b;">${escapeHtml(studentText)}</del> &rarr; Correct: <strong style="color: #166534;">${escapeHtml(correctText)}</strong>`;
+    }
+  }
+
+  return {
+    isMistake,
+    isUnanswered,
+    html,
+    studentDisplayText,
+    correctDisplayText
+  };
+}
+
+function generateMcqPrintableReport(type = 'full') {
+  if (!mcqAttemptsData || mcqAttemptsData.length === 0) {
+    alert('No student MCQ submissions found to print.');
+    return;
+  }
+
+  ensurePrintStylesInjected();
+
+  const isListening = Boolean(activeMcqTestObj && activeMcqTestObj.audio_path);
+  const baseTitle = (activeMcqTestObj && activeMcqTestObj.title) ? activeMcqTestObj.title : (activeMcqCode || 'MCQ Assessment');
+  const fullReportTitle = isListening ? `${baseTitle} (🎧 Listening Assessment)` : baseTitle;
+  const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
+  const studentCount = mcqAttemptsData.length;
+  const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
+
+  document.body.classList.add('printing-portal');
+  document.body.classList.remove('printing-manual');
+
+  const reportTitleEl = document.getElementById('portal-print-report-title');
+  const reportSubEl = document.getElementById('portal-print-report-sub');
+
+  if (type === 'feedback') {
+    document.body.classList.add('print-feedback-only');
+    if (reportTitleEl) reportTitleEl.textContent = `Student Feedback & Correction Report: ${fullReportTitle}`;
+  } else {
+    document.body.classList.remove('print-feedback-only');
+    if (reportTitleEl) reportTitleEl.textContent = `Class Evaluation Summary: ${fullReportTitle}`;
+  }
+
+  if (reportSubEl) reportSubEl.textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
+
+  // For listening assessments, append the IG Grade 9 Listening Skills Diagnostic Log table to portal-results-list
+  const resultsContainer = document.getElementById('portal-results-list');
+  if (resultsContainer) {
+    if (isListening) {
+      const diagnosticLogsHtml = mcqAttemptsData.map((att) => {
+        let diags = att.diagnostic_feedback;
+        if (typeof diags === 'string') {
+          try { diags = JSON.parse(diags); } catch (_) { diags = []; }
+        }
+        if (!Array.isArray(diags) || diags.length === 0) return '';
+
+        return `
+          <div class="result-card print-diagnostic-log report-sheet printable-report" style="page-break-before: always; margin-top: 24px; padding-top: 10px; overflow: visible !important; max-height: none !important; box-shadow: none !important;">
+            <div style="border-bottom: 2px solid var(--pen); padding-bottom: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: baseline;">
+              <h3 style="font-family: 'Source Serif 4', serif; font-size: 18px; margin: 0; color: var(--ink);">
+                🎧 IG Grade 9 Listening Skills Diagnostic Log &mdash; ${escapeHtml(att.student_name || 'Student')}
+              </h3>
+              ${type !== 'feedback' ? `<span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 700; color: var(--pen);">${escapeHtml(att.score || '')}</span>` : ''}
+            </div>
+            <table class="summary-table report-table-wrapper" style="width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 11.5px; overflow: visible !important; max-height: none !important;">
+              <thead>
+                <tr style="background: #F3F4F6;">
+                  <th style="width: 7%; padding: 6px 8px; border: 1px solid #777;">Question</th>
+                  <th style="width: 15%; padding: 6px 8px; border: 1px solid #777;">Your Answer</th>
+                  <th style="width: 15%; padding: 6px 8px; border: 1px solid #777;">Correct Answer</th>
+                  <th style="width: 13%; padding: 6px 8px; border: 1px solid #777;">Main Skill</th>
+                  <th style="width: 13%; padding: 6px 8px; border: 1px solid #777;">Sub-Skill</th>
+                  <th style="width: 17%; padding: 6px 8px; border: 1px solid #777;">Audio Evidence</th>
+                  <th style="width: 20%; padding: 6px 8px; border: 1px solid #777;">Strategy / Intervention</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${diags.map((diag, dIdx) => {
+                  let qNum = diag.question_number || diag.question_id || (dIdx + 1);
+                  let studentAns = diag.student_answer;
+                  let correctAns = diag.correct_answer;
+
+                  if (!studentAns || studentAns.length <= 2 || !correctAns || correctAns.length <= 2) {
+                    const q = (mcqQuestionsData || []).find((x, qIndex) =>
+                      Number(x.id) === Number(diag.question_id) ||
+                      Number(x.order_index) === Number(diag.question_id) ||
+                      (qIndex + 1) === Number(qNum)
+                    );
+                    if (q) {
+                      const res = resolveMcqQuestionAnswers(q, att.answers && att.answers[q.id]);
+                      if (!studentAns || studentAns.length <= 2) studentAns = res.studentDisplayText;
+                      if (!correctAns || correctAns.length <= 2) correctAns = res.correctDisplayText;
+                    }
+                  }
+
+                  return `
+                    <tr>
+                      <td style="padding: 6px 8px; border: 1px solid #777; font-family: 'IBM Plex Mono', monospace; font-weight: 600;">Q${escapeHtml(String(qNum))}</td>
+                      <td style="padding: 6px 8px; border: 1px solid #777; color: #991B1B; font-weight: 500;">${escapeHtml(studentAns || '—')}</td>
+                      <td style="padding: 6px 8px; border: 1px solid #777; color: #065F46; font-weight: 600;">${escapeHtml(correctAns || '—')}</td>
+                      <td style="padding: 6px 8px; border: 1px solid #777; font-weight: 600;">${escapeHtml(diag.main_skill || 'Listening Strategy')}</td>
+                      <td style="padding: 6px 8px; border: 1px solid #777;">${escapeHtml(diag.sub_skill || '—')}</td>
+                      <td style="padding: 6px 8px; border: 1px solid #777; font-style: italic;">"${escapeHtml(diag.spoken_quote || '—')}"</td>
+                      <td style="padding: 6px 8px; border: 1px solid #777;">
+                        ${diag.diagnosis_and_strategy ? `<div><b>Strategy:</b> ${escapeHtml(diag.diagnosis_and_strategy)}</div>` : ''}
+                        ${diag.intervention ? `<div style="margin-top: 4px; color: #166534;"><b>Recommended Drill:</b> ${escapeHtml(diag.intervention)}</div>` : ''}
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }).filter(Boolean).join('');
+
+      resultsContainer.innerHTML = diagnosticLogsHtml;
+    } else {
+      resultsContainer.innerHTML = '';
+    }
+  }
+
+  resizeReportIframes();
+
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => {
+      document.body.classList.remove('printing-portal');
+      document.body.classList.remove('print-feedback-only');
+      if (resultsContainer && isListening) {
+        resultsContainer.innerHTML = '';
+      }
+    }, 1000);
+  }, 250);
+}
+
 // Native direct report printing with combined title
 function printReport(type) {
   if (typeof activeViewMode !== 'undefined' && activeViewMode === 'mcq') {
-    if (!mcqAttemptsData || mcqAttemptsData.length === 0) {
-      alert('No student MCQ submissions found to print.');
-      return;
-    }
-
-    const isListening = Boolean(activeMcqTestObj && activeMcqTestObj.audio_path);
-    const baseTitle = (activeMcqTestObj && activeMcqTestObj.title) ? activeMcqTestObj.title : (activeMcqCode || 'MCQ Assessment');
-    const fullReportTitle = isListening ? `${baseTitle} (🎧 Listening Assessment)` : baseTitle;
-    const teacherDisplay = (currentUser && currentUser.name) ? currentUser.name : 'Teacher';
-    const studentCount = mcqAttemptsData.length;
-    const countText = `${studentCount} Student${studentCount === 1 ? '' : 's'}`;
-
-    document.body.classList.add('printing-portal');
-    document.body.classList.remove('printing-manual');
-
-    const reportTitleEl = document.getElementById('portal-print-report-title');
-    const reportSubEl = document.getElementById('portal-print-report-sub');
-
-    if (type === 'feedback') {
-      document.body.classList.add('print-feedback-only');
-      if (reportTitleEl) reportTitleEl.textContent = `Student Feedback & Correction Report: ${fullReportTitle}`;
-    } else {
-      document.body.classList.remove('print-feedback-only');
-      if (reportTitleEl) reportTitleEl.textContent = `Class Evaluation Summary: ${fullReportTitle}`;
-    }
-
-    if (reportSubEl) reportSubEl.textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
-
-    // For listening assessments, append the IG Grade 9 Listening Skills Diagnostic Log table to portal-results-list
-    const resultsContainer = document.getElementById('portal-results-list');
-    if (resultsContainer) {
-      if (isListening) {
-        const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-        const diagnosticLogsHtml = mcqAttemptsData.map((att) => {
-          let diags = att.diagnostic_feedback;
-          if (typeof diags === 'string') {
-            try { diags = JSON.parse(diags); } catch (_) { diags = []; }
-          }
-          if (!Array.isArray(diags) || diags.length === 0) return '';
-
-          return `
-            <div class="result-card print-diagnostic-log" style="page-break-before: always; margin-top: 24px; padding-top: 10px;">
-              <div style="border-bottom: 2px solid var(--pen); padding-bottom: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: baseline;">
-                <h3 style="font-family: 'Source Serif 4', serif; font-size: 18px; margin: 0; color: var(--ink);">
-                  🎧 IG Grade 9 Listening Skills Diagnostic Log &mdash; ${escapeHtml(att.student_name || 'Student')}
-                </h3>
-                ${type !== 'feedback' ? `<span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 700; color: var(--pen);">${escapeHtml(att.score || '')}</span>` : ''}
-              </div>
-              <table class="summary-table" style="width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 11.5px;">
-                <thead>
-                  <tr style="background: #F3F4F6;">
-                    <th style="width: 7%; padding: 6px 8px; border: 1px solid #777;">Question</th>
-                    <th style="width: 14%; padding: 6px 8px; border: 1px solid #777;">Your Answer</th>
-                    <th style="width: 14%; padding: 6px 8px; border: 1px solid #777;">Correct Answer</th>
-                    <th style="width: 13%; padding: 6px 8px; border: 1px solid #777;">Main Skill</th>
-                    <th style="width: 13%; padding: 6px 8px; border: 1px solid #777;">Sub-Skill</th>
-                    <th style="width: 18%; padding: 6px 8px; border: 1px solid #777;">Audio Evidence</th>
-                    <th style="width: 21%; padding: 6px 8px; border: 1px solid #777;">Strategy / Intervention</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${diags.map((diag, dIdx) => {
-                    let qNum = diag.question_number || diag.question_id || (dIdx + 1);
-                    let studentAns = diag.student_answer;
-                    let correctAns = diag.correct_answer;
-
-                    if (!studentAns || !correctAns) {
-                      const q = (mcqQuestionsData || []).find(x => x.id === diag.question_id);
-                      if (q) {
-                        const qType = q.question_type || 'mcq';
-                        if (qType === 'fill_blank') {
-                          studentAns = studentAns || (att.answers && att.answers[q.id] ? String(att.answers[q.id]) : '(empty)');
-                          correctAns = correctAns || (Array.isArray(q.acceptable_answers) ? q.acceptable_answers.join(', ') : '');
-                        } else if (qType === 'matching') {
-                          const sChoice = att.answers && att.answers[q.id] !== undefined ? att.answers[q.id] : -1;
-                          studentAns = studentAns || (sChoice >= 0 ? `Option ${optionLetters[sChoice] || sChoice}` : '(unanswered)');
-                          correctAns = correctAns || `Option ${optionLetters[q.correct_index] || q.correct_index}`;
-                        } else {
-                          const sChoice = att.answers && att.answers[q.id] !== undefined ? att.answers[q.id] : -1;
-                          studentAns = studentAns || (sChoice >= 0 && q.options && q.options[sChoice] ? q.options[sChoice] : '(unanswered)');
-                          correctAns = correctAns || (q.options && q.options[q.correct_index] ? q.options[q.correct_index] : '');
-                        }
-                      }
-                    }
-
-                    return `
-                      <tr>
-                        <td style="padding: 6px 8px; border: 1px solid #777; font-family: 'IBM Plex Mono', monospace; font-weight: 600;">Q${escapeHtml(String(qNum))}</td>
-                        <td style="padding: 6px 8px; border: 1px solid #777; color: #991B1B; font-weight: 500;">${escapeHtml(studentAns || '—')}</td>
-                        <td style="padding: 6px 8px; border: 1px solid #777; color: #065F46; font-weight: 600;">${escapeHtml(correctAns || '—')}</td>
-                        <td style="padding: 6px 8px; border: 1px solid #777; font-weight: 600;">${escapeHtml(diag.main_skill || 'Listening Strategy')}</td>
-                        <td style="padding: 6px 8px; border: 1px solid #777;">${escapeHtml(diag.sub_skill || '—')}</td>
-                        <td style="padding: 6px 8px; border: 1px solid #777; font-style: italic;">"${escapeHtml(diag.spoken_quote || '—')}"</td>
-                        <td style="padding: 6px 8px; border: 1px solid #777;">
-                          ${diag.diagnosis_and_strategy ? `<div><b>Strategy:</b> ${escapeHtml(diag.diagnosis_and_strategy)}</div>` : ''}
-                          ${diag.intervention ? `<div style="margin-top: 4px; color: #5B21B6;"><b>Intervention:</b> ${escapeHtml(diag.intervention)}</div>` : ''}
-                        </td>
-                      </tr>
-                    `;
-                  }).join('')}
-                </tbody>
-              </table>
-            </div>
-          `;
-        }).filter(Boolean).join('');
-
-        resultsContainer.innerHTML = diagnosticLogsHtml;
-      } else {
-        resultsContainer.innerHTML = '';
-      }
-    }
-
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => {
-        document.body.classList.remove('printing-portal');
-        document.body.classList.remove('print-feedback-only');
-        if (resultsContainer && isListening) {
-          resultsContainer.innerHTML = '';
-        }
-      }, 1000);
-    }, 250);
-    return;
+    return generateMcqPrintableReport(type);
   }
 
   if (!portalSubmissions || portalSubmissions.length === 0) {
@@ -1112,6 +1292,9 @@ function renderMcqAttemptsTable(attempts, questions) {
     return;
   }
 
+  ensurePrintStylesInjected();
+  resizeReportIframes();
+
   const isListeningTest = Boolean(activeMcqTestObj && activeMcqTestObj.audio_path);
   const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 
@@ -1144,120 +1327,33 @@ function renderMcqAttemptsTable(attempts, questions) {
     diagnosticsList.forEach((d) => {
       if (d.question_id !== undefined && d.question_id !== null) {
         diagMap.set(Number(d.question_id), d);
+        diagMap.set(String(d.question_id), d);
+      }
+      if (d.question_number !== undefined && d.question_number !== null) {
+        diagMap.set(Number(d.question_number), d);
+        diagMap.set(String(d.question_number), d);
       }
     });
 
     let mistakesCount = 0;
 
-    // Question-by-question objective breakdown per question type
+    // Question-by-question objective breakdown using resolveMcqQuestionAnswers
     const breakdownRows = (questions || []).map((q, qIdx) => {
-      const qType = q.question_type || 'mcq';
-      let isMistake = false;
-      let questionHtml = '';
-
-      if (qType === 'fill_blank') {
-        const rawAns = (att.answers && att.answers[q.id] !== undefined && att.answers[q.id] !== null) ? String(att.answers[q.id]).trim() : '';
-        const acceptable = Array.isArray(q.acceptable_answers) ? q.acceptable_answers : [];
-        const normStudent = rawAns.toLowerCase().replace(/['"]/g, '');
-        const isCorrect = normStudent !== '' && acceptable.some((a) => (a || '').toString().trim().toLowerCase().replace(/['"]/g, '') === normStudent);
-
-        if (!rawAns) {
-          isMistake = true;
-          questionHtml = `
-            <div style="font-size: 12.5px; padding: 3px 0; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace;">
-              <b>Q${qIdx + 1}:</b> ⚪ <span style="color:#6B7280;">(empty)</span> &rarr; Expected: <span style="color:#065F46; font-weight:600;">[${escapeHtml(acceptable.join(', '))}]</span>
-            </div>
-          `;
-        } else if (isCorrect) {
-          questionHtml = `
-            <div style="font-size: 12.5px; padding: 3px 0; color: #065F46; font-family: 'IBM Plex Mono', monospace;">
-              <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✓</span> "${escapeHtml(rawAns)}"
-            </div>
-          `;
-        } else {
-          isMistake = true;
-          questionHtml = `
-            <div style="font-size: 12.5px; padding: 3px 0; color: #991B1B; font-family: 'IBM Plex Mono', monospace;">
-              <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✕</span> "${escapeHtml(rawAns || '(empty)')}" &rarr; Expected: <span style="color:#065F46; font-weight:600;">[${escapeHtml(acceptable.join(', '))}]</span>
-            </div>
-          `;
-        }
-      } else if (qType === 'matching') {
-        const rawAns = (att.answers && att.answers[q.id] !== undefined && att.answers[q.id] !== null) ? att.answers[q.id] : -1;
-        const studentChoice = rawAns !== '' ? Number(rawAns) : -1;
-        const isCorrect = !isNaN(studentChoice) && studentChoice === Number(q.correct_index);
-
-        const correctLetter = optionLetters[q.correct_index] || String(q.correct_index + 1);
-        const studentLetter = studentChoice >= 0 ? (optionLetters[studentChoice] || String(studentChoice + 1)) : null;
-
-        if (studentChoice === -1 || isNaN(studentChoice)) {
-          isMistake = true;
-          questionHtml = `
-            <div style="font-size: 12.5px; padding: 3px 0; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace;">
-              <b>Q${qIdx + 1}:</b> ⚪ <span style="color:#6B7280;">Unanswered</span> &bull; Correct: <span style="color:#065F46; font-weight:600;">Option ${correctLetter}</span>
-            </div>
-          `;
-        } else if (isCorrect) {
-          questionHtml = `
-            <div style="font-size: 12.5px; padding: 3px 0; color: #065F46; font-family: 'IBM Plex Mono', monospace;">
-              <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✓</span> Option ${correctLetter}
-            </div>
-          `;
-        } else {
-          isMistake = true;
-          questionHtml = `
-            <div style="font-size: 12.5px; padding: 3px 0; color: #991B1B; font-family: 'IBM Plex Mono', monospace;">
-              <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✕</span> Option ${studentLetter} &rarr; Correct: <span style="color:#065F46; font-weight:600;">Option ${correctLetter}</span>
-            </div>
-          `;
-        }
-      } else {
-        // Standard MCQ
-        const rawAns = (att.answers && att.answers[q.id] !== undefined && att.answers[q.id] !== null) ? att.answers[q.id] : -1;
-        const studentChoice = rawAns !== '' ? Number(rawAns) : -1;
-        const isCorrect = !isNaN(studentChoice) && studentChoice === Number(q.correct_index);
-
-        const correctOptText = (q.options && q.options[q.correct_index]) ? q.options[q.correct_index] : `Option ${q.correct_index + 1}`;
-        const studentOptText = (studentChoice >= 0 && q.options && q.options[studentChoice]) ? q.options[studentChoice] : (studentChoice >= 0 ? `Option ${studentChoice + 1}` : 'None');
-
-        if (studentChoice === -1 || isNaN(studentChoice)) {
-          isMistake = true;
-          questionHtml = `
-            <div style="font-size: 12.5px; padding: 3px 0; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace;">
-              <b>Q${qIdx + 1}:</b> ⚪ <span style="color:#6B7280;">Unanswered</span> &bull; Correct: <span style="color:#065F46; font-weight:600;">${escapeHtml(correctOptText)}</span>
-            </div>
-          `;
-        } else if (isCorrect) {
-          questionHtml = `
-            <div style="font-size: 12.5px; padding: 3px 0; color: #065F46; font-family: 'IBM Plex Mono', monospace;">
-              <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✓</span> <span style="font-weight:600;">${escapeHtml(correctOptText)}</span>
-            </div>
-          `;
-        } else {
-          isMistake = true;
-          questionHtml = `
-            <div style="font-size: 12.5px; padding: 3px 0; color: #991B1B; font-family: 'IBM Plex Mono', monospace;">
-              <b>Q${qIdx + 1}:</b> <span style="font-weight:700;">✕</span> <span style="text-decoration: line-through;">${escapeHtml(studentOptText)}</span> &rarr; Correct: <span style="color:#065F46; font-weight:600;">${escapeHtml(correctOptText)}</span>
-            </div>
-          `;
-        }
-      }
+      const rawAns = (att.answers && att.answers[q.id] !== undefined && att.answers[q.id] !== null) ? att.answers[q.id] : undefined;
+      const res = resolveMcqQuestionAnswers(q, rawAns, optionLetters);
+      const isMistake = res.isMistake;
 
       let diagHtml = '';
       if (isMistake) {
         mistakesCount++;
         if (isListeningTest) {
-          const diag = diagMap.get(Number(q.id)) || diagMap.get(Number(qIdx + 1));
+          const diag = diagMap.get(Number(q.id)) || diagMap.get(Number(qIdx + 1)) || diagMap.get(String(q.id)) || diagMap.get(String(qIdx + 1));
           if (diag) {
             diagHtml = `
-              <div class="listening-diag-breakdown" style="margin: 6px 0 6px 10px; padding: 8px 10px; background: #F5F3FF; border-left: 3px solid #7C3AED; border-radius: 4px; font-size: 11.5px; line-height: 1.45; color: #374151;">
-                <div style="margin-bottom: 4px;">
-                  <span class="pill-badge pill-purple" style="font-size: 10px; font-weight: 700;">[${escapeHtml(diag.main_skill || 'Listening')} &rarr; ${escapeHtml(diag.sub_skill || '')}]</span>
-                </div>
-                ${diag.observable_error ? `<div style="color: #991B1B; font-weight: 600; margin-bottom: 2px;">⚠️ <b>Observable Error:</b> <span style="font-weight: 400; color: #4B5563;">${escapeHtml(diag.observable_error)}</span></div>` : ''}
-                ${diag.spoken_quote ? `<div style="color: #1E40AF; font-weight: 600; margin-bottom: 2px;">🎧 <b>Spoken:</b> <span style="font-weight: 400; font-style: italic; color: #1F2937;">"${escapeHtml(diag.spoken_quote)}"</span></div>` : ''}
-                ${diag.diagnosis_and_strategy ? `<div style="color: #065F46; font-weight: 600; margin-bottom: 2px;">💡 <b>Strategy:</b> <span style="font-weight: 400; color: #374151;">${escapeHtml(diag.diagnosis_and_strategy)}</span></div>` : ''}
-                ${diag.intervention ? `<div style="color: #6D28D9; font-weight: 600;">🎯 <b>Intervention:</b> <span style="font-weight: 400; color: #374151;">${escapeHtml(diag.intervention)}</span></div>` : ''}
+              <div class="listening-diag-box" style="margin: 6px 0 12px 14px; padding: 8px 12px; background: #f8fafc; border-left: 3px solid #2563eb; font-size: 12px; border-radius: 4px;">
+                <div style="font-weight: 600; color: #1e40af;">🎯 ${escapeHtml(diag.main_skill || 'Listening')} → ${escapeHtml(diag.sub_skill || 'Strategy')}</div>${diag.observable_error ? `<div style="color: #475569; margin-top: 2px;">⚠️ <strong>Error:</strong> ${escapeHtml(diag.observable_error)}</div>` : ''}
+                <div style="color: #334155; margin-top: 2px;">🎧 <strong>Audio Quote:</strong> <em>"${escapeHtml(diag.spoken_quote || '')}"</em></div>
+                <div style="color: #0f172a; margin-top: 2px;">💡 <strong>Strategy:</strong> ${escapeHtml(diag.diagnosis_and_strategy || '')}</div>${diag.intervention ? `<div style="color: #166534; margin-top: 2px;">🎯 <strong>Recommended Drill:</strong> ${escapeHtml(diag.intervention)}</div>` : ''}
               </div>
             `;
           }
@@ -1266,11 +1362,22 @@ function renderMcqAttemptsTable(attempts, questions) {
 
       return `
         <div style="border-bottom: 1px dashed #E5E7EB; padding: 4px 0;">
-          ${questionHtml}
+          <div style="font-size: 12.5px; padding: 2px 0; font-family: 'IBM Plex Mono', monospace;">
+            <b>Q${qIdx + 1}:</b> ${res.html}
+          </div>
           ${diagHtml}
         </div>
       `;
     }).join('');
+
+    // Task 3: Auto-Trigger when an attempt is viewed for a listening test and has mistakes without diagnostic_feedback
+    if (isListeningTest && mistakesCount > 0 && activeMcqTestObj && activeMcqTestObj.id) {
+      const hasDiags = Array.isArray(diagnosticsList) && diagnosticsList.length > 0;
+      if (!hasDiags && !inFlightDiagnostics.has(att.id)) {
+        inFlightDiagnostics.add(att.id);
+        autoTriggerListeningDiagnostics(activeMcqTestObj.id, att.id);
+      }
+    }
 
     let diagnosticActionHtml = '';
     if (isListeningTest) {
@@ -1283,8 +1390,9 @@ function renderMcqAttemptsTable(attempts, questions) {
         `;
       } else if (mistakesCount > 0) {
         diagnosticActionHtml = `
-          <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed #E5E7EB;" class="no-print">
-            <button type="button" class="ghost" id="btn-diag-${att.id}" onclick="runListeningDiagnostics(${activeMcqTestObj.id}, ${att.id})" style="font-size: 12px; padding: 4px 10px; font-weight: 600; color: #5B21B6; border-color: #DDD6FE; background: #F5F3FF; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">🔍 Diagnose Listening Skills</button>
+          <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed #E5E7EB; display: flex; justify-content: space-between; align-items: center;" class="no-print">
+            <span style="font-size: 11px; color: #2563eb; font-weight: 600;">⏳ Auto-diagnosing IG Grade 9 Skills...</span>
+            <button type="button" class="ghost" id="btn-diag-${att.id}" onclick="runListeningDiagnostics(${activeMcqTestObj.id}, ${att.id})" style="font-size: 11px; padding: 2px 7px; font-weight: 600; color: #5B21B6; border-color: #DDD6FE; background: #F5F3FF; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">🔍 Run Now</button>
           </div>
         `;
       } else {
@@ -1296,6 +1404,7 @@ function renderMcqAttemptsTable(attempts, questions) {
 
     const tr = document.createElement('tr');
     tr.id = `mcq-summary-tr-${idx}`;
+    tr.className = 'report-sheet';
     tr.innerHTML = `
       <td style="vertical-align: top; padding: 12px 14px;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
@@ -1316,7 +1425,7 @@ function renderMcqAttemptsTable(attempts, questions) {
         </div>
       </td>
       <td style="vertical-align: top; padding: 12px 14px;">
-        <div style="background: #F9FAFB; border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; max-height: 280px; overflow-y: auto;">
+        <div class="breakdown-box report-table-wrapper" style="background: #F9FAFB; border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; overflow: visible !important; max-height: none !important;">
           ${breakdownRows || '<span style="color:var(--ink-soft); font-size:12px;">No question breakdown available</span>'}
           ${diagnosticActionHtml}
         </div>
@@ -1410,7 +1519,7 @@ async function runListeningDiagnostics(testId, attemptId) {
   try {
     const res = await fetch(`/api/mcq/${testId}/attempts/${attemptId}/diagnose`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: getAuthHeaders()
     });
     const d = await res.json();
     if (!res.ok || !d.success) {
@@ -1436,6 +1545,10 @@ window.startLivePolling = startLivePolling;
 window.stopLivePolling = stopLivePolling;
 window.fetchLiveSubmissions = fetchLiveSubmissions;
 window.printReport = printReport;
+window.generateMcqPrintableReport = generateMcqPrintableReport;
+window.resolveMcqQuestionAnswers = resolveMcqQuestionAnswers;
+window.getAuthHeaders = getAuthHeaders;
+window.autoTriggerListeningDiagnostics = autoTriggerListeningDiagnostics;
 window.deleteStudentSubmission = deleteStudentSubmission;
 window.toggleSubmissionLogsModal = toggleSubmissionLogsModal;
 window.deleteLineItem = deleteLineItem;
@@ -1453,4 +1566,5 @@ window.confirmDeleteCurrentMcqTest = confirmDeleteCurrentMcqTest;
 window.startMcqLivePolling = startMcqLivePolling;
 window.stopMcqLivePolling = stopMcqLivePolling;
 window.runListeningDiagnostics = runListeningDiagnostics;
+
 
