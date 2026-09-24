@@ -10,31 +10,51 @@ function switchMode(mode) {
   const btnPortal = document.getElementById('btn-mode-portal');
   const btnManual = document.getElementById('btn-mode-manual');
   const btnMcq = document.getElementById('btn-mode-mcq');
+  const btnOnlineTests = document.getElementById('btn-mode-online-tests');
   const secPortal = document.getElementById('portal-section');
   const secManual = document.getElementById('manual-section');
   const secMcq = document.getElementById('mcq-section');
+  const secOnlineTests = document.getElementById('online-tests-tab');
 
   if (mode === 'portal') {
     if (btnPortal) btnPortal.classList.add('active');
     if (btnManual) btnManual.classList.remove('active');
     if (btnMcq) btnMcq.classList.remove('active');
+    if (btnOnlineTests) btnOnlineTests.classList.remove('active');
     if (secPortal) secPortal.style.display = 'block';
     if (secManual) secManual.style.display = 'none';
     if (secMcq) secMcq.style.display = 'none';
+    if (secOnlineTests) secOnlineTests.style.display = 'none';
   } else if (mode === 'manual') {
     if (btnManual) btnManual.classList.add('active');
     if (btnPortal) btnPortal.classList.remove('active');
     if (btnMcq) btnMcq.classList.remove('active');
+    if (btnOnlineTests) btnOnlineTests.classList.remove('active');
     if (secManual) secManual.style.display = 'block';
     if (secPortal) secPortal.style.display = 'none';
     if (secMcq) secMcq.style.display = 'none';
+    if (secOnlineTests) secOnlineTests.style.display = 'none';
   } else if (mode === 'mcq') {
     if (btnMcq) btnMcq.classList.add('active');
     if (btnPortal) btnPortal.classList.remove('active');
     if (btnManual) btnManual.classList.remove('active');
+    if (btnOnlineTests) btnOnlineTests.classList.remove('active');
     if (secMcq) secMcq.style.display = 'block';
     if (secPortal) secPortal.style.display = 'none';
     if (secManual) secManual.style.display = 'none';
+    if (secOnlineTests) secOnlineTests.style.display = 'none';
+  } else if (mode === 'online-tests') {
+    if (btnOnlineTests) btnOnlineTests.classList.add('active');
+    if (btnPortal) btnPortal.classList.remove('active');
+    if (btnManual) btnManual.classList.remove('active');
+    if (btnMcq) btnMcq.classList.remove('active');
+    if (secOnlineTests) secOnlineTests.style.display = 'block';
+    if (secPortal) secPortal.style.display = 'none';
+    if (secManual) secManual.style.display = 'none';
+    if (secMcq) secMcq.style.display = 'none';
+    if (window.loadOnlineTestsList) {
+      window.loadOnlineTestsList();
+    }
   }
 }
 

@@ -1,0 +1,1928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Online Exam Environment — Mimir Marking</title>
+<link rel="icon" type="image/jpeg" href="/mimir.jpg">
+<link rel="shortcut icon" type="image/jpeg" href="/mimir.jpg">
+<link rel="apple-touch-icon" href="/mimir.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #16233F;
+    --ink-soft: #4A5670;
+    --paper: #E3E9F6;
+    --paper-line: #CBD6ED;
+    --card: #FBFCFE;
+    --pen: #1D3A66;
+    --pen-soft: #DDE3EE;
+    --border: #C2CEE7;
+    --success: #059669;
+    --success-bg: #ECFDF5;
+    --warning: #D97706;
+    --warning-bg: #FEF3C7;
+    --danger: #DC2626;
+    --danger-bg: #FEE2E2;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    padding-bottom: 90px;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+
+  input, textarea {
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    -ms-user-select: text !important;
+    user-select: text !important;
+  }
+
+  .btn-lockdown-enter {
+    background: var(--ink);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 14px 20px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: 0 4px 14px rgba(22, 35, 63, 0.2);
+  }
+  .btn-lockdown-enter:hover {
+    background: #0E1729;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(22, 35, 63, 0.25);
+  }
+
+  .strike-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: #FEE2E2;
+    color: #DC2626;
+    border: 1px solid #FCA5A5;
+    animation: urgentBlink 1s infinite alternate;
+  }
+
+  /* Top Navigation Bar */
+  .top-exam-bar {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    background: rgba(251, 252, 254, 0.96);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+
+  .brand-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .brand-logo {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--pen);
+    object-fit: cover;
+    object-position: top center;
+  }
+
+  .brand-name {
+    font-family: 'Source Serif 4', serif;
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--ink);
+  }
+
+  .exam-meta-pills {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: var(--success-bg);
+    color: var(--success);
+    border: 1px solid #A7F3D0;
+  }
+
+  .pulse-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--success);
+    animation: livePulse 2s infinite;
+  }
+
+  @keyframes livePulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(5, 150, 105, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(5, 150, 105, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(5, 150, 105, 0); }
+  }
+
+  .timer-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: var(--pen-soft);
+    color: var(--pen);
+    border: 1px solid var(--border);
+  }
+
+  .timer-urgent {
+    background: var(--danger-bg) !important;
+    color: var(--danger) !important;
+    border-color: #FCA5A5 !important;
+    animation: urgentBlink 1s infinite alternate;
+  }
+
+  @keyframes urgentBlink {
+    0% { opacity: 1; }
+    100% { opacity: 0.7; }
+  }
+
+  /* Section Tabs Nav */
+  .section-nav-strip {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 10px 20px;
+    background: #EAEFF9;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-nav-btn {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .section-nav-btn:hover {
+    background: var(--pen-soft);
+    color: var(--pen);
+    border-color: var(--pen);
+  }
+
+  .section-nav-btn.active {
+    background: var(--pen);
+    color: #fff;
+    border-color: var(--pen);
+  }
+
+  .wrap {
+    max-width: 900px;
+    margin: 20px auto;
+    padding: 0 16px;
+  }
+
+  /* Intro Card */
+  .intro-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+  }
+
+  .exam-code-tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--pen);
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .exam-title {
+    font-family: 'Source Serif 4', serif;
+    font-size: 24px;
+    color: var(--ink);
+    margin: 0 0 6px 0;
+  }
+
+  .exam-teacher {
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    margin-bottom: 14px;
+  }
+
+  .deadline-box {
+    background: var(--pen-soft);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--pen);
+    font-weight: 500;
+    margin-bottom: 12px;
+    display: none;
+  }
+
+  .instructions-box {
+    background: #FAFBFD;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--pen);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+  }
+
+  /* Audio Track Box */
+  .audio-bar-box {
+    background: #FAFBFD;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    display: none;
+  }
+
+  .audio-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .audio-badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: #EEF2FF;
+    color: #3730A3;
+    border: 1px solid #C7D2FE;
+  }
+
+  .audio-btn-start {
+    width: 100%;
+    background: var(--pen);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: background 0.15s;
+    font-family: inherit;
+  }
+
+  .audio-btn-start:hover:not(:disabled) {
+    background: #122544;
+  }
+
+  .audio-btn-start:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    background: #64748B;
+  }
+
+  .audio-progress-wrap {
+    height: 6px;
+    background: #E2E8F0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 10px;
+    display: none;
+  }
+
+  .audio-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--pen);
+    transition: width 0.2s linear;
+  }
+
+  .audio-time-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    margin-top: 6px;
+    text-align: right;
+    display: none;
+  }
+
+  /* Section Cards */
+  .section-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 24px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+  }
+
+  .section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--paper-line);
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .section-title {
+    font-family: 'Source Serif 4', serif;
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0;
+  }
+
+  .type-badge {
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+    display: inline-block;
+  }
+
+  .type-listening { background: #EEF2FF; color: #3730A3; border: 1px solid #C7D2FE; }
+  .type-reading { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+  .type-writing { background: #FCE7F3; color: #9D174D; border: 1px solid #FBCFE8; }
+  .type-grammar { background: #DCFCE7; color: #166534; border: 1px solid #BBF7D0; }
+  .type-general { background: #E0E7FF; color: #1E3A8A; border: 1px solid #BFDBFE; }
+
+  /* Passage Stimulus Box */
+  .passage-box {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+
+  .passage-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .passage-title {
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--pen);
+    letter-spacing: 0.05em;
+  }
+
+  .passage-content {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 14.5px;
+    line-height: 1.7;
+    color: #1E293B;
+    white-space: pre-wrap;
+    max-height: 360px;
+    overflow-y: auto;
+    padding-right: 6px;
+  }
+
+  .passage-content::-webkit-scrollbar {
+    width: 6px;
+  }
+  .passage-content::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+
+  /* Question Cards */
+  .q-card {
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 16px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .q-card:focus-within {
+    border-color: var(--pen);
+    box-shadow: 0 0 0 1px var(--pen);
+  }
+
+  .q-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .q-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 700;
+    font-size: 13.5px;
+    color: var(--pen);
+  }
+
+  .q-points {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    background: var(--paper);
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+
+  .q-text {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--ink);
+    margin-bottom: 14px;
+    white-space: pre-wrap;
+  }
+
+  /* MCQ Options */
+  .mcq-options-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .mcq-choice-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #FAFBFD;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+  }
+
+  .mcq-choice-row:hover {
+    background: var(--pen-soft);
+    border-color: var(--pen);
+  }
+
+  .mcq-choice-row.selected {
+    background: #EEF2FF;
+    border-color: var(--pen);
+    box-shadow: 0 0 0 1px var(--pen);
+  }
+
+  .mcq-letter {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    border: 1px solid var(--border);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--pen);
+    flex-shrink: 0;
+  }
+
+  .mcq-choice-row.selected .mcq-letter {
+    background: var(--pen);
+    color: #fff;
+    border-color: var(--pen);
+  }
+
+  .mcq-text {
+    font-size: 13.5px;
+    color: var(--ink);
+    flex: 1;
+  }
+
+  /* Text Inputs */
+  .ot-text-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--ink);
+    background: #fff;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .ot-text-input:focus {
+    border-color: var(--pen);
+    box-shadow: 0 0 0 2px var(--pen-soft);
+  }
+
+  /* Matching Select */
+  .ot-select-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-family: inherit;
+    background: #fff;
+    color: var(--ink);
+    outline: none;
+  }
+
+  .ot-select-input:focus {
+    border-color: var(--pen);
+    box-shadow: 0 0 0 2px var(--pen-soft);
+  }
+
+  /* Writing Essay */
+  .ot-writing-textarea {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: 'Source Serif 4', Georgia, serif;
+    line-height: 1.6;
+    color: var(--ink);
+    background: #fff;
+    outline: none;
+    resize: vertical;
+    min-height: 160px;
+    transition: border-color 0.15s;
+  }
+
+  .ot-writing-textarea:focus {
+    border-color: var(--pen);
+    box-shadow: 0 0 0 2px var(--pen-soft);
+  }
+
+  /* Word Counter Badge */
+  .word-counter-badge {
+    margin-top: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: #F1F5F9;
+    color: var(--ink-soft);
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+  }
+
+  .word-counter-in-range {
+    background: var(--success-bg);
+    color: var(--success);
+    border-color: #A7F3D0;
+  }
+
+  .word-counter-warning {
+    background: var(--warning-bg);
+    color: var(--warning);
+    border-color: #FCD34D;
+  }
+
+  /* Bottom Submission Bar */
+  .bottom-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: rgba(251, 252, 254, 0.98);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
+    gap: 16px;
+  }
+
+  .bottom-student-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    max-width: 400px;
+  }
+
+  .bottom-student-input {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13.5px;
+    outline: none;
+    font-family: inherit;
+    background: #fff;
+  }
+
+  .bottom-student-input:focus {
+    border-color: var(--pen);
+    box-shadow: 0 0 0 2px var(--pen-soft);
+  }
+
+  .bottom-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .completion-badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--pen);
+    background: var(--pen-soft);
+    padding: 5px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+
+  .btn-submit-exam {
+    background: var(--ink);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 22px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, transform 0.1s;
+    white-space: nowrap;
+  }
+
+  .btn-submit-exam:hover {
+    background: #0E1729;
+    transform: translateY(-1px);
+  }
+
+  .btn-submit-exam:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* Modals */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(22, 35, 63, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 10005;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+
+  .modal-box {
+    background: #FBFCFE;
+    border: 1px solid #C2CEE7;
+    border-radius: 12px;
+    max-width: 520px;
+    width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 24px;
+    box-shadow: 0 16px 36px rgba(0,0,0,0.2);
+  }
+
+  .modal-title {
+    font-family: 'Source Serif 4', serif;
+    font-size: 19px;
+    color: var(--ink);
+    margin: 0 0 10px 0;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 84px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1F2937;
+    color: #F9FAFB;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    z-index: 10002;
+    display: none;
+  }
+
+  /* Responsive Adjustments */
+  @media (max-width: 680px) {
+    .top-exam-bar { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .bottom-bar { flex-direction: column; align-items: stretch; gap: 10px; }
+    .bottom-student-input-wrap { max-width: 100%; }
+    .bottom-actions { justify-content: space-between; }
+    body { padding-bottom: 140px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Top Navigation -->
+<div class="top-exam-bar">
+  <div class="brand-group">
+    <img src="/mimir.jpg" alt="Mimir" class="brand-logo">
+    <div>
+      <span class="brand-name">Mimir Exam Environment</span>
+    </div>
+  </div>
+  <div class="exam-meta-pills">
+    <div class="status-pill">
+      <span class="pulse-dot"></span>
+      <span id="exam-status-text">Connected</span>
+    </div>
+    <div id="exam-strikes-pill" class="strike-badge" style="display:none;">
+      <span>⚠️</span>
+      <span id="exam-strikes-text">Strike 1/2</span>
+    </div>
+    <div class="timer-pill" id="exam-timer-pill" style="display:none;">
+      <span>⏳</span>
+      <span id="exam-timer-text">--:--:--</span>
+    </div>
+  </div>
+</div>
+
+<!-- Section Navigator Strip -->
+<div class="section-nav-strip" id="section-nav-strip" style="display:none;"></div>
+
+<div class="wrap">
+  <!-- Pre-Exam Lockdown & Fullscreen Gate Splash Screen -->
+  <div class="intro-card" id="exam-splash-screen" style="max-width: 640px; margin: 30px auto; padding: 32px 28px; text-align: center; border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); display:none;">
+    <div style="display:flex; justify-content:center; align-items:center; gap:10px; margin-bottom:12px;">
+      <span class="exam-code-tag" id="splash-code-badge">TEST CODE</span>
+      <span class="status-pill" style="font-size:11px;">🔒 Proctoring Active</span>
+    </div>
+    <h1 style="font-family:'Source Serif 4',serif; font-size:24px; margin:0 0 8px 0; color:var(--ink);" id="splash-exam-title">Loading Assessment...</h1>
+    <div style="font-size:13px; color:var(--ink-soft); margin-bottom:14px;" id="splash-exam-teacher"></div>
+    <div class="deadline-box" id="splash-deadline-box" style="margin-bottom:20px; display:none;"></div>
+
+    <!-- Security & Proctoring Instructions -->
+    <div style="background:#FFFBEB; border:1px solid #FDE68A; border-radius:10px; padding:16px; margin-bottom:24px; text-align:left; font-size:13px; line-height:1.6; color:#92400E;">
+      <div style="font-weight:700; margin-bottom:6px; font-size:13.5px; display:flex; align-items:center; gap:6px;">
+        <span>🛡️</span> Strict Examination Lockdown Rules:
+      </div>
+      <ul style="margin:0; padding-left:18px;">
+        <li><b>Fullscreen Enforcement:</b> You must remain in full screen for the duration of the test.</li>
+        <li><b>Tab & Window Monitoring:</b> Exiting fullscreen, switching tabs, or minimizing the browser will issue a strike.</li>
+        <li><b>2-Strike Termination:</b> You are permitted only <b>1 warning strike</b>; on the <b>2nd strike</b>, the exam will automatically terminate and submit.</li>
+        <li><b>Shortcut Lockdown:</b> Right-click, text copying, and dev shortcuts are disabled.</li>
+      </ul>
+    </div>
+
+    <!-- Student Name Input & Start Button -->
+    <div style="max-width:440px; margin:0 auto; text-align:left;">
+      <label for="splash-student-name" style="display:block; font-size:13px; font-weight:600; margin-bottom:6px; color:var(--ink);">
+        Candidate Full Name *
+      </label>
+      <input type="text" id="splash-student-name" placeholder="e.g. Omar Hamada" required
+        style="width:100%; padding:12px 14px; font-size:14px; border:1px solid var(--border); border-radius:8px; outline:none; background:#fff; margin-bottom:6px; font-family:inherit;" />
+      <div id="splash-name-error" style="color:var(--danger); font-size:12px; margin-bottom:14px; display:none;">Please enter your full name before beginning.</div>
+
+      <button type="button" id="btn-begin-lockdown-exam" onclick="startExamWithLockdown()" class="btn-lockdown-enter" style="width:100%;">
+        <span>🔒</span> Enter Fullscreen & Begin Exam
+      </button>
+    </div>
+  </div>
+
+  <!-- Exam Intro Card -->
+  <div class="intro-card" id="exam-intro-card" style="display:none;">
+    <div class="exam-code-tag" id="exam-code-badge">TEST CODE</div>
+    <h1 class="exam-title" id="exam-title">Loading Assessment...</h1>
+    <div class="exam-teacher" id="exam-teacher"></div>
+    <div class="deadline-box" id="exam-deadline-box"></div>
+    <div class="instructions-box" id="exam-instructions-box" style="display:none;"></div>
+  </div>
+
+  <!-- Audio Listening Player Box (if test has listening track) -->
+  <div class="audio-bar-box" id="exam-audio-box" style="display:none;">
+    <div class="audio-head">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:18px;">🎧</span>
+        <span style="font-size:14px; font-weight:600; color:var(--pen);">Listening Track</span>
+      </div>
+      <span class="audio-badge" id="audio-plays-badge">Listen 1 of 2</span>
+    </div>
+    <audio id="exam-audio-element" controlsList="nodownload noplaybackrate" preload="auto" style="display:none;"></audio>
+    <button type="button" class="audio-btn-start" id="btn-start-audio" onclick="startAudioPlayback()">
+      ▶ Start Listening Track
+    </button>
+    <div class="audio-progress-wrap" id="audio-progress-wrap">
+      <div class="audio-progress-bar" id="audio-progress-bar"></div>
+    </div>
+    <div class="audio-time-label" id="audio-time-label">00:00 / 00:00</div>
+    <div id="audio-locked-notice" style="display:none; margin-top:8px; font-size:12px; color:var(--danger); font-weight:600;">
+      🔒 Maximum play attempts reached for this exam track.
+    </div>
+  </div>
+
+  <!-- Already Submitted Lock Screen -->
+  <div class="intro-card" id="exam-locked-screen" style="display:none; text-align:center; padding:40px 20px;">
+    <div style="font-size:42px; margin-bottom:12px;">🔒</div>
+    <h2 style="font-family:'Source Serif 4',serif; color:var(--ink); margin:0 0 8px 0;">Attempt Already Recorded</h2>
+    <p style="font-size:14px; color:var(--ink-soft); max-width:480px; margin:0 auto 16px auto; line-height:1.5;">
+      An assessment attempt from this device has already been submitted for this test. Resubmissions are locked to preserve exam integrity.
+    </p>
+    <div style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--pen); background:var(--pen-soft); padding:8px 14px; border-radius:6px; display:inline-block;">
+      Device ID: <span id="locked-device-id"></span>
+    </div>
+  </div>
+
+  <!-- Sections & Questions Container -->
+  <div id="exam-sections-container"></div>
+</div>
+
+<!-- Bottom Submission Bar -->
+<div class="bottom-bar" id="exam-bottom-bar" style="display:none;">
+  <div class="bottom-student-input-wrap">
+    <label style="font-size:12.5px; font-weight:600; color:var(--ink); white-space:nowrap;" for="student-name-input">Your Name *</label>
+    <input type="text" id="student-name-input" class="bottom-student-input" placeholder="e.g. Omar Hamada" required />
+  </div>
+  <div class="bottom-actions">
+    <div class="completion-badge" id="completion-badge">Answered 0/0</div>
+    <button type="button" class="btn-submit-exam" id="btn-submit-exam" onclick="handleClickSubmit()">
+      🚀 Submit Exam
+    </button>
+  </div>
+</div>
+
+<!-- Pre-Submit Warning Modal -->
+<div class="modal-overlay" id="submit-warning-modal">
+  <div class="modal-box">
+    <h3 class="modal-title">Confirm Exam Submission</h3>
+    <div id="submit-warning-body" style="font-size:13.5px; color:var(--ink-soft); line-height:1.5; margin-bottom:18px;"></div>
+    <div style="display:flex; justify-content:flex-end; gap:10px;">
+      <button type="button" onclick="closeSubmitWarningModal()"
+        style="background:var(--paper); color:var(--ink); border:1px solid var(--border); padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">
+        Review Answers
+      </button>
+      <button type="button" onclick="executeSubmission('normal')"
+        style="background:var(--pen); color:#fff; border:none; padding:8px 18px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">
+        Confirm & Submit
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Lockdown Warning Modal (Strike 1) -->
+<div class="modal-overlay" id="lockdown-warning-modal">
+  <div class="modal-box" style="border-top: 5px solid var(--warning); text-align:center; padding: 28px 24px;">
+    <div style="font-size: 44px; margin-bottom: 8px;">⚠️</div>
+    <h3 class="modal-title" style="color: #B45309; font-size: 20px;">Security Alert: Strike 1 of 2</h3>
+    <p style="font-size: 13.5px; color: var(--ink); line-height: 1.6; margin-bottom: 20px;">
+      You exited fullscreen or navigated away from the exam window. This security infraction has been logged.
+      <br/><br/>
+      <b>Warning:</b> You have <b>1 strike remaining</b>. A second infraction will immediately <b>terminate and auto-submit</b> your exam.
+    </p>
+    <button type="button" onclick="resumeFullscreen()"
+      style="background: var(--ink); color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">
+      🔒 Return to Fullscreen & Resume Exam
+    </button>
+  </div>
+</div>
+
+<!-- Lockdown Terminated Modal (Strike 2) -->
+<div class="modal-overlay" id="lockdown-terminated-modal">
+  <div class="modal-box" style="border-top: 5px solid var(--danger); text-align:center; padding: 32px 24px;">
+    <div style="font-size: 44px; margin-bottom: 8px;">⛔</div>
+    <h3 class="modal-title" style="color: #DC2626; font-size: 20px;">Exam Terminated: Security Limit Exceeded</h3>
+    <p style="font-size: 13.5px; color: var(--ink); line-height: 1.6; margin-bottom: 16px;">
+      A second security infraction occurred (exited fullscreen or switched tabs).
+      <br/>
+      Per strict proctoring rules, your assessment has been terminated and auto-submitted.
+    </p>
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--danger); background: var(--danger-bg); padding: 8px 14px; border-radius: 6px; display: inline-block;">
+      Reason: Multiple Security Violations (tab_switch_limit)
+    </div>
+  </div>
+</div>
+
+<!-- Success Submission Modal / Overlay -->
+<div class="modal-overlay" id="submit-success-modal">
+  <div class="modal-box" style="text-align:center; padding:36px 24px;">
+    <div style="font-size:46px; margin-bottom:12px;">✅</div>
+    <h2 style="font-family:'Source Serif 4',serif; color:#059669; margin:0 0 8px 0;">Exam Submitted Successfully</h2>
+    <p style="font-size:14px; color:var(--ink-soft); line-height:1.5; margin:0 0 16px 0;">
+      Your responses have been recorded and locked for evaluation.
+    </p>
+    <div style="background:var(--pen-soft); border:1px solid var(--border); border-radius:8px; padding:12px; font-size:12.5px; text-align:left; font-family:'IBM Plex Mono',monospace; margin-bottom:20px;">
+      <div><b>Student:</b> <span id="success-student-name"></span></div>
+      <div><b>Submitted:</b> <span id="success-time"></span> (Cairo Time)</div>
+      <div><b>Confirmation ID:</b> #<span id="success-attempt-id"></span></div>
+    </div>
+    <p style="font-size:12.5px; color:var(--ink-soft); margin:0;">You may now safely close this window.</p>
+  </div>
+</div>
+
+<!-- Toast notification -->
+<div class="toast" id="exam-toast"></div>
+
+<script>
+// ==========================================
+// CLIENT-SIDE EXAM RUNTIME & PROCTORING LOCKDOWN
+// ==========================================
+
+const urlParams = new URLSearchParams(window.location.search);
+const testCode = (urlParams.get('code') || '').trim();
+
+let testData = null;
+let clientAnswers = new Map(); // questionId -> { answer, word_count }
+let allQuestionIds = [];
+let audioState = { playCount: 0, hasStarted: false, isLocked: false };
+const MAX_AUDIO_PLAYS = 2; // Cambridge standard
+let audioKey = 'online_audio_state_' + testCode;
+
+// Security & Proctoring State
+let strikesCount = 0;
+const MAX_STRIKES = 2;
+let securityViolations = [];
+let lastInfractionTime = 0;
+let isExamActive = false;
+let isSubmitted = false;
+let countdownTimerId = null;
+
+function getOrCreateDeviceId() {
+  let stored = localStorage.getItem('mimir_device_token');
+  if (stored) return stored;
+
+  const screenData = `${screen.width}x${screen.height}x${screen.colorDepth}`;
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  const raw = `${screenData}_${timezone}_${navigator.language}_${crypto.randomUUID()}`;
+  stored = 'dev_' + btoa(raw).replace(/[^a-zA-Z0-9]/g, '').slice(0, 32);
+
+  try { localStorage.setItem('mimir_device_token', stored); } catch (_) {}
+  return stored;
+}
+
+const clientDeviceId = getOrCreateDeviceId();
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function formatCairoDateTime(dateObj) {
+  return dateObj.toLocaleString('en-US', {
+    timeZone: 'Africa/Cairo',
+    month: 'short', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true
+  });
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('exam-toast');
+  if (!el) return;
+  el.innerText = msg;
+  el.style.display = 'block';
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+function showLockedScreen() {
+  const splash = document.getElementById('exam-splash-screen');
+  if (splash) splash.style.display = 'none';
+  const intro = document.getElementById('exam-intro-card');
+  if (intro) intro.style.display = 'none';
+  const sec = document.getElementById('exam-sections-container');
+  if (sec) sec.style.display = 'none';
+  const bar = document.getElementById('exam-bottom-bar');
+  if (bar) bar.style.display = 'none';
+  const nav = document.getElementById('section-nav-strip');
+  if (nav) nav.style.display = 'none';
+  const audio = document.getElementById('exam-audio-box');
+  if (audio) audio.style.display = 'none';
+  const lock = document.getElementById('exam-locked-screen');
+  if (lock) lock.style.display = 'block';
+  const dev = document.getElementById('locked-device-id');
+  if (dev) dev.innerText = clientDeviceId;
+}
+
+// ----------------- 1. INITIALIZATION -----------------
+
+window.addEventListener('DOMContentLoaded', async () => {
+  if (!testCode) {
+    document.getElementById('exam-title').innerText = 'Invalid Exam Link';
+    document.getElementById('exam-teacher').innerText = 'No test code provided in URL parameter.';
+    return;
+  }
+
+  // Restore candidate name if previously typed
+  const savedName = sessionStorage.getItem('online_student_name') || '';
+  const splashInput = document.getElementById('splash-student-name');
+  const bottomInput = document.getElementById('student-name-input');
+  if (savedName) {
+    if (splashInput) splashInput.value = savedName;
+    if (bottomInput) bottomInput.value = savedName;
+  }
+
+  if (splashInput) {
+    splashInput.addEventListener('input', (e) => {
+      const val = e.target.value.trim();
+      sessionStorage.setItem('online_student_name', val);
+      if (bottomInput) bottomInput.value = val;
+      const err = document.getElementById('splash-name-error');
+      if (err) err.style.display = 'none';
+    });
+  }
+
+  if (bottomInput) {
+    bottomInput.addEventListener('input', (e) => {
+      const val = e.target.value.trim();
+      sessionStorage.setItem('online_student_name', val);
+      if (splashInput) splashInput.value = val;
+    });
+  }
+
+  await loadOnlineTest();
+});
+
+async function loadOnlineTest() {
+  try {
+    // 1. Device Lockdown Check: local storage & server status
+    const isLocallyLocked = localStorage.getItem('online_test_locked_' + testCode) === 'true';
+    if (isLocallyLocked) {
+      showLockedScreen();
+      return;
+    }
+
+    const statusRes = await fetch(`/api/public/online-tests/${encodeURIComponent(testCode)}/status?deviceId=${encodeURIComponent(clientDeviceId)}`);
+    const statusData = await statusRes.json();
+
+    if (statusData && statusData.already_submitted) {
+      localStorage.setItem('online_test_locked_' + testCode, 'true');
+      showLockedScreen();
+      return;
+    }
+
+    // 2. Fetch sanitized exam payload (answers & rubrics stripped)
+    const res = await fetch(`/api/public/online-tests/${encodeURIComponent(testCode)}`);
+    const data = await res.json();
+
+    if (!res.ok || !data.success || !data.test) {
+      if (data.error === 'deadline_passed') {
+        document.getElementById('exam-title').innerText = 'Submissions Closed';
+        document.getElementById('exam-teacher').innerText = data.message || 'This exam has passed its submission deadline.';
+        document.getElementById('exam-intro-card').style.display = 'block';
+        return;
+      }
+      document.getElementById('exam-title').innerText = 'Exam Not Found';
+      document.getElementById('exam-teacher').innerText = data.message || 'This exam link may be invalid or not yet published.';
+      document.getElementById('exam-intro-card').style.display = 'block';
+      return;
+    }
+
+    testData = data.test;
+
+    // Render splash screen info
+    document.getElementById('splash-code-badge').innerText = `ACCESS CODE: ${escapeHtml(testCode)}`;
+    document.getElementById('splash-exam-title').innerText = testData.title;
+    document.getElementById('splash-exam-teacher').innerText = `Instructor / Examination Center: ${testData.teacher_name || 'Teacher'}`;
+
+    if (testData.deadline) {
+      const dlDate = new Date(testData.deadline);
+      const splashDdl = document.getElementById('splash-deadline-box');
+      splashDdl.style.display = 'block';
+      splashDdl.innerHTML = `⏳ <b>Deadline:</b> ${formatCairoDateTime(dlDate)} (Cairo Time)`;
+    }
+
+    // Pre-render exam components in background (remain hidden until fullscreen entry)
+    renderExamHeader();
+    renderSectionNav();
+    renderSections();
+
+    if (testData.audio_url) {
+      setupAudioTrack(testData.audio_url);
+    }
+
+    updateCompletionCount();
+
+    // Show lockdown splash screen
+    document.getElementById('exam-splash-screen').style.display = 'block';
+  } catch (err) {
+    console.error('Failed to load exam:', err);
+    document.getElementById('exam-title').innerText = 'Connection Error';
+    document.getElementById('exam-teacher').innerText = 'Failed to connect to the testing server. Please check your connection and refresh.';
+    document.getElementById('exam-intro-card').style.display = 'block';
+  }
+}
+
+// ----------------- 2. LOCKDOWN & FULLSCREEN ENTRY -----------------
+
+async function startExamWithLockdown() {
+  const splashInput = document.getElementById('splash-student-name');
+  const studentName = (splashInput?.value || document.getElementById('student-name-input')?.value || '').trim();
+  const errEl = document.getElementById('splash-name-error');
+
+  if (!studentName) {
+    if (errEl) errEl.style.display = 'block';
+    if (splashInput) splashInput.focus();
+    return;
+  }
+  if (errEl) errEl.style.display = 'none';
+
+  sessionStorage.setItem('online_student_name', studentName);
+  const bottomInput = document.getElementById('student-name-input');
+  if (bottomInput) bottomInput.value = studentName;
+
+  // Request Fullscreen
+  try {
+    const elem = document.documentElement;
+    if (elem.requestFullscreen) {
+      await elem.requestFullscreen();
+    } else if (elem.webkitRequestFullscreen) {
+      await elem.webkitRequestFullscreen();
+    } else if (elem.mozRequestFullScreen) {
+      await elem.mozRequestFullScreen();
+    } else if (elem.msRequestFullscreen) {
+      await elem.msRequestFullscreen();
+    }
+  } catch (fsErr) {
+    console.warn('Fullscreen request blocked or not granted:', fsErr);
+    showToast('⚠️ Fullscreen permission was not granted by browser. Please stay focused on this window.');
+  }
+
+  // Hide Splash Screen & Reveal Exam
+  document.getElementById('exam-splash-screen').style.display = 'none';
+  document.getElementById('exam-intro-card').style.display = 'block';
+  document.getElementById('exam-sections-container').style.display = 'block';
+  document.getElementById('exam-bottom-bar').style.display = 'flex';
+
+  if (testData?.sections && testData.sections.length > 1) {
+    document.getElementById('section-nav-strip').style.display = 'flex';
+  }
+  if (testData?.audio_url) {
+    document.getElementById('exam-audio-box').style.display = 'block';
+  }
+
+  isExamActive = true;
+
+  // Start deadline countdown if present
+  if (testData?.deadline) {
+    startCountdownTimer(new Date(testData.deadline));
+  }
+}
+
+// ----------------- 3. PROCTORING & SECURITY INFRACTION HANDLER -----------------
+
+function handleSecurityInfraction(type, details) {
+  if (!isExamActive || isSubmitted) return;
+
+  const now = Date.now();
+  // Debounce duplicate triggers within 1500ms (e.g. fullscreen exit + blur fired simultaneously)
+  if (now - lastInfractionTime < 1500) {
+    return;
+  }
+  lastInfractionTime = now;
+  strikesCount++;
+
+  const violation = {
+    type: type, // 'fullscreen_exit', 'tab_switch', 'window_blur'
+    strike: strikesCount,
+    timestamp: new Date().toISOString(),
+    details: details || ''
+  };
+  securityViolations.push(violation);
+
+  // Update top bar strike badge
+  const strikePill = document.getElementById('exam-strikes-pill');
+  const strikeText = document.getElementById('exam-strikes-text');
+  if (strikePill && strikeText) {
+    strikePill.style.display = 'inline-flex';
+    strikeText.innerText = `Strike ${strikesCount} of ${MAX_STRIKES}`;
+  }
+
+  if (strikesCount === 1) {
+    // Strike 1 Warning Modal
+    document.getElementById('lockdown-warning-modal').style.display = 'flex';
+  } else if (strikesCount >= MAX_STRIKES) {
+    // Strike 2 Termination & Auto-Submission
+    document.getElementById('lockdown-warning-modal').style.display = 'none';
+    document.getElementById('lockdown-terminated-modal').style.display = 'flex';
+    executeSubmission('tab_switch_limit');
+  }
+}
+
+function resumeFullscreen() {
+  document.getElementById('lockdown-warning-modal').style.display = 'none';
+  const elem = document.documentElement;
+  try {
+    if (elem.requestFullscreen) {
+      elem.requestFullscreen().catch(() => {});
+    } else if (elem.webkitRequestFullscreen) {
+      elem.webkitRequestFullscreen();
+    } else if (elem.mozRequestFullScreen) {
+      elem.mozRequestFullScreen();
+    } else if (elem.msRequestFullscreen) {
+      elem.msRequestFullscreen();
+    }
+  } catch (_) {}
+}
+
+// Fullscreen exit detection
+['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(evtName => {
+  document.addEventListener(evtName, () => {
+    const isFs = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+    if (!isFs && isExamActive && !isSubmitted) {
+      handleSecurityInfraction('fullscreen_exit', 'Candidate exited fullscreen mode.');
+    }
+  });
+});
+
+// Tab visibility detection
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && isExamActive && !isSubmitted) {
+    handleSecurityInfraction('tab_switch', 'Candidate switched browser tab or minimized window.');
+  }
+});
+
+// Window blur detection
+window.addEventListener('blur', () => {
+  if (isExamActive && !isSubmitted) {
+    handleSecurityInfraction('window_blur', 'Exam window lost focus.');
+  }
+});
+
+// Disable right-click context menu
+document.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  return false;
+});
+
+// Disable keyboard shortcuts (Ctrl+C, Ctrl+V, Ctrl+U, Ctrl+S, Ctrl+P, F12, PrintScreen)
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'F12' || e.key === 'PrintScreen') {
+    e.preventDefault();
+    e.stopPropagation();
+    return false;
+  }
+  if (e.ctrlKey || e.metaKey) {
+    const k = (e.key || '').toLowerCase();
+    if (['c', 'v', 'u', 's', 'p'].includes(k)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+    if (e.shiftKey && ['i', 'j', 'c'].includes(k)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+  }
+});
+
+// ----------------- 4. AUTO-SUBMIT ON PAGE CLOSE / NAVIGATE (BEACON) -----------------
+
+function handlePageUnload() {
+  if (!isExamActive || isSubmitted) return;
+  isSubmitted = true;
+
+  try {
+    localStorage.setItem('online_test_locked_' + testCode, 'true');
+  } catch (_) {}
+
+  const studentName = (
+    document.getElementById('student-name-input')?.value ||
+    document.getElementById('splash-student-name')?.value ||
+    'Candidate'
+  ).trim();
+
+  const formattedAnswers = [];
+  allQuestionIds.forEach(qId => {
+    const entry = clientAnswers.get(qId);
+    formattedAnswers.push({
+      question_id: qId,
+      answer: entry ? entry.answer : '',
+      word_count: entry ? entry.word_count : null
+    });
+  });
+
+  const termReason = strikesCount >= MAX_STRIKES ? 'tab_switch_limit' : 'page_closed';
+  const payload = JSON.stringify({
+    student_name: studentName,
+    device_id: clientDeviceId,
+    answers: formattedAnswers,
+    termination_reason: termReason,
+    security_violations: securityViolations
+  });
+
+  const url = `/api/public/online-tests/${encodeURIComponent(testCode)}/submit`;
+  if (navigator.sendBeacon) {
+    const blob = new Blob([payload], { type: 'application/json' });
+    navigator.sendBeacon(url, blob);
+  }
+}
+
+window.addEventListener('beforeunload', handlePageUnload);
+window.addEventListener('pagehide', handlePageUnload);
+
+// ----------------- 5. HEADER & COUNTDOWN TIMER -----------------
+
+function renderExamHeader() {
+  document.getElementById('exam-code-badge').innerText = `ACCESS CODE: ${escapeHtml(testCode)}`;
+  document.getElementById('exam-title').innerText = testData.title;
+  document.getElementById('exam-teacher').innerText = `Instructor / Examination Center: ${testData.teacher_name || 'Teacher'}`;
+
+  if (testData.extra_instructions) {
+    const instBox = document.getElementById('exam-instructions-box');
+    instBox.style.display = 'block';
+    instBox.innerHTML = `<b>Candidate Guidance:</b> ${escapeHtml(testData.extra_instructions)}`;
+  }
+
+  if (testData.deadline) {
+    const dlDate = new Date(testData.deadline);
+    const ddlBox = document.getElementById('exam-deadline-box');
+    ddlBox.style.display = 'block';
+    ddlBox.innerHTML = `⏳ <b>Deadline:</b> ${formatCairoDateTime(dlDate)} (Cairo Time)`;
+  }
+}
+
+function startCountdownTimer(deadlineDate) {
+  const timerPill = document.getElementById('exam-timer-pill');
+  const timerText = document.getElementById('exam-timer-text');
+  timerPill.style.display = 'inline-flex';
+
+  function updateClock() {
+    const diffMs = deadlineDate.getTime() - Date.now();
+    if (diffMs <= 0) {
+      timerText.innerText = '00:00:00 (Expired)';
+      timerPill.className = 'timer-pill timer-urgent';
+      if (countdownTimerId) clearInterval(countdownTimerId);
+      if (isExamActive && !isSubmitted) {
+        showToast('⏳ Examination deadline reached. Auto-submitting answers...');
+        executeSubmission('timeout');
+      }
+      return;
+    }
+
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    const pad = (n) => String(n).padStart(2, '0');
+    timerText.innerText = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+
+    if (totalSeconds < 900) { // < 15 mins
+      timerPill.className = 'timer-pill timer-urgent';
+    }
+  }
+
+  updateClock();
+  countdownTimerId = setInterval(updateClock, 1000);
+}
+
+function renderSectionNav() {
+  const nav = document.getElementById('section-nav-strip');
+  const sections = testData.sections || [];
+  if (sections.length <= 1) return;
+
+  nav.style.display = 'flex';
+  nav.innerHTML = sections.map((sec, idx) => `
+    <button type="button" class="section-nav-btn ${idx === 0 ? 'active' : ''}" id="nav-btn-sec-${sec.id}"
+      onclick="scrollToSection(${sec.id})">
+      Part ${sec.part_number || (idx + 1)}
+    </button>
+  `).join('');
+}
+
+function scrollToSection(sectionId) {
+  const el = document.getElementById(`section-card-${sectionId}`);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.querySelectorAll('.section-nav-btn').forEach(btn => btn.classList.remove('active'));
+    const targetNav = document.getElementById(`nav-btn-sec-${sectionId}`);
+    if (targetNav) targetNav.classList.add('active');
+  }
+}
+
+// ----------------- 6. AUDIO PLAYER & ANTI-CHEAT DETERRENT -----------------
+
+function setupAudioTrack(audioUrl) {
+  const box = document.getElementById('exam-audio-box');
+  const player = document.getElementById('exam-audio-element');
+  const btnStart = document.getElementById('btn-start-audio');
+  const badge = document.getElementById('audio-plays-badge');
+  const lockedNotice = document.getElementById('audio-locked-notice');
+  const progressWrap = document.getElementById('audio-progress-wrap');
+  const progressBar = document.getElementById('audio-progress-bar');
+  const timeLabel = document.getElementById('audio-time-label');
+
+  player.src = audioUrl;
+
+  box.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  try {
+    const raw = localStorage.getItem(audioKey);
+    if (raw) audioState = JSON.parse(raw);
+  } catch (_) {}
+
+  if (audioState.hasStarted) {
+    audioState.playCount = (audioState.playCount || 0) + 1;
+    audioState.hasStarted = false;
+    if (audioState.playCount >= MAX_AUDIO_PLAYS) {
+      audioState.isLocked = true;
+    }
+    try { localStorage.setItem(audioKey, JSON.stringify(audioState)); } catch (_) {}
+    showToast('⚠️ Play attempt consumed due to page reload during playback.');
+  }
+
+  const plays = audioState.playCount || 0;
+  if (plays >= MAX_AUDIO_PLAYS || audioState.isLocked) {
+    btnStart.disabled = true;
+    btnStart.innerText = `🔒 Audio Locked (${MAX_AUDIO_PLAYS}/${MAX_AUDIO_PLAYS} plays used)`;
+    badge.innerText = `Plays: ${MAX_AUDIO_PLAYS} of ${MAX_AUDIO_PLAYS}`;
+    lockedNotice.style.display = 'block';
+    return;
+  }
+
+  badge.innerText = `Listen ${plays + 1} of ${MAX_AUDIO_PLAYS}`;
+  btnStart.innerText = `▶ Play Audio Exam Track (Attempt ${plays + 1} of ${MAX_AUDIO_PLAYS})`;
+
+  player.addEventListener('pause', () => {
+    if (!player.ended && player.currentTime > 0) {
+      player.play().catch(() => {});
+      showToast('⚠️ Exam audio cannot be paused once started.');
+    }
+  });
+
+  player.addEventListener('timeupdate', () => {
+    if (player.duration && progressWrap && progressBar && timeLabel) {
+      progressWrap.style.display = 'block';
+      timeLabel.style.display = 'block';
+      const pct = (player.currentTime / player.duration) * 100;
+      progressBar.style.width = `${pct}%`;
+
+      const curM = Math.floor(player.currentTime / 60);
+      const curS = Math.floor(player.currentTime % 60);
+      const durM = Math.floor(player.duration / 60);
+      const durS = Math.floor(player.duration % 60);
+      const pad = (n) => String(n).padStart(2, '0');
+      timeLabel.innerText = `${pad(curM)}:${pad(curS)} / ${pad(durM)}:${pad(durS)}`;
+    }
+  });
+
+  player.addEventListener('ended', () => {
+    audioState.playCount = (audioState.playCount || 0) + 1;
+    audioState.hasStarted = false;
+    if (audioState.playCount >= MAX_AUDIO_PLAYS) {
+      audioState.isLocked = true;
+    }
+    try { localStorage.setItem(audioKey, JSON.stringify(audioState)); } catch (_) {}
+
+    progressWrap.style.display = 'none';
+    timeLabel.style.display = 'none';
+
+    if (audioState.isLocked) {
+      btnStart.disabled = true;
+      btnStart.innerText = `🔒 Audio Locked (${MAX_AUDIO_PLAYS}/${MAX_AUDIO_PLAYS} plays used)`;
+      badge.innerText = `Plays: ${MAX_AUDIO_PLAYS} of ${MAX_AUDIO_PLAYS}`;
+      lockedNotice.style.display = 'block';
+    } else {
+      btnStart.disabled = false;
+      btnStart.innerText = `▶ Play Audio Exam Track (Attempt ${audioState.playCount + 1} of ${MAX_AUDIO_PLAYS})`;
+      badge.innerText = `Listen ${audioState.playCount + 1} of ${MAX_AUDIO_PLAYS}`;
+    }
+  });
+
+  player.addEventListener('error', async () => {
+    if (player.currentTime > 0 && !player.ended) {
+      try {
+        const refreshRes = await fetch(`/api/public/online-tests/${encodeURIComponent(testCode)}/audio-url`);
+        const refreshData = await refreshRes.json();
+        if (refreshData.success && refreshData.audio_url) {
+          const curTime = player.currentTime;
+          player.src = refreshData.audio_url;
+          player.currentTime = curTime;
+          player.play().catch(() => {});
+        }
+      } catch (err) {
+        console.error('Audio stream refresh error:', err);
+      }
+    }
+  });
+}
+
+function startAudioPlayback() {
+  const player = document.getElementById('exam-audio-element');
+  const btnStart = document.getElementById('btn-start-audio');
+  if (!player || audioState.isLocked) return;
+
+  audioState.hasStarted = true;
+  try { localStorage.setItem(audioKey, JSON.stringify(audioState)); } catch (_) {}
+
+  btnStart.disabled = true;
+  btnStart.innerText = '🔊 Playing Audio Track (Continuous Playback)...';
+
+  player.play().catch((err) => {
+    btnStart.disabled = false;
+    showToast('Click again to allow audio playback.');
+    console.error('Audio playback failed:', err);
+  });
+}
+
+// ----------------- 7. SECTIONS & QUESTIONS RENDERING -----------------
+
+function renderSections() {
+  const container = document.getElementById('exam-sections-container');
+  const sections = testData.sections || [];
+  allQuestionIds = [];
+
+  container.innerHTML = sections.map((sec, sIdx) => {
+    const secTypeBadge = getSectionTypeBadge(sec.section_type);
+    const questions = sec.questions || [];
+    questions.forEach(q => allQuestionIds.push(q.id));
+
+    const questionsHtml = questions.map((q, qIdx) => renderQuestion(sec, q, qIdx + 1)).join('');
+
+    return `
+      <section class="section-card" id="section-card-${sec.id}">
+        <div class="section-head">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:700; background:var(--pen); color:#fff; padding:3px 8px; border-radius:4px;">
+              Part ${sec.part_number || (sIdx + 1)}
+            </span>
+            <h2 class="section-title">${escapeHtml(sec.section_title)}</h2>
+          </div>
+          ${secTypeBadge}
+        </div>
+
+        ${sec.instructions_text ? `
+          <div style="font-size:13px; color:var(--ink-soft); margin-bottom:16px; font-weight:500;">
+            ${escapeHtml(sec.instructions_text)}
+          </div>
+        ` : ''}
+
+        ${sec.passage_text ? `
+          <div class="passage-box">
+            <div class="passage-header">
+              <span class="passage-title">📖 Reading / Stimulus Text:</span>
+            </div>
+            <div class="passage-content">${escapeHtml(sec.passage_text)}</div>
+          </div>
+        ` : ''}
+
+        <div class="questions-list">
+          ${questionsHtml}
+        </div>
+      </section>
+    `;
+  }).join('');
+}
+
+function getSectionTypeBadge(type) {
+  const t = (type || 'general').toLowerCase();
+  switch (t) {
+    case 'listening': return '<span class="type-badge type-listening">🎧 Listening</span>';
+    case 'reading': return '<span class="type-badge type-reading">📖 Reading</span>';
+    case 'writing': return '<span class="type-badge type-writing">✍️ Writing</span>';
+    case 'grammar': return '<span class="type-badge type-grammar">🔤 Grammar</span>';
+    default: return '<span class="type-badge type-general">📝 General</span>';
+  }
+}
+
+function renderQuestion(sec, q, displayNum) {
+  const qType = q.question_type || 'mcq';
+  const pts = q.points || 1;
+
+  let inputMarkup = '';
+
+  if (qType === 'mcq') {
+    const opts = Array.isArray(q.options) ? q.options : [];
+    inputMarkup = `
+      <div class="mcq-options-grid" id="mcq-group-${q.id}">
+        ${opts.map((opt, oIdx) => {
+          const letter = String.fromCharCode(65 + oIdx);
+          return `
+            <div class="mcq-choice-row" id="mcq-opt-${q.id}-${oIdx}" onclick="handleSelectMcq(${q.id}, '${oIdx}')">
+              <span class="mcq-letter">${letter}</span>
+              <span class="mcq-text">${escapeHtml(opt)}</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  } else if (qType === 'matching') {
+    const opts = Array.isArray(q.options) ? q.options : [];
+    inputMarkup = `
+      <select class="ot-select-input" id="input-q-${q.id}" onchange="handleAnswerInput(${q.id}, this.value)">
+        <option value="">-- Select matching option --</option>
+        ${opts.map((opt, oIdx) => `
+          <option value="${oIdx}">Option ${String.fromCharCode(65 + oIdx)}: ${escapeHtml(opt)}</option>
+        `).join('')}
+      </select>
+    `;
+  } else if (['fill_blank', 'rewrite', 'short_answer'].includes(qType)) {
+    inputMarkup = `
+      <input type="text" class="ot-text-input" id="input-q-${q.id}"
+        autocomplete="off" spellcheck="false" placeholder="Type your answer here..."
+        oninput="handleAnswerInput(${q.id}, this.value)" />
+    `;
+  } else if (qType === 'writing') {
+    const minW = q.min_words;
+    const maxW = q.max_words;
+    const boundsLabel = minW && maxW
+      ? `(Target: ${minW}–${maxW} words)`
+      : (minW ? `(Minimum: ${minW} words)` : (maxW ? `(Maximum: ${maxW} words)` : ''));
+
+    inputMarkup = `
+      <textarea class="ot-writing-textarea" id="input-q-${q.id}" rows="8"
+        placeholder="Type your essay or response here..."
+        oninput="handleWritingInput(${q.id}, this.value, ${minW || 0}, ${maxW || 0})"></textarea>
+      <div class="word-counter-badge" id="wc-badge-${q.id}">
+        <span>Words: <b id="wc-count-${q.id}">0</b></span>
+        <span>${boundsLabel}</span>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="q-card" id="q-card-${q.id}">
+      <div class="q-head">
+        <span class="q-num">Question ${displayNum}</span>
+        <span class="q-points">${pts} Mark${pts === 1 ? '' : 's'}</span>
+      </div>
+      <div class="q-text">${escapeHtml(q.question_text)}</div>
+      ${inputMarkup}
+    </div>
+  `;
+}
+
+// ----------------- 8. ANSWER HANDLING & REACTIVE WORD COUNTER -----------------
+
+function handleSelectMcq(questionId, optIndexStr) {
+  const group = document.getElementById(`mcq-group-${questionId}`);
+  if (group) {
+    group.querySelectorAll('.mcq-choice-row').forEach(row => row.classList.remove('selected'));
+  }
+  const selectedRow = document.getElementById(`mcq-opt-${questionId}-${optIndexStr}`);
+  if (selectedRow) selectedRow.classList.add('selected');
+
+  clientAnswers.set(questionId, { answer: optIndexStr, word_count: null });
+  updateCompletionCount();
+}
+
+function handleAnswerInput(questionId, val) {
+  const cleanVal = (val || '').trim();
+  if (cleanVal) {
+    clientAnswers.set(questionId, { answer: cleanVal, word_count: null });
+  } else {
+    clientAnswers.delete(questionId);
+  }
+  updateCompletionCount();
+}
+
+function handleWritingInput(questionId, text, minW, maxW) {
+  const words = (text || '').trim().match(/\S+/g);
+  const count = words ? words.length : 0;
+
+  const countEl = document.getElementById(`wc-count-${questionId}`);
+  const badgeEl = document.getElementById(`wc-badge-${questionId}`);
+  if (countEl) countEl.innerText = count.toString();
+
+  if (badgeEl) {
+    if (count === 0) {
+      badgeEl.className = 'word-counter-badge';
+    } else if ((minW && count < minW) || (maxW && count > maxW)) {
+      badgeEl.className = 'word-counter-badge word-counter-warning';
+    } else {
+      badgeEl.className = 'word-counter-badge word-counter-in-range';
+    }
+  }
+
+  if (text.trim()) {
+    clientAnswers.set(questionId, { answer: text, word_count: count });
+  } else {
+    clientAnswers.delete(questionId);
+  }
+  updateCompletionCount();
+}
+
+function updateCompletionCount() {
+  const total = allQuestionIds.length;
+  const answered = clientAnswers.size;
+  const badge = document.getElementById('completion-badge');
+  if (badge) {
+    badge.innerText = `Answered ${answered}/${total}`;
+  }
+}
+
+// ----------------- 9. SUBMISSION & VALIDATION -----------------
+
+function handleClickSubmit() {
+  const nameInput = document.getElementById('student-name-input');
+  const studentName = (nameInput.value || '').trim();
+
+  if (!studentName) {
+    alert('Please enter your full name in the bottom bar before submitting.');
+    nameInput.focus();
+    return;
+  }
+
+  const total = allQuestionIds.length;
+  const answered = clientAnswers.size;
+  const unansweredCount = total - answered;
+
+  const wordWarnings = [];
+  testData.sections.forEach(sec => {
+    (sec.questions || []).forEach((q, idx) => {
+      if (q.question_type === 'writing') {
+        const entry = clientAnswers.get(q.id);
+        const count = entry ? (entry.word_count || 0) : 0;
+        if (q.min_words && count < q.min_words) {
+          wordWarnings.push(`<b>Part ${sec.part_number} Q${idx + 1}</b> response has ${count} words (Minimum requested: ${q.min_words}).`);
+        } else if (q.max_words && count > q.max_words) {
+          wordWarnings.push(`<b>Part ${sec.part_number} Q${idx + 1}</b> response has ${count} words (Maximum requested: ${q.max_words}).`);
+        }
+      }
+    });
+  });
+
+  if (unansweredCount > 0 || wordWarnings.length > 0) {
+    let warningHtml = '';
+    if (unansweredCount > 0) {
+      warningHtml += `<p>⚠️ You have <b>${unansweredCount} unanswered question${unansweredCount === 1 ? '' : 's'}</b> out of ${total} total questions.</p>`;
+    }
+    if (wordWarnings.length > 0) {
+      warningHtml += `<p>⚠️ <b>Word-Count Boundaries:</b><br>${wordWarnings.join('<br>')}</p>`;
+    }
+    warningHtml += `<p>Would you like to review your responses, or confirm and submit your exam now?</p>`;
+
+    document.getElementById('submit-warning-body').innerHTML = warningHtml;
+    document.getElementById('submit-warning-modal').style.display = 'flex';
+  } else {
+    executeSubmission('normal');
+  }
+}
+
+function closeSubmitWarningModal() {
+  document.getElementById('submit-warning-modal').style.display = 'none';
+}
+
+async function executeSubmission(terminationReason = 'normal') {
+  closeSubmitWarningModal();
+
+  if (isSubmitted) return;
+  isSubmitted = true;
+
+  try {
+    localStorage.setItem('online_test_locked_' + testCode, 'true');
+  } catch (_) {}
+
+  if (countdownTimerId) {
+    clearInterval(countdownTimerId);
+  }
+
+  const studentName = (
+    document.getElementById('student-name-input')?.value ||
+    document.getElementById('splash-student-name')?.value ||
+    'Candidate'
+  ).trim();
+
+  const btnSubmit = document.getElementById('btn-submit-exam');
+  if (btnSubmit) {
+    btnSubmit.disabled = true;
+    btnSubmit.innerText = 'Submitting Exam...';
+  }
+
+  const formattedAnswers = [];
+  allQuestionIds.forEach(qId => {
+    const entry = clientAnswers.get(qId);
+    formattedAnswers.push({
+      question_id: qId,
+      answer: entry ? entry.answer : '',
+      word_count: entry ? entry.word_count : null
+    });
+  });
+
+  try {
+    const res = await fetch(`/api/public/online-tests/${encodeURIComponent(testCode)}/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_name: studentName,
+        device_id: clientDeviceId,
+        answers: formattedAnswers,
+        termination_reason: terminationReason,
+        security_violations: securityViolations
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || data.error || 'Failed to submit exam.');
+    }
+
+    // Exit fullscreen if active
+    try {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    } catch (_) {}
+
+    // Show appropriate confirmation overlay
+    if (terminationReason === 'tab_switch_limit') {
+      const termModal = document.getElementById('lockdown-terminated-modal');
+      if (termModal) termModal.style.display = 'flex';
+    } else {
+      document.getElementById('success-student-name').innerText = studentName;
+      document.getElementById('success-time').innerText = formatCairoDateTime(new Date());
+      document.getElementById('success-attempt-id').innerText = data.attempt_id || 'OK';
+      document.getElementById('submit-success-modal').style.display = 'flex';
+    }
+
+    // Disable all inputs
+    document.querySelectorAll('input, select, textarea, button').forEach(el => {
+      if (el.id !== 'close-modal-btn') el.disabled = true;
+    });
+  } catch (err) {
+    if (terminationReason !== 'tab_switch_limit') {
+      if (btnSubmit) {
+        btnSubmit.disabled = false;
+        btnSubmit.innerText = '🚀 Submit Exam';
+      }
+      alert(`Submission Error: ${err.message}`);
+    }
+  }
+}
+</script>
+</body>
+</html>
