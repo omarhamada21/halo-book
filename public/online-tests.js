@@ -1200,7 +1200,7 @@ function renderSubmissionsTable(attempts, testId) {
           <button class="ghost" style="padding: 6px 10px; font-size: 12px; margin-left:4px;" onclick="printOnlineTestReport(${testId}, ${att.id}, 'feedback')" title="Print Feedback Report (No Marks)">
             📋 Feedback
           </button>
-          <button class="ghost ghost-danger" style="padding: 6px 8px; font-size: 12px; margin-left:4px;" onclick="deleteOnlineTestAttempt(${testId}, ${att.id})">
+          <button class="ghost ghost-danger" style="padding: 6px 8px; font-size: 12px; margin-left:4px;" onclick="deleteOnlineTestAttempt(${testId}, ${att.id}, '${escapeHtml(att.student_name || '').replace(/'/g, "\\'")}')" title="Delete Submission & Allow Retake">
             🗑️
           </button>
         </td>
@@ -1933,8 +1933,11 @@ async function printOnlineTestReport(testId, attemptId, reportType) {
   setTimeout(cleanup, 2500);
 }
 
-async function deleteOnlineTestAttempt(testId, attemptId) {
-  if (!confirm('Are you sure you want to permanently delete this student submission?')) {
+async function deleteOnlineTestAttempt(testId, attemptId, studentName) {
+  const promptText = studentName
+    ? `Are you sure you want to permanently delete the submission for "${studentName}"?\n\nThis will remove their attempt and allow the student to retake and resubmit the exam.`
+    : 'Are you sure you want to permanently delete this student submission?\n\nThis will remove their attempt and allow the student to retake and resubmit the exam.';
+  if (!confirm(promptText)) {
     return;
   }
 
@@ -1944,7 +1947,7 @@ async function deleteOnlineTestAttempt(testId, attemptId) {
     });
     const data = await res.json();
     if (data.success) {
-      showToast('Student submission deleted.');
+      showToast(data.message || 'Student submission deleted. Student can now retake.');
       refreshOnlineTestSubmissions();
     } else {
       alert(data.error || 'Failed to delete submission.');
@@ -1990,6 +1993,7 @@ window.scheduleAttemptFeedbackOverride = scheduleAttemptFeedbackOverride;
 window.printOnlineTestReport = printOnlineTestReport;
 window.printActiveAttemptReport = printActiveAttemptReport;
 window.deleteOnlineTestAttempt = deleteOnlineTestAttempt;
+window.deleteAttempt = deleteOnlineTestAttempt;
 window.syncOnlineTestDeadline = syncOnlineTestDeadline;
 
 // Attach 12-hour deadline listeners on initial load

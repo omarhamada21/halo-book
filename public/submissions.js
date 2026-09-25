@@ -145,7 +145,7 @@ async function executeSubmissionPatch(subId) {
 
 function renderLineList(rawText, idx, fieldName, modePrefix = 'portal') {
   if (!rawText) return `<div class="line-item-wrap"><div class="line-item editable-line" contenteditable="true" data-idx="${idx}" data-field="${fieldName}" data-mode="${modePrefix}">- None</div><button class="line-delete-btn no-print" onclick="deleteLineItem(this, ${idx}, '${fieldName}', '${modePrefix}')" title="Delete item">&times;</button></div>`;
-  
+
   const lines = rawText.split(/\n|(?=- Section)|(?=- Question)|(?=- Q\d)/g)
     .map(line => line.trim())
     .filter(line => line.length > 0);
@@ -165,7 +165,7 @@ function renderLineList(rawText, idx, fieldName, modePrefix = 'portal') {
   }).join('');
 }
 
-window.deleteLineItem = function(btn, idx, fieldName, modePrefix = 'portal') {
+window.deleteLineItem = function (btn, idx, fieldName, modePrefix = 'portal') {
   const wrap = btn.closest('.line-item-wrap');
   const container = btn.closest('.line-list');
   if (wrap) {
@@ -183,7 +183,7 @@ window.deleteLineItem = function(btn, idx, fieldName, modePrefix = 'portal') {
   }
 };
 
-window.addNewSectionLine = function(idx, fieldName, defaultPrefix = '- ', modePrefix = 'portal') {
+window.addNewSectionLine = function (idx, fieldName, defaultPrefix = '- ', modePrefix = 'portal') {
   let containerId = `${modePrefix}-${fieldName === 'category_breakdown' ? 'bd' : fieldName === 'mistakes' ? 'm' : 'w'}-container-${idx}`;
   let summaryContainerId = `${modePrefix}-summary-${fieldName === 'category_breakdown' ? 'bd' : 'm'}-container-${idx}`;
 
@@ -218,7 +218,7 @@ window.addNewSectionLine = function(idx, fieldName, defaultPrefix = '- ', modePr
     delBtn.className = 'line-delete-btn no-print';
     delBtn.innerHTML = '&times;';
     delBtn.title = 'Delete item';
-    delBtn.onclick = function() { deleteLineItem(delBtn, idx, fieldName, modePrefix); };
+    delBtn.onclick = function () { deleteLineItem(delBtn, idx, fieldName, modePrefix); };
 
     wrap.appendChild(newLine);
     wrap.appendChild(delBtn);
@@ -547,7 +547,7 @@ async function fetchLiveSubmissions() {
 function getAuthHeaders() {
   const headers = { 'Content-Type': 'application/json' };
   const token = (typeof localStorage !== 'undefined' && localStorage.getItem('token')) ||
-                (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('token'));
+    (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('token'));
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -596,7 +596,7 @@ function resizeReportIframes() {
         iframe.style.maxHeight = 'none';
         iframe.style.overflow = 'visible';
       }
-    } catch (_) {}
+    } catch (_) { }
   });
 }
 
@@ -784,24 +784,24 @@ function generateMcqPrintableReport(type = 'full') {
               </thead>
               <tbody>
                 ${diags.map((diag, dIdx) => {
-                  let qNum = diag.question_number || diag.question_id || (dIdx + 1);
-                  let studentAns = diag.student_answer;
-                  let correctAns = diag.correct_answer;
+          let qNum = diag.question_number || diag.question_id || (dIdx + 1);
+          let studentAns = diag.student_answer;
+          let correctAns = diag.correct_answer;
 
-                  if (!studentAns || studentAns.length <= 2 || !correctAns || correctAns.length <= 2) {
-                    const q = (mcqQuestionsData || []).find((x, qIndex) =>
-                      Number(x.id) === Number(diag.question_id) ||
-                      Number(x.order_index) === Number(diag.question_id) ||
-                      (qIndex + 1) === Number(qNum)
-                    );
-                    if (q) {
-                      const res = resolveMcqQuestionAnswers(q, att.answers && att.answers[q.id]);
-                      if (!studentAns || studentAns.length <= 2) studentAns = res.studentDisplayText;
-                      if (!correctAns || correctAns.length <= 2) correctAns = res.correctDisplayText;
-                    }
-                  }
+          if (!studentAns || studentAns.length <= 2 || !correctAns || correctAns.length <= 2) {
+            const q = (mcqQuestionsData || []).find((x, qIndex) =>
+              Number(x.id) === Number(diag.question_id) ||
+              Number(x.order_index) === Number(diag.question_id) ||
+              (qIndex + 1) === Number(qNum)
+            );
+            if (q) {
+              const res = resolveMcqQuestionAnswers(q, att.answers && att.answers[q.id]);
+              if (!studentAns || studentAns.length <= 2) studentAns = res.studentDisplayText;
+              if (!correctAns || correctAns.length <= 2) correctAns = res.correctDisplayText;
+            }
+          }
 
-                  return `
+          return `
                     <tr>
                       <td style="padding: 6px 8px; border: 1px solid #777; font-family: 'IBM Plex Mono', monospace; font-weight: 600;">Q${escapeHtml(String(qNum))}</td>
                       <td style="padding: 6px 8px; border: 1px solid #777; color: #991B1B; font-weight: 500;">${escapeHtml(studentAns || '—')}</td>
@@ -815,7 +815,7 @@ function generateMcqPrintableReport(type = 'full') {
                       </td>
                     </tr>
                   `;
-                }).join('')}
+        }).join('')}
               </tbody>
             </table>
           </div>
@@ -876,10 +876,10 @@ function printReport(type) {
   if (reportSubEl) {
     reportSubEl.textContent = `Teacher: ${teacherDisplay} | Total Assessed: ${countText}`;
   }
-  
+
   setTimeout(() => {
     window.print();
-    setTimeout(() => { 
+    setTimeout(() => {
       document.body.classList.remove('print-feedback-only');
       document.body.classList.remove('printing-portal');
     }, 1000);
@@ -901,8 +901,8 @@ async function deleteStudentSubmission(subId, studentName) {
   if (!confirmed) return;
 
   try {
-    const res = await fetch(`/api/assignments/${encodeURIComponent(activeCode)}/submissions/${numericId}`, { 
-      method: 'DELETE' 
+    const res = await fetch(`/api/assignments/${encodeURIComponent(activeCode)}/submissions/${numericId}`, {
+      method: 'DELETE'
     });
     const d = await res.json();
     if (d.success) {
@@ -945,10 +945,10 @@ async function toggleSubmissionLogsModal() {
         const dateObj = new Date(log.submitted_at);
         const formattedDate = !isNaN(dateObj.getTime())
           ? new Intl.DateTimeFormat('en-US', {
-              timeZone: 'Africa/Cairo',
-              dateStyle: 'medium',
-              timeStyle: 'short'
-            }).format(dateObj)
+            timeZone: 'Africa/Cairo',
+            dateStyle: 'medium',
+            timeStyle: 'short'
+          }).format(dateObj)
           : log.submitted_at;
 
         return `

@@ -285,7 +285,10 @@ async function initDatabase() {
         points REAL DEFAULT 1,
         order_index INTEGER DEFAULT 0,
         stimulus_image_url TEXT,
-        has_visual_options INTEGER DEFAULT 0
+        has_visual_options INTEGER DEFAULT 0,
+        group_title TEXT,
+        group_instructions TEXT,
+        shared_word_bank TEXT
       );
     `);
 
@@ -311,6 +314,9 @@ async function initDatabase() {
     const autoMigrations = [
       'ALTER TABLE online_test_questions ADD COLUMN stimulus_image_url TEXT;',
       'ALTER TABLE online_test_questions ADD COLUMN has_visual_options INTEGER DEFAULT 0;',
+      'ALTER TABLE online_test_questions ADD COLUMN group_title TEXT;',
+      'ALTER TABLE online_test_questions ADD COLUMN group_instructions TEXT;',
+      'ALTER TABLE online_test_questions ADD COLUMN shared_word_bank TEXT;',
       "ALTER TABLE online_test_attempts ADD COLUMN termination_reason TEXT DEFAULT 'normal';",
       "ALTER TABLE online_test_attempts ADD COLUMN security_violations TEXT;",
       'ALTER TABLE assignments ADD COLUMN bundle_code TEXT;',
@@ -402,7 +408,10 @@ async function initDatabase() {
         points REAL DEFAULT 1,
         order_index INTEGER DEFAULT 0,
         stimulus_image_url TEXT,
-        has_visual_options INTEGER DEFAULT 0
+        has_visual_options INTEGER DEFAULT 0,
+        group_title TEXT,
+        group_instructions TEXT,
+        shared_word_bank TEXT
       );`,
       `CREATE TABLE IF NOT EXISTS online_test_attempts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3681,10 +3690,12 @@ function unfilterPngPredictor(decompressed, width, height, bytesPerPixel) {
 
 async function extractImagesFromPdf(pdfBuffer) {
   const extracted = [];
+  let imgIndex = 0;
+
+  // STAGE 1: Direct stream deconstruction via pdf-lib & sharp
   try {
     const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
     const indirectObjects = pdfDoc.context.enumerateIndirectObjects();
-    let imgIndex = 0;
 
     for (const [ref, obj] of indirectObjects) {
       if (!(obj instanceof PDFRawStream)) continue;
@@ -3704,39 +3715,65 @@ async function extractImagesFromPdf(pdfBuffer) {
         if (!width || !height || width < 25 || height < 25) continue;
 
         const filter = dict.get(PDFName.of('Filter'));
+        const bpcObj = dict.get(PDFName.of('BitsPerComponent'));
+        const bpc = typeof bpcObj?.asNumber === 'function' ? bpcObj.asNumber() : Number(bpcObj) || 8;
+        const isMask = dict.get(PDFName.of('ImageMask')) === true || dict.get(PDFName.of('ImageMask'))?.value === true;
         let imgBuffer = null;
 
         if (filter === PDFName.of('DCTDecode')) {
           imgBuffer = await sharp(Buffer.from(obj.contents)).png().toBuffer();
         } else if (filter === PDFName.of('FlateDecode')) {
           const decompressed = zlib.inflateSync(Buffer.from(obj.contents));
-          const decodeParms = dict.get(PDFName.of('DecodeParms'));
-          let predictor = 1;
-          if (decodeParms && typeof decodeParms.get === 'function') {
-            const pObj = decodeParms.get(PDFName.of('Predictor'));
-            if (pObj) {
-              predictor = typeof pObj.asNumber === 'function' ? pObj.asNumber() : Number(pObj) || 1;
+
+          if (bpc === 1 || isMask) {
+            // 1-bit monochrome line drawing / illustration (e.g. Cambridge listening options)
+            const rowBytes = Math.ceil(width / 8);
+            const grayBuffer = Buffer.alloc(width * height);
+            const decodeArr = dict.get(PDFName.of('Decode'));
+            const invert = Array.isArray(decodeArr) && decodeArr.length >= 2 && Number(decodeArr[0]) === 1;
+
+            for (let y = 0; y < height; y++) {
+              for (let x = 0; x < width; x++) {
+                const srcIdx = y * rowBytes + (x >> 3);
+                if (srcIdx < decompressed.length) {
+                  const bit = (decompressed[srcIdx] >> (7 - (x & 7))) & 1;
+                  const val = bit ? 0 : 255;
+                  grayBuffer[y * width + x] = invert ? (255 - val) : val;
+                } else {
+                  grayBuffer[y * width + x] = 255;
+                }
+              }
             }
-          }
-
-          const cs = dict.get(PDFName.of('ColorSpace'));
-          let channels = 3;
-          if (cs === PDFName.of('DeviceGray')) channels = 1;
-          else if (cs === PDFName.of('DeviceCMYK')) channels = 4;
-
-          let pixelData = decompressed;
-          if (predictor >= 10) {
-            pixelData = unfilterPngPredictor(decompressed, width, height, channels);
-          }
-
-          if (pixelData && pixelData.length >= width * height * channels) {
-            imgBuffer = await sharp(pixelData.subarray(0, width * height * channels), {
-              raw: { width, height, channels }
-            }).png().toBuffer();
+            imgBuffer = await sharp(grayBuffer, { raw: { width, height, channels: 1 } }).png().toBuffer();
           } else {
-            try {
-              imgBuffer = await sharp(Buffer.from(obj.contents)).png().toBuffer();
-            } catch (_) { }
+            const decodeParms = dict.get(PDFName.of('DecodeParms'));
+            let predictor = 1;
+            if (decodeParms && typeof decodeParms.get === 'function') {
+              const pObj = decodeParms.get(PDFName.of('Predictor'));
+              if (pObj) {
+                predictor = typeof pObj.asNumber === 'function' ? pObj.asNumber() : Number(pObj) || 1;
+              }
+            }
+
+            const cs = dict.get(PDFName.of('ColorSpace'));
+            let channels = 3;
+            if (cs === PDFName.of('DeviceGray')) channels = 1;
+            else if (cs === PDFName.of('DeviceCMYK')) channels = 4;
+
+            let pixelData = decompressed;
+            if (predictor >= 10) {
+              pixelData = unfilterPngPredictor(decompressed, width, height, channels);
+            }
+
+            if (pixelData && pixelData.length >= width * height * channels) {
+              imgBuffer = await sharp(pixelData.subarray(0, width * height * channels), {
+                raw: { width, height, channels }
+              }).png().toBuffer();
+            } else {
+              try {
+                imgBuffer = await sharp(Buffer.from(obj.contents)).png().toBuffer();
+              } catch (_) { }
+            }
           }
         } else {
           try {
@@ -3757,8 +3794,78 @@ async function extractImagesFromPdf(pdfBuffer) {
       }
     }
   } catch (err) {
-    console.warn('[PDF Image Extract Notice] Failed to parse PDF for images:', err.message);
+    console.warn('[PDF Image Extract Stage 1 Notice]:', err.message);
   }
+
+  // STAGE 2: PDF.js Operator List extraction for exotic encodings (CCITTFax, JBIG2, JPX, Form XObjects)
+  if (extracted.length === 0) {
+    try {
+      const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      const doc = await pdfjs.getDocument({ data: new Uint8Array(pdfBuffer) }).promise;
+
+      for (let pNum = 1; pNum <= doc.numPages; pNum++) {
+        const page = await doc.getPage(pNum);
+        const opList = await page.getOperatorList();
+
+        for (let i = 0; i < opList.fnArray.length; i++) {
+          const fn = opList.fnArray[i];
+          if (fn === pdfjs.OPS.paintImageXObject || fn === pdfjs.OPS.paintInlineImageXObject) {
+            const imgName = opList.argsArray[i][0];
+            await new Promise((resolve) => {
+              page.objs.get(imgName, async (img) => {
+                try {
+                  if (img && img.data && img.width >= 25 && img.height >= 25) {
+                    let channels = 3;
+                    let rawBuf = Buffer.from(img.data);
+
+                    if (img.data.length === img.width * img.height * 4) {
+                      channels = 4;
+                    } else if (img.data.length === img.width * img.height * 3) {
+                      channels = 3;
+                    } else if (img.data.length === img.width * img.height) {
+                      channels = 1;
+                    } else if (img.data.length < img.width * img.height) {
+                      // 1bpp expansion
+                      const rowBytes = Math.ceil(img.width / 8);
+                      const expanded = Buffer.alloc(img.width * img.height);
+                      for (let y = 0; y < img.height; y++) {
+                        for (let x = 0; x < img.width; x++) {
+                          const byte = img.data[y * rowBytes + (x >> 3)];
+                          const bit = (byte >> (7 - (x & 7))) & 1;
+                          expanded[y * img.width + x] = bit ? 0 : 255;
+                        }
+                      }
+                      rawBuf = expanded;
+                      channels = 1;
+                    }
+
+                    const imgBuffer = await sharp(rawBuf, {
+                      raw: { width: img.width, height: img.height, channels }
+                    }).png().toBuffer();
+
+                    if (imgBuffer && imgBuffer.length > 0) {
+                      extracted.push({
+                        index: imgIndex++,
+                        buffer: imgBuffer,
+                        width: img.width,
+                        height: img.height
+                      });
+                    }
+                  }
+                } catch (convErr) {
+                  console.warn('[pdfjs-dist image conversion notice]:', convErr.message);
+                }
+                resolve();
+              });
+            });
+          }
+        }
+      }
+    } catch (pdfjsErr) {
+      console.warn('[PDF Image Extract Stage 2 Notice]:', pdfjsErr.message);
+    }
+  }
+
   return extracted;
 }
 
@@ -3977,6 +4084,26 @@ function validateOnlineTestStructure(data) {
         cleanCorrectAnswer = rubricObj;
       }
 
+      let groupTitle = typeof q.group_title === 'string' && q.group_title.trim() ? q.group_title.trim() : null;
+      let groupInstructions = typeof q.group_instructions === 'string' && q.group_instructions.trim() ? q.group_instructions.trim() : null;
+      let sharedWordBank = null;
+      if (Array.isArray(q.shared_word_bank)) {
+        const cleanBank = q.shared_word_bank.map(w => String(w || '').trim()).filter(Boolean);
+        if (cleanBank.length > 0) sharedWordBank = JSON.stringify(cleanBank);
+      } else if (typeof q.shared_word_bank === 'string' && q.shared_word_bank.trim()) {
+        try {
+          const parsed = JSON.parse(q.shared_word_bank);
+          if (Array.isArray(parsed)) {
+            sharedWordBank = JSON.stringify(parsed.map(w => String(w || '').trim()).filter(Boolean));
+          } else {
+            sharedWordBank = JSON.stringify([q.shared_word_bank.trim()]);
+          }
+        } catch (_) {
+          const parts = q.shared_word_bank.split(/[|,]/).map(s => s.trim()).filter(Boolean);
+          sharedWordBank = JSON.stringify(parts.length > 0 ? parts : [q.shared_word_bank.trim()]);
+        }
+      }
+
       sanitizedQuestions.push({
         question_type: qType,
         question_text: q.question_text.trim(),
@@ -3987,7 +4114,10 @@ function validateOnlineTestStructure(data) {
         points: points,
         order_index: qIdx,
         stimulus_image_url: stimulusImageUrl,
-        has_visual_options: isVisualOptions ? 1 : 0
+        has_visual_options: isVisualOptions ? 1 : 0,
+        group_title: groupTitle,
+        group_instructions: groupInstructions,
+        shared_word_bank: sharedWordBank
       });
     }
 
@@ -4197,6 +4327,16 @@ CRITICAL RULES:
 - The Marking Scheme is the 100% authoritative ground truth for all questions, points, accepted answers, and writing criteria.
 - Split listening sections into distinct parts (e.g. Part 1, Part 2, Part 3, Part 4) aligned to the dialogue.
 - Extract reading passages verbatim into passage_text for comprehension sections.
+- GROUP HEADINGS & EXERCISE INSTRUCTIONS (Grammar / Reading / Vocabulary papers):
+  * When an exam paper presents a numbered or named group of sub-questions (e.g. '2. Contrast Conjunctions (Although / Whereas / While)' followed by instruction 'Fill in each blank with the most appropriate contrast conjunction from the options given:' and sub-items a, b, c...):
+    - DO NOT prepend the heading or group instruction to sub-question (a).
+    - Set "group_title" to the heading (e.g., '2. Contrast Conjunctions (Although / Whereas / While)').
+    - Set "group_instructions" to the group prompt (e.g., 'Fill in each blank with the most appropriate contrast conjunction from the options given:').
+    - If there is a reference box or word bank, extract it into "shared_word_bank": ["Although", "Whereas", "While"].
+    - For each sub-item (a, b, c...), populate "question_text" strictly with that sub-item's sentence (e.g., 'a) _____ the storm raged outside, the family remained warm and secure inside the log cabin.').
+    - Word banks belong to the group stimulus/instructions and must NOT be repeated inside each sub-question text.
+    - All sub-questions that belong to the same exercise group share the exact same "group_title" and "group_instructions".
+    - For standalone questions without group headings, set "group_title": null, "group_instructions": null, "shared_word_bank": null.
 - VISUAL & PICTURE QUESTIONS (Cambridge Listening / Reading Paper style with Picture A, B, C or stimulus diagrams):
   * If a question relies on pictures/diagrams for its options (e.g. Question 1 shows Picture A, Picture B, Picture C):
     - Set "has_visual_options": true
@@ -4226,6 +4366,9 @@ OUTPUT SCHEMA (Strict JSON):
       "transcript": "... (dialogue for this part if listening) ...",
       "questions": [
         {
+          "group_title": null,
+          "group_instructions": null,
+          "shared_word_bank": null,
           "question_type": "mcq",
           "question_text": "...",
           "has_visual_options": false,
@@ -4300,8 +4443,9 @@ OUTPUT SCHEMA (Strict JSON):
         }
         parsedJson = JSON.parse(cleanText);
 
-        // Map extracted image indices to URLs
+        // Map extracted image indices to URLs and resolve visual options
         if (parsedJson && Array.isArray(parsedJson.sections)) {
+          let globalChoiceImgCounter = 0;
           for (const sec of parsedJson.sections) {
             if (Array.isArray(sec.questions)) {
               for (const q of sec.questions) {
@@ -4311,21 +4455,43 @@ OUTPUT SCHEMA (Strict JSON):
                   q.stimulus_image_url = matchedStim ? matchedStim.url : null;
                 }
 
-                if (q.has_visual_options || (Array.isArray(q.options) && q.options.length > 0 && typeof q.options[0] === 'object')) {
+                const hasVisualChoicePattern = Array.isArray(q.options) && q.options.some(opt => {
+                  if (typeof opt === 'object' && opt !== null) return true;
+                  const s = String(opt || '').trim().toLowerCase();
+                  return s.includes('picture') || s.includes('image') || s.includes('diagram') || /^\[picture\s+[a-z]\]$/i.test(s);
+                });
+
+                if (q.has_visual_options || hasVisualChoicePattern || (Array.isArray(q.options) && q.options.length > 0 && typeof q.options[0] === 'object')) {
                   q.has_visual_options = true;
-                  q.options = q.options.map((opt, oIdx) => {
+                  q.options = (Array.isArray(q.options) ? q.options : []).map((opt, oIdx) => {
+                    let label = String.fromCharCode(65 + oIdx);
+                    let caption = '';
+                    let optImgIdx = globalChoiceImgCounter + oIdx;
+                    let existingUrl = '';
+
                     if (typeof opt === 'object' && opt !== null) {
-                      const optImgIdx = opt.image_index !== undefined ? Number(opt.image_index) : oIdx;
-                      const matchedOpt = extractedImages.find(img => img.index === optImgIdx) || extractedImages[optImgIdx];
-                      return {
-                        label: opt.label || String.fromCharCode(65 + oIdx),
-                        image_url: matchedOpt ? matchedOpt.url : (opt.image_url || ''),
-                        caption: opt.caption || '',
-                        image_index: optImgIdx
-                      };
+                      label = opt.label || label;
+                      caption = opt.caption || '';
+                      if (opt.image_index !== undefined && opt.image_index !== null) {
+                        optImgIdx = Number(opt.image_index);
+                      }
+                      existingUrl = opt.image_url || '';
+                    } else {
+                      const str = String(opt || '').trim();
+                      const match = str.match(/picture\s*([a-z])/i);
+                      if (match) label = match[1].toUpperCase();
+                      caption = str.replace(/\[?picture\s*[a-z]\]?/gi, '').trim();
                     }
-                    return opt;
+
+                    const matchedOpt = extractedImages.find(img => img.index === optImgIdx) || extractedImages[optImgIdx];
+                    return {
+                      label,
+                      image_url: matchedOpt ? matchedOpt.url : (existingUrl || ''),
+                      caption,
+                      image_index: optImgIdx
+                    };
                   });
+                  globalChoiceImgCounter += q.options.length;
                 }
               }
             }
@@ -4428,8 +4594,8 @@ OUTPUT SCHEMA (Strict JSON):
 
         for (const q of section.questions) {
           await db.execute({
-            sql: `INSERT INTO online_test_questions (section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            sql: `INSERT INTO online_test_questions (section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options, group_title, group_instructions, shared_word_bank)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             args: [
               sectionId,
               q.question_type,
@@ -4441,7 +4607,10 @@ OUTPUT SCHEMA (Strict JSON):
               q.points,
               q.order_index,
               q.stimulus_image_url || null,
-              q.has_visual_options ? 1 : 0
+              q.has_visual_options ? 1 : 0,
+              q.group_title || null,
+              q.group_instructions || null,
+              q.shared_word_bank ? JSON.stringify(q.shared_word_bank) : null
             ]
           });
         }
@@ -4558,7 +4727,7 @@ app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, asy
 
     for (const sec of sectionsRes.rows) {
       const questionsRes = await db.execute({
-        sql: `SELECT id, section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options
+        sql: `SELECT id, section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options, group_title, group_instructions, shared_word_bank
               FROM online_test_questions
               WHERE section_id = ?
               ORDER BY order_index ASC, id ASC`,
@@ -4574,6 +4743,10 @@ app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, asy
         if (typeof parsedCorrect === 'string') {
           try { parsedCorrect = JSON.parse(parsedCorrect); } catch (_) { }
         }
+        let parsedSharedWordBank = q.shared_word_bank;
+        if (typeof parsedSharedWordBank === 'string') {
+          try { parsedSharedWordBank = JSON.parse(parsedSharedWordBank); } catch (_) { }
+        }
 
         const pts = Number(q.points) || 1;
         totalMarks += pts;
@@ -4584,7 +4757,10 @@ app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, asy
           correct_answer: parsedCorrect,
           points: pts,
           stimulus_image_url: q.stimulus_image_url || null,
-          has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true
+          has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true,
+          group_title: q.group_title || null,
+          group_instructions: q.group_instructions || null,
+          shared_word_bank: parsedSharedWordBank || null
         };
       });
 
@@ -4761,6 +4937,22 @@ app.patch('/api/online-tests/:testId/questions/:questionId', authenticateToken, 
     if (req.body.has_visual_options !== undefined) {
       updates.push('has_visual_options = ?');
       args.push(req.body.has_visual_options ? 1 : 0);
+    }
+    if (req.body.group_title !== undefined) {
+      updates.push('group_title = ?');
+      args.push(req.body.group_title ? String(req.body.group_title).trim() : null);
+    }
+    if (req.body.group_instructions !== undefined) {
+      updates.push('group_instructions = ?');
+      args.push(req.body.group_instructions ? String(req.body.group_instructions).trim() : null);
+    }
+    if (req.body.shared_word_bank !== undefined) {
+      updates.push('shared_word_bank = ?');
+      args.push(
+        req.body.shared_word_bank !== null
+          ? (typeof req.body.shared_word_bank === 'string' ? req.body.shared_word_bank : JSON.stringify(req.body.shared_word_bank))
+          : null
+      );
     }
 
     if (updates.length === 0) {
@@ -5104,7 +5296,7 @@ app.get('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, requ
 
     for (const sec of sectionsRes.rows) {
       const questionsRes = await db.execute({
-        sql: `SELECT id, section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options
+        sql: `SELECT id, section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options, group_title, group_instructions, shared_word_bank
               FROM online_test_questions
               WHERE section_id = ?
               ORDER BY order_index ASC, id ASC`,
@@ -5120,6 +5312,10 @@ app.get('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, requ
         if (typeof parsedCorrect === 'string') {
           try { parsedCorrect = JSON.parse(parsedCorrect); } catch (_) { }
         }
+        let parsedSharedWordBank = q.shared_word_bank;
+        if (typeof parsedSharedWordBank === 'string') {
+          try { parsedSharedWordBank = JSON.parse(parsedSharedWordBank); } catch (_) { }
+        }
         const qObj = {
           ...q,
           options: parsedOptions,
@@ -5127,6 +5323,9 @@ app.get('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, requ
           points: Number(q.points) || 1,
           stimulus_image_url: q.stimulus_image_url || null,
           has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true,
+          group_title: q.group_title || null,
+          group_instructions: q.group_instructions || null,
+          shared_word_bank: parsedSharedWordBank || null,
           section_title: sec.section_title,
           section_type: sec.section_type,
           passage_text: sec.passage_text,
@@ -5276,7 +5475,10 @@ app.delete('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, r
       args: [attemptId, testId]
     });
 
-    return res.json({ success: true, message: 'Attempt deleted successfully.' });
+    return res.json({
+      success: true,
+      message: 'Attempt deleted successfully. The student can now retake the exam.'
+    });
   } catch (err) {
     console.error('Error deleting attempt:', err);
     return res.status(500).json({ success: false, error: 'Failed to delete attempt.' });
@@ -5334,7 +5536,7 @@ app.get('/api/public/online-tests/:code', async (req, res) => {
       // STRICT ANSWER-KEY & RUBRIC STRIPPING:
       // DO NOT SELECT correct_answer or any rubric criteria from database
       const questionsRes = await db.execute({
-        sql: `SELECT id, section_id, question_type, question_text, options, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options
+        sql: `SELECT id, section_id, question_type, question_text, options, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options, group_title, group_instructions, shared_word_bank
               FROM online_test_questions
               WHERE section_id = ?
               ORDER BY order_index ASC, id ASC`,
@@ -5345,6 +5547,10 @@ app.get('/api/public/online-tests/:code', async (req, res) => {
         let opts = q.options;
         if (typeof opts === 'string') {
           try { opts = JSON.parse(opts); } catch (_) { opts = []; }
+        }
+        let parsedSharedWordBank = q.shared_word_bank;
+        if (typeof parsedSharedWordBank === 'string') {
+          try { parsedSharedWordBank = JSON.parse(parsedSharedWordBank); } catch (_) { }
         }
 
         totalQuestionsCount++;
@@ -5357,6 +5563,9 @@ app.get('/api/public/online-tests/:code', async (req, res) => {
           options: Array.isArray(opts) ? opts : [],
           stimulus_image_url: q.stimulus_image_url || null,
           has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true,
+          group_title: q.group_title || null,
+          group_instructions: q.group_instructions || null,
+          shared_word_bank: parsedSharedWordBank || null,
           min_words: q.min_words !== null && q.min_words !== undefined ? Number(q.min_words) : null,
           max_words: q.max_words !== null && q.max_words !== undefined ? Number(q.max_words) : null,
           points: Number(q.points) || 1,
@@ -5427,17 +5636,22 @@ app.get('/api/public/online-tests/:code/status', async (req, res) => {
     }
 
     if (!deviceId) {
-      return res.json({ success: true, already_submitted: false });
+      return res.json({ success: true, already_submitted: false, hasSubmitted: false });
     }
 
     const attemptRes = await db.execute({
-      sql: 'SELECT id FROM online_test_attempts WHERE test_id = ? AND device_id = ? LIMIT 1',
+      sql: 'SELECT id, submitted_at, status FROM online_test_attempts WHERE test_id = ? AND device_id = ? ORDER BY id DESC LIMIT 1',
       args: [test.id, deviceId]
     });
 
+    const hasSubmitted = attemptRes.rows.length > 0;
+    const attempt = hasSubmitted ? attemptRes.rows[0] : null;
+
     return res.json({
       success: true,
-      already_submitted: attemptRes.rows.length > 0
+      already_submitted: hasSubmitted,
+      hasSubmitted,
+      attempt: attempt ? { id: attempt.id, submitted_at: attempt.submitted_at, status: attempt.status } : null
     });
   } catch (err) {
     console.error('Error checking test submission status:', err);
@@ -5548,7 +5762,7 @@ app.post(
 
       // Ingest all questions for deterministic objective grading
       const questionsRes = await db.execute({
-        sql: `SELECT q.id, q.section_id, q.question_type, q.question_text, q.options, q.correct_answer, q.min_words, q.max_words, q.points, q.stimulus_image_url, q.has_visual_options, s.section_type
+        sql: `SELECT q.id, q.section_id, q.question_type, q.question_text, q.options, q.correct_answer, q.min_words, q.max_words, q.points, q.stimulus_image_url, q.has_visual_options, q.group_title, q.group_instructions, q.shared_word_bank, s.section_type
               FROM online_test_questions q
               JOIN online_test_sections s ON q.section_id = s.id
               WHERE s.test_id = ?

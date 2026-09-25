@@ -620,6 +620,81 @@
     transform: translateY(-1px);
   }
 
+  /* Question Group Header Card (e.g. Exercise Headings, Shared Prompts & Word Banks) */
+  .q-group-header-card {
+    background: #f8fafc;
+    border: 1px solid var(--border, #cbd5e1);
+    border-left: 4px solid var(--pen, #1D3A66);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-top: 24px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+
+  .q-group-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--pen, #1D3A66);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Outfit', sans-serif;
+  }
+
+  .q-group-instructions {
+    font-size: 13.5px;
+    color: var(--ink-soft, #475569);
+    line-height: 1.5;
+    margin-top: 4px;
+  }
+
+  .q-group-word-bank {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border, #cbd5e1);
+  }
+
+  .q-group-bank-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--pen, #1D3A66);
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .q-group-bank-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .q-group-chip {
+    background: #ffffff;
+    border: 1px solid var(--border, #cbd5e1);
+    color: var(--pen, #1D3A66);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .q-group-chip:hover {
+    background: var(--pen, #1D3A66);
+    color: #ffffff;
+    border-color: var(--pen, #1D3A66);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(29, 58, 102, 0.15);
+  }
+
   /* MCQ Options */
   .mcq-options-grid {
     display: flex;
@@ -1476,20 +1551,46 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 async function loadOnlineTest() {
   try {
-    // 1. Device Lockdown Check: local storage & server status
-    const isLocallyLocked = localStorage.getItem('online_test_locked_' + testCode) === 'true';
-    if (isLocallyLocked) {
-      showLockedScreen();
-      return;
+    // 1. Authoritative Server Submission & Device Status Check
+    let hasServerAttempt = false;
+    let isStatusCheckSuccessful = false;
+    try {
+      const statusRes = await fetch(`/api/public/online-tests/${encodeURIComponent(testCode)}/status?deviceId=${encodeURIComponent(clientDeviceId)}`);
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        isStatusCheckSuccessful = true;
+        hasServerAttempt = Boolean(statusData && (statusData.hasSubmitted || statusData.already_submitted));
+      }
+    } catch (statusErr) {
+      console.warn('[Status Check Warning]', statusErr);
     }
 
-    const statusRes = await fetch(`/api/public/online-tests/${encodeURIComponent(testCode)}/status?deviceId=${encodeURIComponent(clientDeviceId)}`);
-    const statusData = await statusRes.json();
-
-    if (statusData && statusData.already_submitted) {
+    if (hasServerAttempt) {
+      // Server confirms active submission exists for this device
       localStorage.setItem('online_test_locked_' + testCode, 'true');
+      localStorage.setItem('online_test_submitted_' + testCode, 'true');
       showLockedScreen();
       return;
+    } else if (isStatusCheckSuccessful) {
+      // Server confirms NO attempt exists (fresh attempt or teacher deleted attempt!)
+      // Purge all client-side lockout flags to allow student to retake/resubmit
+      localStorage.removeItem('online_test_locked_' + testCode);
+      localStorage.removeItem('online_test_submitted_' + testCode);
+      localStorage.removeItem('online_audio_started_' + testCode);
+      sessionStorage.removeItem('online_test_submitted_' + testCode);
+      isSubmitted = false;
+      isExamActive = false;
+      isProctoringLocked = false;
+      violationCount = 0;
+      const lockedScreen = document.getElementById('exam-locked-screen');
+      if (lockedScreen) lockedScreen.style.display = 'none';
+    } else {
+      // Fallback only if offline/network error connecting to status endpoint
+      const isLocallyLocked = localStorage.getItem('online_test_locked_' + testCode) === 'true';
+      if (isLocallyLocked) {
+        showLockedScreen();
+        return;
+      }
     }
 
     // 2. Fetch sanitized exam payload (answers & rubrics stripped)
@@ -2091,7 +2192,46 @@ function renderSections() {
     const questions = sec.questions || [];
     questions.forEach(q => allQuestionIds.push(q.id));
 
-    const questionsHtml = questions.map((q, qIdx) => renderQuestion(sec, q, qIdx + 1)).join('');
+    let prevGroupTitle = null;
+    const questionsHtml = questions.map((q, qIdx) => {
+      let groupHeaderHtml = '';
+      const currentGroupTitle = (q.group_title || '').trim();
+      const currentGroupInstructions = (q.group_instructions || '').trim();
+      const currentSharedBank = Array.isArray(q.shared_word_bank) && q.shared_word_bank.length > 0 ? q.shared_word_bank : null;
+      const hasGroup = Boolean(currentGroupTitle || currentGroupInstructions || currentSharedBank);
+
+      // Only render group header once at the start of a consecutive group of questions
+      if (hasGroup && currentGroupTitle && currentGroupTitle !== prevGroupTitle) {
+        prevGroupTitle = currentGroupTitle;
+        let wordBankChipsHtml = '';
+        if (currentSharedBank) {
+          wordBankChipsHtml = `
+            <div class="q-group-word-bank">
+              <div class="q-group-bank-label">🔤 Word Bank / Options:</div>
+              <div class="q-group-bank-chips">
+                ${currentSharedBank.map(word => `
+                  <span class="word-chip q-group-chip" onclick="insertWordIntoActiveInput('${escapeHtml(word).replace(/'/g, "\\'")}')">
+                    ${escapeHtml(word)}
+                  </span>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        }
+
+        groupHeaderHtml = `
+          <div class="q-group-header-card">
+            ${currentGroupTitle ? `<div class="q-group-title">📌 ${escapeHtml(currentGroupTitle)}</div>` : ''}
+            ${currentGroupInstructions ? `<div class="q-group-instructions">${escapeHtml(currentGroupInstructions)}</div>` : ''}
+            ${wordBankChipsHtml}
+          </div>
+        `;
+      } else if (!currentGroupTitle) {
+        prevGroupTitle = null;
+      }
+
+      return groupHeaderHtml + renderQuestion(sec, q, qIdx + 1);
+    }).join('');
 
     const sectionEl = document.createElement('section');
     sectionEl.className = 'section-card';
@@ -2190,8 +2330,33 @@ function insertWordIntoInput(qId, word) {
   const input = document.getElementById(`input-q-${qId}`);
   if (!input) return;
   input.value = word;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
   handleAnswerInput(qId, word);
   input.focus();
+}
+
+function insertWordIntoActiveInput(word) {
+  let targetInput = window.lastFocusedInput;
+  if (!targetInput || !document.contains(targetInput)) {
+    targetInput = document.querySelector('.ot-text-input:focus, .ot-writing-textarea:focus');
+  }
+  if (!targetInput) {
+    targetInput = document.querySelector('.ot-text-input, .ot-writing-textarea');
+  }
+  if (!targetInput) return;
+
+  targetInput.value = word;
+  targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+  targetInput.focus();
+}
+
+// Track focused text inputs for effortless word-chip insertion
+if (typeof document !== 'undefined') {
+  document.addEventListener('focusin', (e) => {
+    if (e.target && (e.target.matches('.ot-text-input') || e.target.matches('.ot-writing-textarea'))) {
+      window.lastFocusedInput = e.target;
+    }
+  });
 }
 
 function renderQuestion(sec, q, displayNum) {
