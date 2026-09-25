@@ -1272,6 +1272,71 @@
         border-color: var(--pen);
       }
 
+      /* Online Tests Split Deadline Picker */
+      .ot-deadline-picker-wrap {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+      }
+
+      .ot-picker-col {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .ot-date-input,
+      .ot-time-input {
+        width: 100%;
+        padding: 9px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 13.5px;
+        font-family: inherit;
+        color: var(--ink);
+        background: #fff;
+        outline: none;
+        box-sizing: border-box;
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+
+      .ot-date-input:focus,
+      .ot-time-input:focus {
+        border-color: var(--pen);
+        box-shadow: 0 0 0 2px rgba(29, 58, 102, 0.12);
+      }
+
+      .ot-time-presets {
+        display: flex;
+        gap: 6px;
+        margin-top: 6px;
+        flex-wrap: wrap;
+      }
+
+      .preset-btn {
+        background: var(--paper);
+        border: 1px solid var(--border);
+        color: var(--ink);
+        border-radius: 4px;
+        padding: 3px 8px;
+        font-size: 11px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s;
+        font-family: 'IBM Plex Mono', monospace;
+      }
+
+      .preset-btn:hover {
+        background: var(--pen-soft);
+        border-color: var(--pen);
+        color: var(--pen);
+      }
+
+      .preset-btn.active {
+        background: var(--pen);
+        color: #fff;
+        border-color: var(--pen);
+      }
+
       .ot-transcript-details {
         margin-top: 10px;
         background: #fff;
@@ -3028,11 +3093,42 @@
         </div>
 
         <!-- Deadline -->
-        <div style="margin-bottom: 14px;">
-          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px;">Submission Deadline
-            (Optional)</label>
-          <input type="datetime-local" id="ot-create-deadline"
-            style="width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13.5px;" />
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="fb-label" for="ot-deadline-date" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px;">Deadline (Date & Time)</label>
+          <div class="ot-deadline-picker-wrap">
+            <!-- Standard Calendar Date Picker -->
+            <div class="ot-picker-col">
+              <input 
+                type="date" 
+                id="ot-deadline-date" 
+                class="form-control ot-date-input" 
+                required 
+              />
+            </div>
+
+            <!-- Clean Time Selector with typing + quick hour presets -->
+            <div class="ot-picker-col ot-time-col">
+              <input 
+                type="time" 
+                id="ot-deadline-time" 
+                class="form-control ot-time-input" 
+                step="300"
+                value="23:59"
+                required 
+              />
+              <div class="ot-time-presets">
+                <button type="button" class="preset-btn" onclick="setDeadlineTimePreset('18:00')">6:00 PM</button>
+                <button type="button" class="preset-btn" onclick="setDeadlineTimePreset('21:00')">9:00 PM</button>
+                <button type="button" class="preset-btn active" onclick="setDeadlineTimePreset('23:59')">11:59 PM (Midnight)</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hidden input holding the composite ISO string for form submission -->
+          <input type="hidden" id="ot-create-deadline" name="deadline" />
+          <div class="fb-hint" style="font-size: 11.5px; color: var(--ink-soft); margin-top: 4px;">
+            Teachers commonly set deadlines to end of day (11:59 PM). Type directly or pick a preset.
+          </div>
         </div>
 
         <!-- Exam Paper PDF -->

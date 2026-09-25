@@ -129,6 +129,46 @@ function confirmDeleteOnlineTest(testId, title) {
 
 // --- 2. Creation Modal & AI Generation ---
 
+function setDeadlineTimePreset(timeStr) {
+  const timeInput = document.getElementById('ot-deadline-time');
+  if (timeInput) {
+    timeInput.value = timeStr;
+  }
+  updateDeadlinePresetButtons(timeStr);
+  syncOnlineTestDeadline();
+}
+
+function updateDeadlinePresetButtons(currentTime) {
+  const presets = document.querySelectorAll('.ot-time-presets .preset-btn');
+  presets.forEach(btn => {
+    if (btn.getAttribute('onclick')?.includes(currentTime)) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+}
+
+function syncOnlineTestDeadline() {
+  const dateInput = document.getElementById('ot-deadline-date');
+  const timeInput = document.getElementById('ot-deadline-time');
+  const hiddenInput = document.getElementById('ot-create-deadline');
+  if (!hiddenInput) return;
+
+  const dateVal = (dateInput?.value || '').trim();
+  const timeVal = (timeInput?.value || '23:59').trim();
+
+  if (dateVal) {
+    hiddenInput.value = `${dateVal}T${timeVal}`;
+  } else {
+    hiddenInput.value = '';
+  }
+
+  if (timeInput) {
+    updateDeadlinePresetButtons(timeInput.value);
+  }
+}
+
 function openOnlineTestCreateModal() {
   const modal = document.getElementById('online-test-create-modal');
   if (!modal) return;
@@ -136,11 +176,23 @@ function openOnlineTestCreateModal() {
 
   // Reset inputs
   document.getElementById('ot-create-title').value = '';
-  document.getElementById('ot-create-deadline').value = '';
   document.getElementById('ot-create-instructions').value = '';
   document.getElementById('ot-create-exam-file').value = '';
   document.getElementById('ot-create-scheme-file').value = '';
   document.getElementById('ot-create-audio-file').value = '';
+
+  const dateInput = document.getElementById('ot-deadline-date');
+  const timeInput = document.getElementById('ot-deadline-time');
+  const todayStr = new Date().toISOString().split('T')[0];
+  if (dateInput) {
+    dateInput.value = '';
+    dateInput.min = todayStr;
+  }
+  if (timeInput) {
+    timeInput.value = '23:59';
+  }
+  updateDeadlinePresetButtons('23:59');
+  syncOnlineTestDeadline();
 
   updateFileInputLabel('ot-create-exam-file', 'ot-label-exam');
   updateFileInputLabel('ot-create-scheme-file', 'ot-label-scheme');
@@ -172,6 +224,7 @@ function updateFileInputLabel(inputId, labelId) {
 async function handleOnlineTestCreateSubmit(event) {
   if (event) event.preventDefault();
 
+  syncOnlineTestDeadline();
   const title = (document.getElementById('ot-create-title').value || '').trim();
   const deadline = document.getElementById('ot-create-deadline').value;
   const extraInstructions = document.getElementById('ot-create-instructions').value;
@@ -1866,4 +1919,26 @@ window.scheduleAttemptFeedbackOverride = scheduleAttemptFeedbackOverride;
 window.printOnlineTestReport = printOnlineTestReport;
 window.printActiveAttemptReport = printActiveAttemptReport;
 window.deleteOnlineTestAttempt = deleteOnlineTestAttempt;
+window.setDeadlineTimePreset = setDeadlineTimePreset;
+window.syncOnlineTestDeadline = syncOnlineTestDeadline;
 
+// Attach deadline listeners on initial load
+if (typeof document !== 'undefined') {
+  const attachDeadlineListeners = () => {
+    const dInput = document.getElementById('ot-deadline-date');
+    const tInput = document.getElementById('ot-deadline-time');
+    if (dInput) {
+      dInput.addEventListener('input', syncOnlineTestDeadline);
+      dInput.addEventListener('change', syncOnlineTestDeadline);
+    }
+    if (tInput) {
+      tInput.addEventListener('input', syncOnlineTestDeadline);
+      tInput.addEventListener('change', syncOnlineTestDeadline);
+    }
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attachDeadlineListeners);
+  } else {
+    attachDeadlineListeners();
+  }
+}
