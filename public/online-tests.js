@@ -129,44 +129,38 @@ function confirmDeleteOnlineTest(testId, title) {
 
 // --- 2. Creation Modal & AI Generation ---
 
-function setDeadlineTimePreset(timeStr) {
-  const timeInput = document.getElementById('ot-deadline-time');
-  if (timeInput) {
-    timeInput.value = timeStr;
-  }
-  updateDeadlinePresetButtons(timeStr);
-  syncOnlineTestDeadline();
-}
-
-function updateDeadlinePresetButtons(currentTime) {
-  const presets = document.querySelectorAll('.ot-time-presets .preset-btn');
-  presets.forEach(btn => {
-    if (btn.getAttribute('onclick')?.includes(currentTime)) {
-      btn.classList.add('active');
-    } else {
-      btn.classList.remove('active');
-    }
-  });
-}
-
 function syncOnlineTestDeadline() {
   const dateInput = document.getElementById('ot-deadline-date');
-  const timeInput = document.getElementById('ot-deadline-time');
+  const hourInput = document.getElementById('ot-time-hour');
+  const minuteInput = document.getElementById('ot-time-minute');
+  const ampmSelect = document.getElementById('ot-time-ampm');
   const hiddenInput = document.getElementById('ot-create-deadline');
   if (!hiddenInput) return;
 
   const dateVal = (dateInput?.value || '').trim();
-  const timeVal = (timeInput?.value || '23:59').trim();
-
-  if (dateVal) {
-    hiddenInput.value = `${dateVal}T${timeVal}`;
-  } else {
+  if (!dateVal) {
     hiddenInput.value = '';
+    return;
   }
 
-  if (timeInput) {
-    updateDeadlinePresetButtons(timeInput.value);
+  let hour = parseInt(hourInput?.value, 10);
+  if (isNaN(hour) || hour < 1) hour = 12;
+  if (hour > 12) hour = 12;
+
+  const ampm = (ampmSelect?.value || 'PM').toUpperCase();
+  if (ampm === 'PM') {
+    if (hour < 12) hour += 12;
+  } else {
+    if (hour === 12) hour = 0;
   }
+
+  let minute = parseInt(minuteInput?.value, 10);
+  if (isNaN(minute) || minute < 0) minute = 0;
+  if (minute > 59) minute = 59;
+
+  const hh = String(hour).padStart(2, '0');
+  const mm = String(minute).padStart(2, '0');
+  hiddenInput.value = `${dateVal}T${hh}:${mm}`;
 }
 
 function openOnlineTestCreateModal() {
@@ -182,16 +176,17 @@ function openOnlineTestCreateModal() {
   document.getElementById('ot-create-audio-file').value = '';
 
   const dateInput = document.getElementById('ot-deadline-date');
-  const timeInput = document.getElementById('ot-deadline-time');
+  const hourInput = document.getElementById('ot-time-hour');
+  const minInput = document.getElementById('ot-time-minute');
+  const ampmSelect = document.getElementById('ot-time-ampm');
   const todayStr = new Date().toISOString().split('T')[0];
   if (dateInput) {
     dateInput.value = '';
     dateInput.min = todayStr;
   }
-  if (timeInput) {
-    timeInput.value = '23:59';
-  }
-  updateDeadlinePresetButtons('23:59');
+  if (hourInput) hourInput.value = '11';
+  if (minInput) minInput.value = '59';
+  if (ampmSelect) ampmSelect.value = 'PM';
   syncOnlineTestDeadline();
 
   updateFileInputLabel('ot-create-exam-file', 'ot-label-exam');
@@ -1919,21 +1914,81 @@ window.scheduleAttemptFeedbackOverride = scheduleAttemptFeedbackOverride;
 window.printOnlineTestReport = printOnlineTestReport;
 window.printActiveAttemptReport = printActiveAttemptReport;
 window.deleteOnlineTestAttempt = deleteOnlineTestAttempt;
-window.setDeadlineTimePreset = setDeadlineTimePreset;
 window.syncOnlineTestDeadline = syncOnlineTestDeadline;
 
-// Attach deadline listeners on initial load
+// Attach 12-hour deadline listeners on initial load
 if (typeof document !== 'undefined') {
   const attachDeadlineListeners = () => {
     const dInput = document.getElementById('ot-deadline-date');
-    const tInput = document.getElementById('ot-deadline-time');
+    const hInput = document.getElementById('ot-time-hour');
+    const mInput = document.getElementById('ot-time-minute');
+    const ampmSelect = document.getElementById('ot-time-ampm');
+
     if (dInput) {
       dInput.addEventListener('input', syncOnlineTestDeadline);
       dInput.addEventListener('change', syncOnlineTestDeadline);
     }
-    if (tInput) {
-      tInput.addEventListener('input', syncOnlineTestDeadline);
-      tInput.addEventListener('change', syncOnlineTestDeadline);
+
+    if (ampmSelect) {
+      ampmSelect.addEventListener('change', syncOnlineTestDeadline);
+    }
+
+    if (hInput) {
+      hInput.addEventListener('input', (e) => {
+        let val = parseInt(e.target.value, 10);
+        if (!isNaN(val)) {
+          if (val > 12) e.target.value = 12;
+          else if (val < 1 && e.target.value.length >= 2) e.target.value = 1;
+        }
+        syncOnlineTestDeadline();
+        if (e.target.value.length === 2 && mInput) {
+          mInput.focus();
+          mInput.select();
+        }
+      });
+
+      hInput.addEventListener('blur', (e) => {
+        let val = parseInt(e.target.value, 10);
+        if (isNaN(val) || val < 1) e.target.value = '11';
+        else if (val > 12) e.target.value = '12';
+        else e.target.value = String(val);
+        syncOnlineTestDeadline();
+      });
+
+      hInput.addEventListener('keydown', (e) => {
+        if (e.key === ':' || e.key === 'Enter') {
+          e.preventDefault();
+          if (mInput) {
+            mInput.focus();
+            mInput.select();
+          }
+        }
+      });
+    }
+
+    if (mInput) {
+      mInput.addEventListener('input', (e) => {
+        let val = parseInt(e.target.value, 10);
+        if (!isNaN(val)) {
+          if (val > 59) e.target.value = 59;
+          else if (val < 0) e.target.value = 0;
+        }
+        syncOnlineTestDeadline();
+      });
+
+      mInput.addEventListener('blur', (e) => {
+        let val = parseInt(e.target.value, 10);
+        if (isNaN(val) || val < 0) e.target.value = '59';
+        else if (val > 59) e.target.value = '59';
+        else e.target.value = String(val).padStart(2, '0');
+        syncOnlineTestDeadline();
+      });
+
+      mInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && e.target.value === '' && hInput) {
+          hInput.focus();
+        }
+      });
     }
   };
   if (document.readyState === 'loading') {

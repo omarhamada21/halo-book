@@ -1272,11 +1272,11 @@
         border-color: var(--pen);
       }
 
-      /* Online Tests Split Deadline Picker */
+      /* Online Tests Split Deadline Picker (12-Hour System) */
       .ot-deadline-picker-wrap {
         display: flex;
         gap: 12px;
-        align-items: flex-start;
+        align-items: center;
       }
 
       .ot-picker-col {
@@ -1284,8 +1284,7 @@
         min-width: 0;
       }
 
-      .ot-date-input,
-      .ot-time-input {
+      .ot-date-input {
         width: 100%;
         padding: 9px 12px;
         border: 1px solid var(--border);
@@ -1299,41 +1298,79 @@
         transition: border-color 0.15s, box-shadow 0.15s;
       }
 
-      .ot-date-input:focus,
-      .ot-time-input:focus {
+      .ot-date-input:focus {
         border-color: var(--pen);
         box-shadow: 0 0 0 2px rgba(29, 58, 102, 0.12);
       }
 
-      .ot-time-presets {
+      .ot-time-12h-group {
         display: flex;
-        gap: 6px;
-        margin-top: 6px;
-        flex-wrap: wrap;
-      }
-
-      .preset-btn {
-        background: var(--paper);
+        align-items: center;
+        background: #fff;
         border: 1px solid var(--border);
-        color: var(--ink);
-        border-radius: 4px;
-        padding: 3px 8px;
-        font-size: 11px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.15s;
-        font-family: 'IBM Plex Mono', monospace;
+        border-radius: 6px;
+        padding: 2px 6px;
+        transition: border-color 0.15s, box-shadow 0.15s;
       }
 
-      .preset-btn:hover {
-        background: var(--pen-soft);
+      .ot-time-12h-group:focus-within {
         border-color: var(--pen);
-        color: var(--pen);
+        box-shadow: 0 0 0 2px rgba(29, 58, 102, 0.12);
       }
 
-      .preset-btn.active {
-        background: var(--pen);
-        color: #fff;
+      .ot-time-num-input {
+        width: 44px;
+        padding: 7px 2px;
+        border: 1px solid transparent;
+        background: transparent;
+        font-size: 14px;
+        font-weight: 600;
+        font-family: 'IBM Plex Mono', monospace;
+        color: var(--ink);
+        text-align: center;
+        outline: none;
+        -moz-appearance: textfield;
+        border-radius: 4px;
+      }
+
+      .ot-time-num-input::-webkit-outer-spin-button,
+      .ot-time-num-input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+
+      .ot-time-num-input:focus {
+        background: var(--paper);
+        border-color: var(--paper-line);
+      }
+
+      .ot-time-sep {
+        font-weight: 700;
+        font-size: 15px;
+        color: var(--pen);
+        padding: 0 2px;
+        user-select: none;
+      }
+
+      .ot-time-ampm-select {
+        flex: 1;
+        margin-left: 6px;
+        padding: 6px 8px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--paper);
+        color: var(--pen);
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px;
+        font-weight: 700;
+        outline: none;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+      }
+
+      .ot-time-ampm-select:focus,
+      .ot-time-ampm-select:hover {
+        background: var(--pen-soft);
         border-color: var(--pen);
       }
 
@@ -3096,8 +3133,8 @@
         <div class="form-group" style="margin-bottom: 14px;">
           <label class="fb-label" for="ot-deadline-date" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px;">Deadline (Date & Time)</label>
           <div class="ot-deadline-picker-wrap">
-            <!-- Standard Calendar Date Picker -->
-            <div class="ot-picker-col">
+            <!-- Date input -->
+            <div class="ot-picker-col ot-date-col">
               <input 
                 type="date" 
                 id="ot-deadline-date" 
@@ -3106,29 +3143,38 @@
               />
             </div>
 
-            <!-- Clean Time Selector with typing + quick hour presets -->
-            <div class="ot-picker-col ot-time-col">
-              <input 
-                type="time" 
-                id="ot-deadline-time" 
-                class="form-control ot-time-input" 
-                step="300"
-                value="23:59"
-                required 
-              />
-              <div class="ot-time-presets">
-                <button type="button" class="preset-btn" onclick="setDeadlineTimePreset('18:00')">6:00 PM</button>
-                <button type="button" class="preset-btn" onclick="setDeadlineTimePreset('21:00')">9:00 PM</button>
-                <button type="button" class="preset-btn active" onclick="setDeadlineTimePreset('23:59')">11:59 PM (Midnight)</button>
+            <!-- 12-Hour Editable Time Group -->
+            <div class="ot-picker-col ot-time-12h-col">
+              <div class="ot-time-12h-group">
+                <input 
+                  type="number" 
+                  id="ot-time-hour" 
+                  class="ot-time-num-input" 
+                  min="1" 
+                  max="12" 
+                  placeholder="11" 
+                  value="11"
+                />
+                <span class="ot-time-sep">:</span>
+                <input 
+                  type="number" 
+                  id="ot-time-minute" 
+                  class="ot-time-num-input" 
+                  min="0" 
+                  max="59" 
+                  placeholder="59" 
+                  value="59"
+                />
+                <select id="ot-time-ampm" class="ot-time-ampm-select">
+                  <option value="PM" selected>PM</option>
+                  <option value="AM">AM</option>
+                </select>
               </div>
             </div>
           </div>
 
-          <!-- Hidden input holding the composite ISO string for form submission -->
+          <!-- Hidden composite input for existing backend submission -->
           <input type="hidden" id="ot-create-deadline" name="deadline" />
-          <div class="fb-hint" style="font-size: 11.5px; color: var(--ink-soft); margin-top: 4px;">
-            Teachers commonly set deadlines to end of day (11:59 PM). Type directly or pick a preset.
-          </div>
         </div>
 
         <!-- Exam Paper PDF -->
