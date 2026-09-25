@@ -183,41 +183,52 @@
   }
 
   /* Section Tabs Nav */
+  .section-tabs-wrap,
   .section-nav-strip {
     display: flex;
+    align-items: center;
     gap: 8px;
+    padding: 10px 16px;
     overflow-x: auto;
-    padding: 10px 20px;
-    background: #EAEFF9;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .section-nav-btn {
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 12px;
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--ink-soft);
-    cursor: pointer;
     white-space: nowrap;
-    transition: all 0.15s;
+    border-bottom: 1px solid var(--border, #e2e8f0);
+    background: #ffffff;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .section-tabs-wrap::-webkit-scrollbar,
+  .section-nav-strip::-webkit-scrollbar {
+    display: none;
+  }
+  .section-tab-btn,
+  .section-nav-btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 6px;
+    border: 1px solid var(--border, #cbd5e1);
+    background: #ffffff;
+    color: var(--pen, #0f172a);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
   }
-
+  .section-tab-btn:hover,
   .section-nav-btn:hover {
-    background: var(--pen-soft);
-    color: var(--pen);
-    border-color: var(--pen);
+    background: var(--bg, #f8fafc);
+    border-color: #94a3b8;
   }
-
+  .section-tab-btn.active,
   .section-nav-btn.active {
-    background: var(--pen);
-    color: #fff;
-    border-color: var(--pen);
+    background: var(--primary, #1e3a8a);
+    color: #ffffff;
+    border-color: var(--primary, #1e3a8a);
   }
 
   .wrap {
@@ -280,6 +291,40 @@
     font-size: 13px;
     color: var(--ink-soft);
     line-height: 1.5;
+  }
+
+  /* Audio Track Banner */
+  .section-audio-banner {
+    margin: 16px 0 20px 0;
+    background: #f8fafc;
+    border: 1px solid var(--border, #cbd5e1);
+    border-left: 4px solid var(--primary, #2563eb);
+    border-radius: 8px;
+    padding: 14px 18px;
+  }
+
+  .section-audio-banner .btn-primary {
+    background: var(--primary, #2563eb);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+    font-family: inherit;
+  }
+  .section-audio-banner .btn-primary:hover:not(:disabled) {
+    background: #1d4ed8;
+  }
+  .section-audio-banner .btn-primary:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    background: #94a3b8;
   }
 
   /* Audio Track Box */
@@ -1133,7 +1178,7 @@
 </div>
 
 <!-- Section Navigator Strip -->
-<div class="section-nav-strip" id="section-nav-strip" style="display:none;"></div>
+<div class="section-nav-strip section-tabs-wrap" id="exam-section-nav" style="display:none;"></div>
 
 <div class="wrap">
   <!-- Pre-Exam Lockdown & Fullscreen Gate Splash Screen -->
@@ -1183,29 +1228,6 @@
       <div class="exam-teacher" id="exam-teacher"></div>
       <div class="deadline-box" id="exam-deadline-box"></div>
       <div class="instructions-box" id="exam-instructions-box" style="display:none;"></div>
-    </div>
-
-    <!-- Audio Listening Player Box (True Hard Single-Play) -->
-    <div class="audio-bar-box" id="exam-audio-box" style="display:none;">
-      <div class="audio-head">
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span style="font-size:18px;">🎧</span>
-          <span style="font-size:14px; font-weight:700; color:var(--pen);">Listening Examination Track</span>
-        </div>
-        <span class="audio-badge" id="audio-plays-badge">Single Play (1 of 1)</span>
-      </div>
-      <audio id="exam-audio-element" controlsList="nodownload noplaybackrate nofullscreen" preload="auto" style="display:none;"></audio>
-      <button type="button" class="audio-btn-start" id="btn-start-audio" onclick="startAudioPlayback()">
-        ▶ Play Listening Track (One-Time Playback)
-      </button>
-      <!-- Non-interactive, continuous read-only progress bar: NO scrub bar or seek capability -->
-      <div class="audio-progress-wrap" id="audio-progress-wrap" style="pointer-events:none; user-select:none;">
-        <div class="audio-progress-bar" id="audio-progress-bar"></div>
-      </div>
-      <div class="audio-time-label" id="audio-time-label">00:00 / 00:00</div>
-      <div id="audio-locked-notice" style="display:none; margin-top:10px; font-size:13px; color:var(--danger); font-weight:600; background:var(--danger-bg); border:1px solid #FCA5A5; padding:10px 14px; border-radius:6px; line-height:1.5;">
-        🔒 <b>Audio Single-Play Consumed:</b> This exam track has already been played. Under examination regulations, it cannot be re-played or restarted.
-      </div>
     </div>
 
     <!-- Sections & Questions Container -->
@@ -1403,7 +1425,7 @@ function showLockedScreen() {
   if (sec) sec.style.display = 'none';
   const bar = document.getElementById('exam-bottom-bar');
   if (bar) bar.style.display = 'none';
-  const nav = document.getElementById('section-nav-strip');
+  const nav = document.getElementById('exam-section-nav') || document.getElementById('section-nav-strip') || document.querySelector('.section-tabs-wrap');
   if (nav) nav.style.display = 'none';
   const audio = document.getElementById('exam-audio-box');
   if (audio) audio.style.display = 'none';
@@ -1488,6 +1510,7 @@ async function loadOnlineTest() {
     }
 
     testData = data.test;
+    window.examData = testData;
 
     // Render splash screen info
     document.getElementById('splash-code-badge').innerText = `ACCESS CODE: ${escapeHtml(testCode)}`;
@@ -1505,10 +1528,6 @@ async function loadOnlineTest() {
     renderExamHeader();
     renderSectionNav();
     renderSections();
-
-    if (testData.audio_url) {
-      setupAudioTrack(testData.audio_url);
-    }
 
     updateCompletionCount();
 
@@ -1568,11 +1587,13 @@ function revealExamContent() {
   document.getElementById('exam-sections-container').style.display = 'block';
   document.getElementById('exam-bottom-bar').style.display = 'flex';
 
-  if (testData?.sections && testData.sections.length > 1) {
-    document.getElementById('section-nav-strip').style.display = 'flex';
+  const navContainer = document.getElementById('exam-section-nav') || document.getElementById('section-nav-strip') || document.querySelector('.section-tabs-wrap');
+  if (navContainer && testData?.sections && testData.sections.length > 1) {
+    navContainer.style.display = 'flex';
   }
-  if (testData?.audio_url) {
-    document.getElementById('exam-audio-box').style.display = 'block';
+  const audioBox = document.getElementById('exam-audio-box');
+  if (audioBox) {
+    audioBox.style.display = 'block';
   }
 
   isExamActive = true;
@@ -1652,7 +1673,7 @@ function handleFullscreenChange() {
     // Hide exam content immediately to deter tab switching / unauthorized inspection
     const mainContent = document.getElementById('exam-main-content');
     const bottomBar = document.getElementById('exam-bottom-bar');
-    const navStrip = document.getElementById('section-nav-strip');
+    const navStrip = document.getElementById('exam-section-nav') || document.getElementById('section-nav-strip') || document.querySelector('.section-tabs-wrap');
     if (mainContent) mainContent.style.display = 'none';
     if (bottomBar) bottomBar.style.display = 'none';
     if (navStrip) navStrip.style.display = 'none';
@@ -1680,9 +1701,9 @@ function handleFullscreenChange() {
     const bottomBar = document.getElementById('exam-bottom-bar');
     if (mainContent) mainContent.style.display = 'block';
     if (bottomBar) bottomBar.style.display = 'flex';
-    if (testData?.sections && testData.sections.length > 1) {
-      const navStrip = document.getElementById('section-nav-strip');
-      if (navStrip) navStrip.style.display = 'flex';
+    const navStrip = document.getElementById('exam-section-nav') || document.getElementById('section-nav-strip') || document.querySelector('.section-tabs-wrap');
+    if (navStrip && testData?.sections && testData.sections.length > 1) {
+      navStrip.style.display = 'flex';
     }
 
     // Resume audio playback if it was active before exiting
@@ -1844,25 +1865,60 @@ function startCountdownTimer(deadlineDate) {
 }
 
 function renderSectionNav() {
-  const nav = document.getElementById('section-nav-strip');
-  const sections = testData.sections || [];
-  if (sections.length <= 1) return;
+  const navContainer = document.getElementById('exam-section-nav') || document.querySelector('.section-tabs-wrap') || document.getElementById('section-nav-strip');
+  if (!navContainer) return;
+  navContainer.innerHTML = '';
 
-  nav.style.display = 'flex';
-  nav.innerHTML = sections.map((sec, idx) => `
-    <button type="button" class="section-nav-btn ${idx === 0 ? 'active' : ''}" id="nav-btn-sec-${sec.id}"
-      onclick="scrollToSection(${sec.id})">
-      Part ${sec.part_number || (idx + 1)}
-    </button>
-  `).join('');
+  const rawSections = (testData && testData.sections) || (window.examData && (window.examData.sections || window.examData.test?.sections)) || [];
+  if (rawSections.length <= 1) {
+    navContainer.style.display = 'none';
+    return;
+  }
+
+  // Deduplicate sections using a Set on sec.id to guarantee zero duplicate tabs
+  const uniqueSections = [];
+  const seenIds = new Set();
+  for (const sec of rawSections) {
+    if (sec && !seenIds.has(sec.id)) {
+      seenIds.add(sec.id);
+      uniqueSections.push(sec);
+    }
+  }
+
+  if (uniqueSections.length <= 1) {
+    navContainer.style.display = 'none';
+    return;
+  }
+
+  uniqueSections.forEach((sec, idx) => {
+    const tabBtn = document.createElement('button');
+    tabBtn.type = 'button';
+    tabBtn.className = `section-tab-btn ${idx === 0 ? 'active' : ''}`;
+    tabBtn.id = `sec-tab-${sec.id}`;
+    
+    let icon = '📖';
+    if (sec.section_type === 'listening') icon = '🎧';
+    else if (sec.section_type === 'writing') icon = '✍️';
+    else if (sec.section_type === 'grammar') icon = '🔤';
+
+    tabBtn.innerHTML = `<span>${icon} Part ${idx + 1}</span>`;
+    tabBtn.onclick = () => switchSection(sec.id);
+    navContainer.appendChild(tabBtn);
+  });
+
+  navContainer.style.display = 'flex';
+}
+
+function switchSection(sectionId) {
+  scrollToSection(sectionId);
 }
 
 function scrollToSection(sectionId) {
   const el = document.getElementById(`section-card-${sectionId}`);
   if (el) {
     el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    document.querySelectorAll('.section-nav-btn').forEach(btn => btn.classList.remove('active'));
-    const targetNav = document.getElementById(`nav-btn-sec-${sectionId}`);
+    document.querySelectorAll('.section-tab-btn, .section-nav-btn').forEach(btn => btn.classList.remove('active'));
+    const targetNav = document.getElementById(`sec-tab-${sectionId}`) || document.getElementById(`nav-btn-sec-${sectionId}`);
     if (targetNav) targetNav.classList.add('active');
   }
 }
@@ -1876,43 +1932,51 @@ function setupAudioTrack(audioUrl) {
   const badge = document.getElementById('audio-plays-badge');
   const lockedNotice = document.getElementById('audio-locked-notice');
   const progressWrap = document.getElementById('audio-progress-wrap');
-  const progressBar = document.getElementById('audio-progress-bar');
-  const timeLabel = document.getElementById('audio-time-label');
+  const progressBar = document.getElementById('audio-progress-fill') || document.getElementById('audio-progress-bar');
+  const timerDisplay = document.getElementById('audio-timer-display') || document.getElementById('audio-time-label');
 
-  player.src = audioUrl;
+  if (!box || !player || !btnStart) return;
+
+  if (audioUrl) {
+    player.src = audioUrl;
+  }
+  player.controlsList = "nodownload noplaybackrate nofullscreen";
+  player.preload = "auto";
+
   box.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  const hasPlayed = localStorage.getItem(audioKey) === 'true';
+  const hasPlayed = localStorage.getItem('online_audio_started_' + testCode) === 'true';
 
   if (hasPlayed) {
     btnStart.style.display = 'none';
     if (progressWrap) progressWrap.style.display = 'none';
-    if (timeLabel) timeLabel.style.display = 'none';
+    if (timerDisplay) timerDisplay.style.display = 'none';
     if (badge) badge.innerText = 'Audio: Consumed (1/1)';
     if (lockedNotice) {
       lockedNotice.style.display = 'block';
-      lockedNotice.innerHTML = '🔒 <b>Single-Play Audio Locked:</b> This exam track has already been played. Under examination regulations, it cannot be re-played or restarted.';
+      lockedNotice.innerHTML = '🔒 <b>Single-Play Audio Locked:</b> Audio track has already been played. Under examination regulations, it cannot be re-played or restarted.';
     }
     return;
   }
 
-  if (badge) badge.innerText = 'Single Play (1 of 1)';
-  btnStart.style.display = 'flex';
+  if (badge) badge.innerText = 'Single Play Enforced';
+  btnStart.style.display = 'inline-flex';
   btnStart.disabled = false;
-  btnStart.innerText = '▶ Play Listening Track (One-Time Playback)';
+  btnStart.innerHTML = '<span>▶ Play Audio Track</span>';
+  btnStart.onclick = () => startAudioPlayback();
 
-  player.addEventListener('pause', () => {
+  player.onpause = () => {
     // If not paused by the exit gate handler and not finished, resume immediately
     if (!player.ended && player.currentTime > 0 && !wasAudioPlayingBeforeExit) {
       player.play().catch(() => {});
       showToast('⚠️ Exam audio cannot be paused during the test.');
     }
-  });
+  };
 
-  player.addEventListener('timeupdate', () => {
-    if (player.duration && progressWrap && progressBar && timeLabel) {
+  player.ontimeupdate = () => {
+    if (player.duration && progressWrap && progressBar && timerDisplay) {
       progressWrap.style.display = 'block';
-      timeLabel.style.display = 'block';
+      timerDisplay.style.display = 'inline-block';
       const pct = (player.currentTime / player.duration) * 100;
       progressBar.style.width = `${pct}%`;
 
@@ -1921,22 +1985,22 @@ function setupAudioTrack(audioUrl) {
       const durM = Math.floor(player.duration / 60);
       const durS = Math.floor(player.duration % 60);
       const pad = (n) => String(n).padStart(2, '0');
-      timeLabel.innerText = `${pad(curM)}:${pad(curS)} / ${pad(durM)}:${pad(durS)}`;
+      timerDisplay.innerText = `${pad(curM)}:${pad(curS)} / ${pad(durM)}:${pad(durS)}`;
     }
-  });
+  };
 
-  player.addEventListener('ended', () => {
+  player.onended = () => {
     btnStart.style.display = 'none';
     if (progressWrap) progressWrap.style.display = 'none';
-    if (timeLabel) timeLabel.style.display = 'none';
-    if (badge) badge.innerText = 'Audio: Finished (1/1)';
+    if (timerDisplay) timerDisplay.style.display = 'none';
+    if (badge) badge.innerText = 'Audio: Complete';
     if (lockedNotice) {
       lockedNotice.style.display = 'block';
-      lockedNotice.innerHTML = '✓ <b>Listening Track Complete:</b> Audio playback has finished. Re-play is locked for this session.';
+      lockedNotice.innerHTML = '🔒 <b>Single-Play Audio Locked:</b> Audio track has already been played. Under examination regulations, it cannot be re-played or restarted.';
     }
-  });
+  };
 
-  player.addEventListener('error', async () => {
+  player.onerror = async () => {
     if (player.currentTime > 0 && !player.ended) {
       try {
         const refreshRes = await fetch(`/api/public/online-tests/${encodeURIComponent(testCode)}/audio-url`);
@@ -1951,26 +2015,31 @@ function setupAudioTrack(audioUrl) {
         console.error('Audio stream refresh error:', err);
       }
     }
-  });
+  };
 }
 
 function startAudioPlayback() {
   const player = document.getElementById('exam-audio-element');
   const btnStart = document.getElementById('btn-start-audio');
-  if (!player || localStorage.getItem(audioKey) === 'true') return;
+  const progressWrap = document.getElementById('audio-progress-wrap');
+  const timerDisplay = document.getElementById('audio-timer-display') || document.getElementById('audio-time-label');
+
+  if (!player || localStorage.getItem('online_audio_started_' + testCode) === 'true') return;
 
   // HARD SINGLE-PLAY LOCK: Persist immediately to localStorage keyed to testCode
-  localStorage.setItem(audioKey, 'true');
+  localStorage.setItem('online_audio_started_' + testCode, 'true');
 
   btnStart.disabled = true;
-  btnStart.innerText = '🔊 Playing Exam Audio (Continuous Single-Play)...';
+  btnStart.innerHTML = '<span>🔊 Playing Audio Track...</span>';
+  if (progressWrap) progressWrap.style.display = 'block';
+  if (timerDisplay) timerDisplay.style.display = 'inline-block';
 
   player.play().catch((err) => {
     console.error('Audio playback error:', err);
     showToast('Click again to start audio playback.');
     btnStart.disabled = false;
-    btnStart.innerText = '▶ Play Listening Track (One-Time Playback)';
-    localStorage.removeItem(audioKey);
+    btnStart.innerHTML = '<span>▶ Play Audio Track</span>';
+    localStorage.removeItem('online_audio_started_' + testCode);
   });
 }
 
@@ -1998,45 +2067,112 @@ function formatSectionInstructions(text) {
 
 function renderSections() {
   const container = document.getElementById('exam-sections-container');
-  const sections = testData.sections || [];
+  if (!container) return;
+  container.innerHTML = '';
   allQuestionIds = [];
 
-  container.innerHTML = sections.map((sec, sIdx) => {
+  const examData = window.examData || { test: testData, sections: (testData && testData.sections) || [] };
+  const rawSections = (testData && testData.sections) || (examData && examData.sections) || [];
+  
+  // Deduplicate sections using a Set on sec.id to guarantee zero duplicate sections
+  const uniqueSections = [];
+  const seenIds = new Set();
+  for (const sec of rawSections) {
+    if (sec && !seenIds.has(sec.id)) {
+      seenIds.add(sec.id);
+      uniqueSections.push(sec);
+    }
+  }
+
+  const hasListeningTypeSection = uniqueSections.some(s => s.section_type === 'listening');
+
+  uniqueSections.forEach((sec, sIdx) => {
     const secTypeBadge = getSectionTypeBadge(sec.section_type);
     const questions = sec.questions || [];
     questions.forEach(q => allQuestionIds.push(q.id));
 
     const questionsHtml = questions.map((q, qIdx) => renderQuestion(sec, q, qIdx + 1)).join('');
 
-    return `
-      <section class="section-card" id="section-card-${sec.id}">
-        <div class="section-head">
-          <div style="display:flex; align-items:center; gap:10px;">
-            <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:700; background:var(--pen); color:#fff; padding:3px 8px; border-radius:4px;">
-              Part ${sec.part_number || (sIdx + 1)}
-            </span>
-            <h2 class="section-title">${escapeHtml(sec.section_title)}</h2>
-          </div>
-          ${secTypeBadge}
+    const sectionEl = document.createElement('section');
+    sectionEl.className = 'section-card';
+    sectionEl.id = `section-card-${sec.id}`;
+
+    sectionEl.innerHTML = `
+      <div class="section-head">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:700; background:var(--pen); color:#fff; padding:3px 8px; border-radius:4px;">
+            Part ${sec.part_number || (sIdx + 1)}
+          </span>
+          <h2 class="section-title">${escapeHtml(sec.section_title)}</h2>
         </div>
+        ${secTypeBadge}
+      </div>
 
-        ${sec.instructions_text ? formatSectionInstructions(sec.instructions_text) : ''}
+      ${sec.instructions_text ? formatSectionInstructions(sec.instructions_text) : ''}
 
-        ${sec.passage_text ? `
-          <div class="passage-box">
-            <div class="passage-header">
-              <span class="passage-title">📖 Reading / Stimulus Text:</span>
-            </div>
-            <div class="passage-content">${escapeHtml(sec.passage_text)}</div>
+      ${sec.passage_text ? `
+        <div class="passage-box">
+          <div class="passage-header">
+            <span class="passage-title">📖 Reading / Stimulus Text:</span>
           </div>
-        ` : ''}
-
-        <div class="questions-list">
-          ${questionsHtml}
+          <div class="passage-content">${escapeHtml(sec.passage_text)}</div>
         </div>
-      </section>
+      ` : ''}
+
+      <div class="questions-list questions-wrap ot-vertical-questions-list">
+        ${questionsHtml}
+      </div>
     `;
-  }).join('');
+
+    // Audio Relocation to Specific Listening Section
+    const isExplicitNonListening = ['reading', 'writing', 'grammar'].includes(sec.section_type);
+    const isListening = (sec.section_type === 'listening') ||
+      Boolean(sec.audio_url) ||
+      (!hasListeningTypeSection && !isExplicitNonListening && Boolean((testData && testData.audio_url) || (examData && (examData.audio_url || examData.test?.audio_url))));
+
+    // Only inject the audio player if this section is the designated listening section
+    if (isListening && !document.getElementById('exam-audio-box') && !container.querySelector('#exam-audio-box')) {
+      const audioBar = document.createElement('div');
+      audioBar.className = 'section-audio-banner';
+      audioBar.id = 'exam-audio-box';
+      audioBar.innerHTML = `
+        <div class="audio-head">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 18px;">🎧</span>
+            <span style="font-size: 14px; font-weight: 700; color: var(--pen, #1D3A66);">Listening Examination Track</span>
+          </div>
+          <span class="audio-badge" id="audio-plays-badge">Single Play Enforced</span>
+        </div>
+        <audio id="exam-audio-element" controlsList="nodownload noplaybackrate nofullscreen" preload="auto" style="display: none;"></audio>
+        <div class="audio-controls-row" style="margin-top: 10px; display: flex; align-items: center; gap: 12px;">
+          <button type="button" class="btn-primary audio-btn-start" id="btn-start-audio" style="display: flex; align-items: center; gap: 6px;">
+            <span>▶ Play Audio Track</span>
+          </button>
+          <div class="audio-progress-wrap" id="audio-progress-wrap" style="flex: 1; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; display: none;">
+            <div id="audio-progress-fill" class="audio-progress-bar" style="width: 0%; height: 100%; background: var(--primary, #2563eb); transition: width 0.2s linear;"></div>
+          </div>
+          <span id="audio-timer-display" class="audio-time-label" style="font-size: 12px; font-weight: 600; color: var(--ink-soft, #4A5670); display: none;">00:00 / 00:00</span>
+        </div>
+        <div id="audio-locked-notice" style="display: none; margin-top: 10px; font-size: 13px; color: var(--danger, #dc2626); font-weight: 600; background: var(--danger-bg, #fef2f2); border: 1px solid #fca5a5; padding: 10px 14px; border-radius: 6px;">
+          🔒 <b>Single-Play Audio Locked:</b> Audio track has already been played. Under examination regulations, it cannot be re-played or restarted.
+        </div>
+      `;
+      // Insert immediately below section instructions and above questions list
+      const questionsList = sectionEl.querySelector('.questions-wrap') || sectionEl.querySelector('.ot-vertical-questions-list') || sectionEl.querySelector('.questions-list');
+      if (questionsList) {
+        sectionEl.insertBefore(audioBar, questionsList);
+      } else {
+        sectionEl.appendChild(audioBar);
+      }
+    }
+
+    container.appendChild(sectionEl);
+  });
+
+  const listeningAudioUrl = (testData && testData.audio_url) || (examData && (examData.audio_url || examData.test?.audio_url));
+  if (document.getElementById('exam-audio-box') && listeningAudioUrl) {
+    setupAudioTrack(listeningAudioUrl);
+  }
 }
 
 function getSectionTypeBadge(type) {

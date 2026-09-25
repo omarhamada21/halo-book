@@ -315,7 +315,15 @@ async function openOnlineTestReview(testId) {
     const data = await res.json();
 
     currentReviewTest = data.test;
-    currentReviewSections = data.sections || [];
+    const uniqueSections = [];
+    const seenSecIds = new Set();
+    for (const sec of (data.sections || [])) {
+      if (sec && !seenSecIds.has(sec.id)) {
+        seenSecIds.add(sec.id);
+        uniqueSections.push(sec);
+      }
+    }
+    currentReviewSections = uniqueSections;
 
     if (loading) loading.style.display = 'none';
     renderOnlineTestReviewCanvas();
@@ -964,7 +972,15 @@ async function addNewQuestionToSection(testId, sectionId) {
     // Reload test to sync state
     const freshRes = await fetch(`/api/online-tests/${testId}`);
     const freshData = await freshRes.json();
-    currentReviewSections = freshData.sections || [];
+    const uniqueSections = [];
+    const seenSecIds = new Set();
+    for (const sec of (freshData.sections || [])) {
+      if (sec && !seenSecIds.has(sec.id)) {
+        seenSecIds.add(sec.id);
+        uniqueSections.push(sec);
+      }
+    }
+    currentReviewSections = uniqueSections;
     renderOnlineTestReviewCanvas();
 
     // Reopen section being edited
