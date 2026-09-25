@@ -938,21 +938,25 @@
       gap: 12px;
       transition: border-color 0.2s;
     }
+
     .mcq-question-card:focus-within {
       border-color: var(--pen);
     }
+
     .mcq-question-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 10px;
     }
+
     .mcq-qnum {
       font-family: 'Source Serif 4', serif;
       font-weight: 600;
       font-size: 14px;
       color: var(--pen);
     }
+
     .mcq-points-wrap {
       display: flex;
       align-items: center;
@@ -960,6 +964,7 @@
       font-size: 12.5px;
       color: var(--ink-soft);
     }
+
     .mcq-points-input {
       width: 56px;
       padding: 4px 6px;
@@ -969,9 +974,11 @@
       text-align: center;
       outline: none;
     }
+
     .mcq-points-input:focus {
       border-color: var(--pen);
     }
+
     .mcq-qtext-input {
       width: 100%;
       min-height: 50px;
@@ -985,14 +992,17 @@
       background: #fff;
       outline: none;
     }
+
     .mcq-qtext-input:focus {
       border-color: var(--pen);
     }
+
     .mcq-options-grid {
       display: flex;
       flex-direction: column;
       gap: 8px;
     }
+
     .mcq-option-row {
       display: flex;
       align-items: center;
@@ -1003,16 +1013,19 @@
       background: #FAFBFC;
       transition: background 0.15s, border-color 0.15s;
     }
+
     .mcq-option-row.correct {
       background: #F0FDF4;
       border-color: #86EFAC;
     }
+
     .mcq-radio {
       cursor: pointer;
       width: 16px;
       height: 16px;
       accent-color: #059669;
     }
+
     .mcq-opt-label {
       font-family: 'IBM Plex Mono', monospace;
       font-weight: 600;
@@ -1020,6 +1033,7 @@
       color: var(--pen);
       width: 20px;
     }
+
     .mcq-opt-input {
       flex: 1;
       border: 1px solid transparent;
@@ -1030,1040 +1044,1128 @@
       outline: none;
       border-radius: 4px;
     }
+
     .mcq-opt-input:focus {
       background: #fff;
       border-color: var(--pen);
-    /* ==================== ONLINE TESTS STYLES ==================== */
-    .ot-badge {
-      display: inline-block;
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 11px;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .ot-badge-draft {
-      background: #FEF3C7;
-      color: #92400E;
-      border: 1px solid #FCD34D;
-    }
-    .ot-badge-published {
-      background: #D1FAE5;
-      color: #065F46;
-      border: 1px solid #6EE7B7;
-    }
-    .ot-code-badge {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--pen);
-      background: var(--pen-soft);
-      padding: 2px 8px;
-      border-radius: 4px;
-    }
-    .ot-type-badge {
-      font-size: 11px;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 10px;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-    .ot-type-listening { background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; }
-    .ot-type-reading { background: #F0FDF4; color: #15803D; border: 1px solid #BBF7D0; }
-    .ot-type-writing { background: #FAF5FF; color: #7E22CE; border: 1px solid #E9D5FF; }
-    .ot-type-grammar { background: #FFFBEB; color: #B45309; border: 1px solid #FDE68A; }
-
-    .ot-part-badge {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 12px;
-      font-weight: 700;
-      background: var(--pen-soft);
-      color: var(--pen);
-      padding: 3px 8px;
-      border-radius: 4px;
-      white-space: nowrap;
     }
 
-    .ot-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 18px;
-    }
+      /* ==================== ONLINE TESTS STYLES ==================== */
+      .ot-badge {
+        display: inline-block;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 3px 8px;
+        border-radius: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
 
-    .ot-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      transition: transform 0.15s, box-shadow 0.15s;
-    }
-    .ot-card:hover {
-      box-shadow: 0 4px 12px rgba(22, 35, 63, 0.08);
-      transform: translateY(-2px);
-    }
-    .ot-card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 10px;
-    }
-    .ot-card-title {
-      font-family: 'Source Serif 4', serif;
-      font-size: 17px;
-      font-weight: 600;
-      color: var(--ink);
-      margin: 0;
-      line-height: 1.3;
-    }
-    .ot-card-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px 12px;
-      font-size: 12px;
-      color: var(--ink-soft);
-      line-height: 1.5;
-    }
-    .ot-card-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: auto;
-      padding-top: 12px;
-      border-top: 1px solid var(--paper-line);
-    }
+      .ot-badge-draft {
+        background: #FEF3C7;
+        color: #92400E;
+        border: 1px solid #FCD34D;
+      }
 
-    .ot-section-card {
-      background: #fff;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 22px;
-      margin-bottom: 22px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    }
-    .ot-section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-    .ot-section-title-input {
-      font-family: 'Source Serif 4', serif;
-      font-size: 18px;
-      font-weight: 600;
-      border: 1px solid transparent;
-      background: transparent;
-      padding: 4px 8px;
-      border-radius: 6px;
-      color: var(--ink);
-      flex: 1;
-      min-width: 220px;
-      outline: none;
-    }
-    .ot-section-title-input:hover,
-    .ot-section-title-input:focus {
-      border-color: var(--border);
-      background: #fff;
-    }
+      .ot-badge-published {
+        background: #D1FAE5;
+        color: #065F46;
+        border: 1px solid #6EE7B7;
+      }
 
-    .ot-stimulus-box {
-      background: #F8FAFC;
-      border: 1px solid var(--paper-line);
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 18px;
-    }
-    .ot-label {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--ink-soft);
-      display: block;
-      margin-bottom: 4px;
-    }
-    .ot-textarea {
-      width: 100%;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px 10px;
-      font-family: 'Inter', sans-serif;
-      font-size: 13.5px;
-      color: var(--ink);
-      resize: vertical;
-      background: #fff;
-      outline: none;
-      box-sizing: border-box;
-    }
-    .ot-textarea:focus {
-      border-color: var(--pen);
-    }
-    .ot-input {
-      width: 100%;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px 10px;
-      font-size: 13px;
-      color: var(--ink);
-      background: #fff;
-      outline: none;
-      box-sizing: border-box;
-    }
-    .ot-input:focus {
-      border-color: var(--pen);
-    }
+      .ot-code-badge {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--pen);
+        background: var(--pen-soft);
+        padding: 2px 8px;
+        border-radius: 4px;
+      }
 
-    .ot-transcript-details {
-      margin-top: 10px;
-      background: #fff;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px 12px;
-    }
-    .ot-transcript-summary {
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--pen);
-      user-select: none;
-    }
-    .ot-transcript-pre {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 12px;
-      color: var(--ink);
-      white-space: pre-wrap;
-      max-height: 250px;
-      overflow-y: auto;
-      margin: 8px 0 0;
-      padding-top: 8px;
-      border-top: 1px dashed var(--border);
-    }
+      .ot-type-badge {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 10px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
 
-    .ot-question-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 14px;
-      transition: border-color 0.2s;
-    }
-    .ot-question-card:focus-within {
-      border-color: var(--pen);
-    }
-    .ot-q-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-    }
-    .ot-q-num {
-      font-family: 'Source Serif 4', serif;
-      font-weight: 700;
-      font-size: 14.5px;
-      color: var(--pen);
-    }
-    .ot-points-input {
-      width: 60px;
-      padding: 4px 6px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      text-align: center;
-      font-size: 12.5px;
-      outline: none;
-    }
-    .ot-points-input:focus {
-      border-color: var(--pen);
-    }
+      .ot-type-listening {
+        background: #EFF6FF;
+        color: #1D4ED8;
+        border: 1px solid #BFDBFE;
+      }
 
-    .ot-options-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-top: 4px;
-    }
-    .ot-option-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 10px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: #FAFBFC;
-      transition: background 0.15s, border-color 0.15s;
-    }
-    .ot-option-row.correct-opt {
-      background: #F0FDF4;
-      border-color: #86EFAC;
-    }
-    .ot-option-input {
-      flex: 1;
-      border: 1px solid transparent;
-      background: transparent;
-      padding: 4px 6px;
-      font-size: 13px;
-      color: var(--ink);
-      outline: none;
-      border-radius: 4px;
-    }
-    .ot-option-input:focus {
-      background: #fff;
-      border-color: var(--pen);
-    }
-    .ot-remove-opt-btn {
-      background: none;
-      border: none;
-      color: #9CA3AF;
-      cursor: pointer;
-      font-size: 12px;
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-    .ot-remove-opt-btn:hover {
-      color: #DC2626;
-      background: #FEE2E2;
-    }
-    .ot-select {
-      padding: 4px 8px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 12.5px;
-      background: #fff;
-      color: var(--ink);
-    }
+      .ot-type-reading {
+        background: #F0FDF4;
+        color: #15803D;
+        border: 1px solid #BBF7D0;
+      }
 
-    /* Refined Modern SaaS Footer */
-    .app-footer, footer {
-      margin-top: 44px;
-      padding-top: 24px;
-      padding-bottom: 24px;
-      border-top: 1px solid var(--border);
-      text-align: center;
-    }
+      .ot-type-writing {
+        background: #FAF5FF;
+        color: #7E22CE;
+        border: 1px solid #E9D5FF;
+      }
 
-    .footer-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-    }
+      .ot-type-grammar {
+        background: #FFFBEB;
+        color: #B45309;
+        border: 1px solid #FDE68A;
+      }
 
-    .footer-brand-line {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      font-size: 13px;
-    }
+      .ot-part-badge {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px;
+        font-weight: 700;
+        background: var(--pen-soft);
+        color: var(--pen);
+        padding: 3px 8px;
+        border-radius: 4px;
+        white-space: nowrap;
+      }
 
-    .footer-app-name {
-      font-family: 'Source Serif 4', serif;
-      font-weight: 600;
-      font-size: 14.5px;
-      letter-spacing: 0.15px;
-      color: var(--ink);
-    }
+      .ot-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 18px;
+      }
 
-    .footer-divider {
-      color: var(--border);
-      font-size: 12px;
-      user-select: none;
-    }
+      .ot-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        transition: transform 0.15s, box-shadow 0.15s;
+      }
 
-    .footer-status-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 11px;
-      font-weight: 500;
-      color: #047857;
-      background: #ECFDF5;
-      border: 1px solid #A7F3D0;
-      padding: 3px 10px;
-      border-radius: 9999px;
-      letter-spacing: 0.2px;
-    }
+      .ot-card:hover {
+        box-shadow: 0 4px 12px rgba(22, 35, 63, 0.08);
+        transform: translateY(-2px);
+      }
 
-    .footer-status-pill .status-dot {
-      width: 6.5px;
-      height: 6.5px;
-      border-radius: 50%;
-      background: #10B981;
-      display: inline-block;
-      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-      animation: footerPulse 2.5s infinite;
-    }
+      .ot-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+      }
 
-    @keyframes footerPulse {
-      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-      70% { transform: scale(1); box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); }
-      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-    }
+      .ot-card-title {
+        font-family: 'Source Serif 4', serif;
+        font-size: 17px;
+        font-weight: 600;
+        color: var(--ink);
+        margin: 0;
+        line-height: 1.3;
+      }
 
-    .footer-copy {
-      font-family: 'Inter', sans-serif;
-      font-size: 12px;
-      color: var(--ink-soft);
-      line-height: 1.5;
-    }
+      .ot-card-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 12px;
+        font-size: 12px;
+        color: var(--ink-soft);
+        line-height: 1.5;
+      }
 
-    /* Web Print Styles */
-    html, body {
-      overflow: visible !important;
-      height: auto !important;
-      min-height: 100% !important;
-    }
-    .report-sheet, .printable-report, .report-container {
-      overflow: visible !important;
-      height: auto !important;
-      max-height: none !important;
-      box-shadow: none !important;
-      page-break-inside: auto;
-    }
-    .report-table-wrapper, .table-responsive, .breakdown-box {
-      overflow: visible !important;
-      max-height: none !important;
-    }
+      .ot-card-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: auto;
+        padding-top: 12px;
+        border-top: 1px solid var(--paper-line);
+      }
 
-    @media print {
-      body, .report-container, .report-table-wrapper {
+      .ot-section-card {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 22px;
+        margin-bottom: 22px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      }
+
+      .ot-section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .ot-section-title-input {
+        font-family: 'Source Serif 4', serif;
+        font-size: 18px;
+        font-weight: 600;
+        border: 1px solid transparent;
+        background: transparent;
+        padding: 4px 8px;
+        border-radius: 6px;
+        color: var(--ink);
+        flex: 1;
+        min-width: 220px;
+        outline: none;
+      }
+
+      .ot-section-title-input:hover,
+      .ot-section-title-input:focus {
+        border-color: var(--border);
+        background: #fff;
+      }
+
+      .ot-stimulus-box {
+        background: #F8FAFC;
+        border: 1px solid var(--paper-line);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 18px;
+      }
+
+      .ot-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--ink-soft);
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .ot-textarea {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-family: 'Inter', sans-serif;
+        font-size: 13.5px;
+        color: var(--ink);
+        resize: vertical;
+        background: #fff;
+        outline: none;
+        box-sizing: border-box;
+      }
+
+      .ot-textarea:focus {
+        border-color: var(--pen);
+      }
+
+      .ot-input {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 13px;
+        color: var(--ink);
+        background: #fff;
+        outline: none;
+        box-sizing: border-box;
+      }
+
+      .ot-input:focus {
+        border-color: var(--pen);
+      }
+
+      .ot-transcript-details {
+        margin-top: 10px;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 12px;
+      }
+
+      .ot-transcript-summary {
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--pen);
+        user-select: none;
+      }
+
+      .ot-transcript-pre {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px;
+        color: var(--ink);
+        white-space: pre-wrap;
+        max-height: 250px;
+        overflow-y: auto;
+        margin: 8px 0 0;
+        padding-top: 8px;
+        border-top: 1px dashed var(--border);
+      }
+
+      .ot-question-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 14px;
+        transition: border-color 0.2s;
+      }
+
+      .ot-question-card:focus-within {
+        border-color: var(--pen);
+      }
+
+      .ot-q-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .ot-q-num {
+        font-family: 'Source Serif 4', serif;
+        font-weight: 700;
+        font-size: 14.5px;
+        color: var(--pen);
+      }
+
+      .ot-points-input {
+        width: 60px;
+        padding: 4px 6px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        text-align: center;
+        font-size: 12.5px;
+        outline: none;
+      }
+
+      .ot-points-input:focus {
+        border-color: var(--pen);
+      }
+
+      .ot-options-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 4px;
+      }
+
+      .ot-option-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #FAFBFC;
+        transition: background 0.15s, border-color 0.15s;
+      }
+
+      .ot-option-row.correct-opt {
+        background: #F0FDF4;
+        border-color: #86EFAC;
+      }
+
+      .ot-option-input {
+        flex: 1;
+        border: 1px solid transparent;
+        background: transparent;
+        padding: 4px 6px;
+        font-size: 13px;
+        color: var(--ink);
+        outline: none;
+        border-radius: 4px;
+      }
+
+      .ot-option-input:focus {
+        background: #fff;
+        border-color: var(--pen);
+      }
+
+      .ot-remove-opt-btn {
+        background: none;
+        border: none;
+        color: #9CA3AF;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+
+      .ot-remove-opt-btn:hover {
+        color: #DC2626;
+        background: #FEE2E2;
+      }
+
+      .ot-select {
+        padding: 4px 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 12.5px;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      /* Refined Modern SaaS Footer */
+      .app-footer,
+      footer {
+        margin-top: 44px;
+        padding-top: 24px;
+        padding-bottom: 24px;
+        border-top: 1px solid var(--border);
+        text-align: center;
+      }
+
+      .footer-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+      }
+
+      .footer-brand-line {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        font-size: 13px;
+      }
+
+      .footer-app-name {
+        font-family: 'Source Serif 4', serif;
+        font-weight: 600;
+        font-size: 14.5px;
+        letter-spacing: 0.15px;
+        color: var(--ink);
+      }
+
+      .footer-divider {
+        color: var(--border);
+        font-size: 12px;
+        user-select: none;
+      }
+
+      .footer-status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11px;
+        font-weight: 500;
+        color: #047857;
+        background: #ECFDF5;
+        border: 1px solid #A7F3D0;
+        padding: 3px 10px;
+        border-radius: 9999px;
+        letter-spacing: 0.2px;
+      }
+
+      .footer-status-pill .status-dot {
+        width: 6.5px;
+        height: 6.5px;
+        border-radius: 50%;
+        background: #10B981;
+        display: inline-block;
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+        animation: footerPulse 2.5s infinite;
+      }
+
+      @keyframes footerPulse {
+        0% {
+          transform: scale(0.95);
+          box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+        }
+
+        70% {
+          transform: scale(1);
+          box-shadow: 0 0 0 5px rgba(16, 185, 129, 0);
+        }
+
+        100% {
+          transform: scale(0.95);
+          box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+        }
+      }
+
+      .footer-copy {
+        font-family: 'Inter', sans-serif;
+        font-size: 12px;
+        color: var(--ink-soft);
+        line-height: 1.5;
+      }
+
+      /* Web Print Styles */
+      html,
+      body {
         overflow: visible !important;
         height: auto !important;
+        min-height: 100% !important;
       }
 
-      body {
-        background: #fff !important;
-        color: #000 !important;
-      }
-
-      .report-sheet, .printable-report, .report-container, .report-table-wrapper, .breakdown-box {
+      .report-sheet,
+      .printable-report,
+      .report-container {
         overflow: visible !important;
         height: auto !important;
         max-height: none !important;
+        box-shadow: none !important;
+        page-break-inside: auto;
       }
 
-      .top-nav,
-      .pending-banner,
-      .admin-modal,
-      header,
-      .mode-switch,
-      .no-print,
-      button,
-      .toolbar,
-      .dropzone,
-      textarea,
-      input,
-      select,
-      .progress-wrap,
-      .empty,
-      .student-list,
-      .student-count,
-      .edit-hint,
-      #custom-modal-overlay,
-      #custom-toast,
-      .section-add-btn,
-      .table-add-btn,
-      .line-delete-btn,
-      .badge-grid,
-      #admin-reset-modal,
-      #deadline-edit-modal,
-      .link-box,
-      .step-head,
-      .step-desc,
-      .form-group-creation,
-      footer,
-      .integrity-pills,
-      .fb-integrity-box,
-      #past-assignments-select,
-      select,
-      label {
-        display: none !important;
+      .report-table-wrapper,
+      .table-responsive,
+      .breakdown-box {
+        overflow: visible !important;
+        max-height: none !important;
       }
 
-      .wrap {
-        max-width: 100% !important;
-        padding: 0 !important;
-        margin: 0 !important;
+      @media print {
+
+        body,
+        .report-container,
+        .report-table-wrapper {
+          overflow: visible !important;
+          height: auto !important;
+        }
+
+        body {
+          background: #fff !important;
+          color: #000 !important;
+        }
+
+        .report-sheet,
+        .printable-report,
+        .report-container,
+        .report-table-wrapper,
+        .breakdown-box {
+          overflow: visible !important;
+          height: auto !important;
+          max-height: none !important;
+        }
+
+        .top-nav,
+        .pending-banner,
+        .admin-modal,
+        header,
+        .mode-switch,
+        .no-print,
+        button,
+        .toolbar,
+        .dropzone,
+        textarea,
+        input,
+        select,
+        .progress-wrap,
+        .empty,
+        .student-list,
+        .student-count,
+        .edit-hint,
+        #custom-modal-overlay,
+        #custom-toast,
+        .section-add-btn,
+        .table-add-btn,
+        .line-delete-btn,
+        .badge-grid,
+        #admin-reset-modal,
+        #deadline-edit-modal,
+        .link-box,
+        .step-head,
+        .step-desc,
+        .form-group-creation,
+        footer,
+        .integrity-pills,
+        .fb-integrity-box,
+        #past-assignments-select,
+        select,
+        label {
+          display: none !important;
+        }
+
+        .wrap {
+          max-width: 100% !important;
+          padding: 0 !important;
+          margin: 0 !important;
+        }
+
+        .step {
+          border: none !important;
+          padding: 0 !important;
+          background: transparent !important;
+          margin: 0 !important;
+        }
+
+        .step.form-group-creation {
+          display: none !important;
+        }
+
+        .print-summary {
+          display: block !important;
+          width: 100% !important;
+          page-break-after: always;
+        }
+
+        .summary-table {
+          width: 100% !important;
+          border-collapse: collapse !important;
+        }
+
+        .summary-table th,
+        .summary-table td {
+          border: 1px solid #777 !important;
+          padding: 8px 10px !important;
+        }
+
+        .line-item-wrap {
+          border: none !important;
+          background: transparent !important;
+        }
+
+        .line-item {
+          border: none !important;
+          padding: 1px 0 !important;
+          background: transparent !important;
+        }
+
+        .results {
+          display: block !important;
+          margin-left: 0 !important;
+        }
+
+        .result-card {
+          border: none !important;
+          page-break-before: always;
+          page-break-inside: avoid;
+          margin-bottom: 20px;
+        }
+
+        .result-head {
+          cursor: default !important;
+          padding: 0 0 10px 0 !important;
+        }
+
+        .result-body {
+          max-height: none !important;
+          border-top: none !important;
+          display: block !important;
+        }
+
+        .result-body-inner {
+          padding: 0 !important;
+        }
+
+        body.print-feedback-only .col-score-breakdown,
+        body.print-feedback-only .summary-score-tag,
+        body.print-feedback-only .card-score-badge,
+        body.print-feedback-only .card-score-text,
+        body.print-feedback-only .fb-score-section {
+          display: none !important;
+        }
+
+        body.print-feedback-only .summary-col-name {
+          width: 28% !important;
+        }
+
+        body.print-feedback-only .summary-col-mistakes {
+          width: 72% !important;
+        }
+
+        #mcq-section {
+          display: none !important;
+        }
+
+        body.printing-manual #portal-section {
+          display: none !important;
+        }
+
+        body.printing-portal #manual-section {
+          display: none !important;
+        }
+
+        #online-tests-tab {
+          display: none !important;
+        }
       }
 
-      .step {
-        border: none !important;
-        padding: 0 !important;
-        background: transparent !important;
-        margin: 0 !important;
+      /* ==========================================
+       ONLINE TESTS (MULTI-PART) STYLES
+       ========================================== */
+      .ot-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 16px;
+        margin-top: 20px;
       }
 
-      .step.form-group-creation {
-        display: none !important;
+      .ot-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        transition: box-shadow 0.2s, transform 0.2s;
       }
 
-      .print-summary {
-        display: block !important;
-        width: 100% !important;
-        page-break-after: always;
+      .ot-card:hover {
+        box-shadow: 0 4px 14px rgba(22, 35, 63, 0.08);
+        transform: translateY(-1px);
       }
 
-      .summary-table {
-        width: 100% !important;
-        border-collapse: collapse !important;
+      .ot-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+        margin-bottom: 12px;
       }
 
-      .summary-table th,
-      .summary-table td {
-        border: 1px solid #777 !important;
-        padding: 8px 10px !important;
+      .ot-card-title {
+        margin: 0;
+        font-family: 'Source Serif 4', serif;
+        font-size: 16.5px;
+        font-weight: 600;
+        color: var(--ink);
+        line-height: 1.25;
       }
 
-      .line-item-wrap {
-        border: none !important;
-        background: transparent !important;
+      .ot-card-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+        font-size: 12px;
+        color: var(--ink-soft);
+        margin-bottom: 14px;
       }
 
-      .line-item {
-        border: none !important;
-        padding: 1px 0 !important;
-        background: transparent !important;
+      .ot-card-actions {
+        display: flex;
+        gap: 8px;
+        padding-top: 12px;
+        border-top: 1px solid var(--paper-line);
       }
 
-      .results {
-        display: block !important;
-        margin-left: 0 !important;
+      .ot-badge {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10.5px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 2px 7px;
+        border-radius: 4px;
+        display: inline-block;
       }
 
-      .result-card {
-        border: none !important;
-        page-break-before: always;
-        page-break-inside: avoid;
+      .ot-badge-draft {
+        background: #FEF3C7;
+        color: #92400E;
+        border: 1px solid #FCD34D;
+      }
+
+      .ot-badge-published {
+        background: #D1FAE5;
+        color: #065F46;
+        border: 1px solid #A7F3D0;
+      }
+
+      .ot-code-badge {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11px;
+        font-weight: 600;
+        background: var(--pen-soft);
+        color: var(--pen);
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+
+      .ot-part-badge {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11.5px;
+        font-weight: 600;
+        background: var(--pen);
+        color: #fff;
+        padding: 3px 8px;
+        border-radius: 5px;
+        flex-shrink: 0;
+      }
+
+      .ot-type-badge {
+        font-size: 11.5px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 4px;
+        display: inline-block;
+        flex-shrink: 0;
+      }
+
+      .ot-type-listening {
+        background: #EEF2FF;
+        color: #3730A3;
+        border: 1px solid #C7D2FE;
+      }
+
+      .ot-type-reading {
+        background: #FEF3C7;
+        color: #92400E;
+        border: 1px solid #FDE68A;
+      }
+
+      .ot-type-writing {
+        background: #FCE7F3;
+        color: #9D174D;
+        border: 1px solid #FBCFE8;
+      }
+
+      .ot-type-grammar {
+        background: #DCFCE7;
+        color: #166534;
+        border: 1px solid #BBF7D0;
+      }
+
+      .ot-section-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin-bottom: 22px;
+        padding: 20px;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+      }
+
+      .ot-section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 14px;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .ot-section-title-input {
+        font-family: 'Source Serif 4', serif;
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--ink);
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 5px 10px;
+        flex: 1;
+        min-width: 180px;
+      }
+
+      .ot-stimulus-box {
+        background: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        padding: 14px;
+        margin-bottom: 16px;
+      }
+
+      .ot-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--ink-soft);
+        margin-bottom: 4px;
+      }
+
+      .ot-textarea {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 13px;
+        font-family: inherit;
+        color: var(--ink);
+        background: #fff;
+        resize: vertical;
+        line-height: 1.45;
+      }
+
+      .ot-textarea:focus,
+      .ot-input:focus,
+      .ot-section-title-input:focus {
+        outline: none;
+        border-color: var(--pen);
+        box-shadow: 0 0 0 2px rgba(29, 58, 102, 0.12);
+      }
+
+      .ot-input {
+        width: 100%;
+        padding: 7px 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 13px;
+        font-family: inherit;
+        color: var(--ink);
+        background: #fff;
+      }
+
+      .ot-select {
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 13px;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .ot-transcript-details {
+        background: #F1F5F9;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 12px;
+        margin-top: 8px;
+      }
+
+      .ot-transcript-summary {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--pen);
+        cursor: pointer;
+      }
+
+      .ot-transcript-pre {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11.5px;
+        color: var(--ink);
+        white-space: pre-wrap;
+        max-height: 220px;
+        overflow-y: auto;
+        margin-top: 8px;
+        line-height: 1.5;
+      }
+
+      .ot-questions-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .ot-question-card {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+      }
+
+      .ot-q-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .ot-q-num {
+        font-family: 'IBM Plex Mono', monospace;
+        font-weight: 700;
+        font-size: 13px;
+        color: var(--pen);
+      }
+
+      .ot-points-input {
+        width: 60px;
+        padding: 4px 6px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-weight: 600;
+        font-size: 12.5px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        text-align: center;
+      }
+
+      .ot-mcq-options-container {
+        margin-top: 8px;
+      }
+
+      .ot-options-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 4px;
+      }
+
+      .ot-option-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 8px;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        transition: background 0.15s, border-color 0.15s;
+      }
+
+      .ot-option-row.correct-opt {
+        background: #F0FDF4;
+        border-color: #86EFAC;
+      }
+
+      .ot-option-input {
+        flex: 1;
+        padding: 5px 8px;
+        font-size: 12.5px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: #fff;
+      }
+
+      .ot-remove-opt-btn {
+        border: none;
+        background: transparent;
+        color: #DC2626;
+        font-size: 13px;
+        cursor: pointer;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+
+      .ot-remove-opt-btn:hover {
+        background: #FEE2E2;
+      }
+
+      .ghost-danger {
+        color: #DC2626 !important;
+        border-color: #FCA5A5 !important;
+      }
+
+      .ghost-danger:hover {
+        background: #FEE2E2 !important;
+      }
+
+      .ot-audio-bar {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        background: #EEF2FF;
+        border: 1px solid #C7D2FE;
+        border-radius: 8px;
+        padding: 10px 14px;
         margin-bottom: 20px;
       }
 
-      .result-head {
-        cursor: default !important;
-        padding: 0 0 10px 0 !important;
+      /* Printable Reports & Diagnostic Cards */
+      .ot-diag-card {
+        background: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-left: 4px solid var(--pen);
+        border-radius: 6px;
+        padding: 12px 14px;
+        margin-top: 10px;
+        font-size: 13px;
+        line-height: 1.5;
       }
 
-      .result-body {
-        max-height: none !important;
-        border-top: none !important;
-        display: block !important;
+      .ot-diag-listening {
+        border-left-color: #4F46E5 !important;
+        background: #EEF2FF !important;
       }
 
-      .result-body-inner {
-        padding: 0 !important;
+      .ot-diag-reading {
+        border-left-color: #D97706 !important;
+        background: #FFFBEB !important;
       }
 
-      body.print-feedback-only .col-score-breakdown,
-      body.print-feedback-only .summary-score-tag,
-      body.print-feedback-only .card-score-badge,
-      body.print-feedback-only .card-score-text,
-      body.print-feedback-only .fb-score-section {
-        display: none !important;
+      .ot-diag-writing {
+        border-left-color: #BE185D !important;
+        background: #FDF2F8 !important;
       }
 
-      body.print-feedback-only .summary-col-name {
-        width: 28% !important;
+      .ot-diag-grammar {
+        border-left-color: #059669 !important;
+        background: #ECFDF5 !important;
       }
 
-      body.print-feedback-only .summary-col-mistakes {
-        width: 72% !important;
+      .ot-score-pill {
+        font-family: 'IBM Plex Mono', monospace;
+        font-weight: 700;
+        font-size: 13px;
+        padding: 3px 8px;
+        border-radius: 6px;
+        background: var(--pen-soft);
+        color: var(--pen);
+        display: inline-block;
       }
 
-      #mcq-section {
-        display: none !important;
+      .ot-score-override-input {
+        width: 65px;
+        padding: 4px 6px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-weight: 700;
+        font-size: 13px;
+        text-align: center;
+        background: #fff;
       }
 
-      body.printing-manual #portal-section {
-        display: none !important;
+      .ot-score-override-input:focus {
+        outline: none;
+        border-color: var(--pen);
+        box-shadow: 0 0 0 2px rgba(29, 58, 102, 0.15);
       }
 
-      body.printing-portal #manual-section {
-        display: none !important;
+      /* Print Styles with Strict Zero-Scrollbars */
+      #ot-print-container {
+        display: none;
       }
 
-      #online-tests-tab {
-        display: none !important;
+      @media print {
+
+        html,
+        body,
+        .report-container,
+        .report-sheet,
+        .breakdown-box,
+        .ot-print-area,
+        .ot-modal-body,
+        #ot-print-container {
+          overflow: visible !important;
+          height: auto !important;
+          max-height: none !important;
+          background: #fff !important;
+        }
+
+        body.printing-ot-full .wrap,
+        body.printing-ot-full .top-nav,
+        body.printing-ot-full header,
+        body.printing-ot-full .mode-switch,
+        body.printing-ot-full #portal-section,
+        body.printing-ot-full #manual-section,
+        body.printing-ot-full #mcq-section,
+        body.printing-ot-full #online-tests-tab,
+        body.printing-ot-full footer,
+        body.printing-ot-feedback .wrap,
+        body.printing-ot-feedback .top-nav,
+        body.printing-ot-feedback header,
+        body.printing-ot-feedback .mode-switch,
+        body.printing-ot-feedback #portal-section,
+        body.printing-ot-feedback #manual-section,
+        body.printing-ot-feedback #mcq-section,
+        body.printing-ot-feedback #online-tests-tab,
+        body.printing-ot-feedback footer {
+          display: none !important;
+        }
+
+        body.printing-ot-full #ot-print-container,
+        body.printing-ot-feedback #ot-print-container {
+          display: block !important;
+          width: 100% !important;
+          padding: 0 !important;
+          margin: 0 !important;
+        }
+
+        body.printing-ot-feedback .ot-score-col,
+        body.printing-ot-feedback .ot-score-pill,
+        body.printing-ot-feedback .ot-score-badge,
+        body.printing-ot-feedback .ot-score-cell,
+        body.printing-ot-feedback .ot-score-override-input {
+          display: none !important;
+        }
+
+        .ot-print-page-break {
+          page-break-after: always;
+        }
       }
-    }
-
-    /* ==========================================
-       ONLINE TESTS (MULTI-PART) STYLES
-       ========================================== */
-    .ot-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 16px;
-      margin-top: 20px;
-    }
-
-    .ot-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 18px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      transition: box-shadow 0.2s, transform 0.2s;
-    }
-
-    .ot-card:hover {
-      box-shadow: 0 4px 14px rgba(22, 35, 63, 0.08);
-      transform: translateY(-1px);
-    }
-
-    .ot-card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-
-    .ot-card-title {
-      margin: 0;
-      font-family: 'Source Serif 4', serif;
-      font-size: 16.5px;
-      font-weight: 600;
-      color: var(--ink);
-      line-height: 1.25;
-    }
-
-    .ot-card-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 12px;
-      font-size: 12px;
-      color: var(--ink-soft);
-      margin-bottom: 14px;
-    }
-
-    .ot-card-actions {
-      display: flex;
-      gap: 8px;
-      padding-top: 12px;
-      border-top: 1px solid var(--paper-line);
-    }
-
-    .ot-badge {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 10.5px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      padding: 2px 7px;
-      border-radius: 4px;
-      display: inline-block;
-    }
-
-    .ot-badge-draft {
-      background: #FEF3C7;
-      color: #92400E;
-      border: 1px solid #FCD34D;
-    }
-
-    .ot-badge-published {
-      background: #D1FAE5;
-      color: #065F46;
-      border: 1px solid #A7F3D0;
-    }
-
-    .ot-code-badge {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 11px;
-      font-weight: 600;
-      background: var(--pen-soft);
-      color: var(--pen);
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-
-    .ot-part-badge {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 11.5px;
-      font-weight: 600;
-      background: var(--pen);
-      color: #fff;
-      padding: 3px 8px;
-      border-radius: 5px;
-      flex-shrink: 0;
-    }
-
-    .ot-type-badge {
-      font-size: 11.5px;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 4px;
-      display: inline-block;
-      flex-shrink: 0;
-    }
-
-    .ot-type-listening {
-      background: #EEF2FF;
-      color: #3730A3;
-      border: 1px solid #C7D2FE;
-    }
-
-    .ot-type-reading {
-      background: #FEF3C7;
-      color: #92400E;
-      border: 1px solid #FDE68A;
-    }
-
-    .ot-type-writing {
-      background: #FCE7F3;
-      color: #9D174D;
-      border: 1px solid #FBCFE8;
-    }
-
-    .ot-type-grammar {
-      background: #DCFCE7;
-      color: #166534;
-      border: 1px solid #BBF7D0;
-    }
-
-    .ot-section-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      margin-bottom: 22px;
-      padding: 20px;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-    }
-
-    .ot-section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 14px;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    .ot-section-title-input {
-      font-family: 'Source Serif 4', serif;
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--ink);
-      background: #fff;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 5px 10px;
-      flex: 1;
-      min-width: 180px;
-    }
-
-    .ot-stimulus-box {
-      background: #F8FAFC;
-      border: 1px solid #E2E8F0;
-      border-radius: 8px;
-      padding: 14px;
-      margin-bottom: 16px;
-    }
-
-    .ot-label {
-      display: block;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--ink-soft);
-      margin-bottom: 4px;
-    }
-
-    .ot-textarea {
-      width: 100%;
-      padding: 8px 10px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 13px;
-      font-family: inherit;
-      color: var(--ink);
-      background: #fff;
-      resize: vertical;
-      line-height: 1.45;
-    }
-
-    .ot-textarea:focus,
-    .ot-input:focus,
-    .ot-section-title-input:focus {
-      outline: none;
-      border-color: var(--pen);
-      box-shadow: 0 0 0 2px rgba(29, 58, 102, 0.12);
-    }
-
-    .ot-input {
-      width: 100%;
-      padding: 7px 10px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 13px;
-      font-family: inherit;
-      color: var(--ink);
-      background: #fff;
-    }
-
-    .ot-select {
-      padding: 6px 10px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 13px;
-      background: #fff;
-      color: var(--ink);
-    }
-
-    .ot-transcript-details {
-      background: #F1F5F9;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px 12px;
-      margin-top: 8px;
-    }
-
-    .ot-transcript-summary {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--pen);
-      cursor: pointer;
-    }
-
-    .ot-transcript-pre {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 11.5px;
-      color: var(--ink);
-      white-space: pre-wrap;
-      max-height: 220px;
-      overflow-y: auto;
-      margin-top: 8px;
-      line-height: 1.5;
-    }
-
-    .ot-questions-list {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .ot-question-card {
-      background: #fff;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-    }
-
-    .ot-q-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .ot-q-num {
-      font-family: 'IBM Plex Mono', monospace;
-      font-weight: 700;
-      font-size: 13px;
-      color: var(--pen);
-    }
-
-    .ot-points-input {
-      width: 60px;
-      padding: 4px 6px;
-      font-family: 'IBM Plex Mono', monospace;
-      font-weight: 600;
-      font-size: 12.5px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      text-align: center;
-    }
-
-    .ot-mcq-options-container {
-      margin-top: 8px;
-    }
-
-    .ot-options-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-top: 4px;
-    }
-
-    .ot-option-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 4px 8px;
-      border-radius: 6px;
-      border: 1px solid transparent;
-      transition: background 0.15s, border-color 0.15s;
-    }
-
-    .ot-option-row.correct-opt {
-      background: #F0FDF4;
-      border-color: #86EFAC;
-    }
-
-    .ot-option-input {
-      flex: 1;
-      padding: 5px 8px;
-      font-size: 12.5px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      background: #fff;
-    }
-
-    .ot-remove-opt-btn {
-      border: none;
-      background: transparent;
-      color: #DC2626;
-      font-size: 13px;
-      cursor: pointer;
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-
-    .ot-remove-opt-btn:hover {
-      background: #FEE2E2;
-    }
-
-    .ghost-danger {
-      color: #DC2626 !important;
-      border-color: #FCA5A5 !important;
-    }
-
-    .ghost-danger:hover {
-      background: #FEE2E2 !important;
-    }
-
-    .ot-audio-bar {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      background: #EEF2FF;
-      border: 1px solid #C7D2FE;
-      border-radius: 8px;
-      padding: 10px 14px;
-      margin-bottom: 20px;
-    }
-
-    /* Printable Reports & Diagnostic Cards */
-    .ot-diag-card {
-      background: #F8FAFC;
-      border: 1px solid #E2E8F0;
-      border-left: 4px solid var(--pen);
-      border-radius: 6px;
-      padding: 12px 14px;
-      margin-top: 10px;
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    .ot-diag-listening {
-      border-left-color: #4F46E5 !important;
-      background: #EEF2FF !important;
-    }
-
-    .ot-diag-reading {
-      border-left-color: #D97706 !important;
-      background: #FFFBEB !important;
-    }
-
-    .ot-diag-writing {
-      border-left-color: #BE185D !important;
-      background: #FDF2F8 !important;
-    }
-
-    .ot-diag-grammar {
-      border-left-color: #059669 !important;
-      background: #ECFDF5 !important;
-    }
-
-    .ot-score-pill {
-      font-family: 'IBM Plex Mono', monospace;
-      font-weight: 700;
-      font-size: 13px;
-      padding: 3px 8px;
-      border-radius: 6px;
-      background: var(--pen-soft);
-      color: var(--pen);
-      display: inline-block;
-    }
-
-    .ot-score-override-input {
-      width: 65px;
-      padding: 4px 6px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      font-family: 'IBM Plex Mono', monospace;
-      font-weight: 700;
-      font-size: 13px;
-      text-align: center;
-      background: #fff;
-    }
-
-    .ot-score-override-input:focus {
-      outline: none;
-      border-color: var(--pen);
-      box-shadow: 0 0 0 2px rgba(29, 58, 102, 0.15);
-    }
-
-    /* Print Styles with Strict Zero-Scrollbars */
-    #ot-print-container {
-      display: none;
-    }
-
-    @media print {
-      html, body, .report-container, .report-sheet, .breakdown-box, .ot-print-area, .ot-modal-body, #ot-print-container {
-        overflow: visible !important;
-        height: auto !important;
-        max-height: none !important;
-        background: #fff !important;
-      }
-
-      body.printing-ot-full .wrap,
-      body.printing-ot-full .top-nav,
-      body.printing-ot-full header,
-      body.printing-ot-full .mode-switch,
-      body.printing-ot-full #portal-section,
-      body.printing-ot-full #manual-section,
-      body.printing-ot-full #mcq-section,
-      body.printing-ot-full #online-tests-tab,
-      body.printing-ot-full footer,
-      body.printing-ot-feedback .wrap,
-      body.printing-ot-feedback .top-nav,
-      body.printing-ot-feedback header,
-      body.printing-ot-feedback .mode-switch,
-      body.printing-ot-feedback #portal-section,
-      body.printing-ot-feedback #manual-section,
-      body.printing-ot-feedback #mcq-section,
-      body.printing-ot-feedback #online-tests-tab,
-      body.printing-ot-feedback footer {
-        display: none !important;
-      }
-
-      body.printing-ot-full #ot-print-container,
-      body.printing-ot-feedback #ot-print-container {
-        display: block !important;
-        width: 100% !important;
-        padding: 0 !important;
-        margin: 0 !important;
-      }
-
-      body.printing-ot-feedback .ot-score-col,
-      body.printing-ot-feedback .ot-score-pill,
-      body.printing-ot-feedback .ot-score-badge,
-      body.printing-ot-feedback .ot-score-cell,
-      body.printing-ot-feedback .ot-score-override-input {
-        display: none !important;
-      }
-
-      .ot-print-page-break {
-        page-break-after: always;
-      }
-    }
   </style>
 </head>
 
@@ -2097,10 +2199,12 @@
     </header>
 
     <div class="mode-switch">
-      <button class="mode-btn active" id="btn-mode-portal" onclick="switchMode('portal')">🔗 Student Submission Portal (Live)</button>
+      <button class="mode-btn active" id="btn-mode-portal" onclick="switchMode('portal')">🔗 Student Submission Portal
+        (Live)</button>
       <button class="mode-btn" id="btn-mode-manual" onclick="switchMode('manual')">📂 Manual Batch Upload</button>
       <button class="mode-btn" id="btn-mode-mcq" onclick="switchMode('mcq')">🎧 Listening / MCQ Tests</button>
-      <button class="mode-btn tab-btn" id="btn-mode-online-tests" data-tab="online-tests-tab" onclick="switchMode('online-tests')">📝 Online Tests</button>
+      <button class="mode-btn tab-btn" id="btn-mode-online-tests" data-tab="online-tests-tab"
+        onclick="switchMode('online-tests')">📝 Online Tests</button>
     </div>
 
     <div id="portal-section">
@@ -2160,11 +2264,16 @@
         <button class="primary" onclick="createAssignmentLink()">🔗 Generate Student Submission Link</button>
 
         <div style="margin-left: 38px; margin-top: 24px; border-top: 1px solid var(--paper-line); padding-top: 16px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+          <div
+            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
             <label style="font-size: 13px; font-weight: 600; margin: 0;">📂 View Past Submissions & Results:</label>
             <div style="display: inline-flex; gap: 4px; background: var(--pen-soft); padding: 2px; border-radius: 6px;">
-              <button type="button" id="btn-sub-view-essay" class="ghost" style="font-size: 11.5px; padding: 4px 10px; font-weight: 600; background: #fff; border-radius: 4px; color: var(--pen); box-shadow: 0 1px 2px rgba(0,0,0,0.06);" onclick="switchSubmissionsView('essay')">📝 Homework Packages</button>
-              <button type="button" id="btn-sub-view-mcq" class="ghost" style="font-size: 11.5px; padding: 4px 10px; font-weight: 600; background: transparent; border-radius: 4px; color: var(--ink-soft);" onclick="switchSubmissionsView('mcq')">🎧 MCQ Assessments</button>
+              <button type="button" id="btn-sub-view-essay" class="ghost"
+                style="font-size: 11.5px; padding: 4px 10px; font-weight: 600; background: #fff; border-radius: 4px; color: var(--pen); box-shadow: 0 1px 2px rgba(0,0,0,0.06);"
+                onclick="switchSubmissionsView('essay')">📝 Homework Packages</button>
+              <button type="button" id="btn-sub-view-mcq" class="ghost"
+                style="font-size: 11.5px; padding: 4px 10px; font-weight: 600; background: transparent; border-radius: 4px; color: var(--ink-soft);"
+                onclick="switchSubmissionsView('mcq')">🎧 MCQ Assessments</button>
             </div>
           </div>
           <select id="past-assignments-select" onchange="loadSelectedAssignment(this.value)"
@@ -2186,14 +2295,18 @@
             <h2 class="step-title" id="live-portal-title" style="margin-bottom: 4px;">Live Submissions</h2>
             <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
               <span style="font-size: 12.5px; color: var(--ink-soft);" id="live-portal-deadline-sub"></span>
-              <button type="button" class="ghost" id="portal-btn-edit-deadline" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;"
-                onclick="openDeadlineEditModal()">✏️ Edit Deadline</button>
-              <button type="button" class="ghost" id="portal-btn-manage-bundle" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;"
-                onclick="openBundleManagerModal()">⚙️ Manage Package Tasks</button>
+              <button type="button" class="ghost" id="portal-btn-edit-deadline"
+                style="padding: 2px 8px; font-size: 11px; border-radius: 4px;" onclick="openDeadlineEditModal()">✏️ Edit
+                Deadline</button>
+              <button type="button" class="ghost" id="portal-btn-manage-bundle"
+                style="padding: 2px 8px; font-size: 11px; border-radius: 4px;" onclick="openBundleManagerModal()">⚙️
+                Manage Package Tasks</button>
               <button type="button" class="ghost ghost-danger" id="portal-btn-delete-form"
                 style="padding: 2px 8px; font-size: 11px; border-radius: 4px;" onclick="deleteActiveAssignment()">🗑️
                 Delete Form</button>
-              <button type="button" id="btn-delete-mcq-test" class="ghost" style="display: none; color: var(--danger, #dc2626); border-color: rgba(220, 38, 38, 0.3); font-size: 13px; padding: 6px 12px;" onclick="confirmDeleteCurrentMcqTest()">🗑️ Delete Test</button>
+              <button type="button" id="btn-delete-mcq-test" class="ghost"
+                style="display: none; color: var(--danger, #dc2626); border-color: rgba(220, 38, 38, 0.3); font-size: 13px; padding: 6px 12px;"
+                onclick="confirmDeleteCurrentMcqTest()">🗑️ Delete Test</button>
             </div>
             <div style="font-size: 12px; color: #059669; font-weight: 600; margin-top: 4px;">🟢 Live syncing —
               auto-updating as students submit</div>
@@ -2202,7 +2315,8 @@
             <button class="ghost" onclick="printReport('full')">📄 Full Report (With Marks)</button>
             <button class="ghost ghost-feedback" onclick="printReport('feedback')">📝 Feedback Report (No
               Marks)</button>
-            <button class="ghost btn-view-logs" id="portal-btn-logs" onclick="toggleSubmissionLogsModal()" style="font-weight: 600;">🕒 View Submission Logs</button>
+            <button class="ghost btn-view-logs" id="portal-btn-logs" onclick="toggleSubmissionLogsModal()"
+              style="font-weight: 600;">🕒 View Submission Logs</button>
           </div>
         </div>
 
@@ -2334,14 +2448,16 @@
           <div class="step-num">1</div>
           <h2 class="step-title">Create Listening / MCQ Test with AI</h2>
         </div>
-        <p class="step-desc">Upload your test paper PDF and marking scheme. For listening assessments, attach an audio track. AI will automatically formulate and organize multiple-choice questions.</p>
+        <p class="step-desc">Upload your test paper PDF and marking scheme. For listening assessments, attach an audio
+          track. AI will automatically formulate and organize multiple-choice questions.</p>
 
         <div style="margin-left: 38px; margin-top: 16px;">
           <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Test / Exam Title</label>
           <input type="text" id="mcq-title-input" placeholder="e.g. Unit 3 Listening & Reading Assessment"
             style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 14px;" />
 
-          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Submission Deadline (12-Hour AM/PM — Cairo Time)</label>
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Submission Deadline
+            (12-Hour AM/PM — Cairo Time)</label>
           <div class="picker-12h-wrap">
             <input type="date" id="mcq-deadline-date" style="flex: 2; min-width: 140px;" />
             <select id="mcq-deadline-hour" style="flex: 1;">
@@ -2371,33 +2487,41 @@
             </select>
           </div>
 
-          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Test Paper PDF (Required)</label>
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Test Paper PDF
+            (Required)</label>
           <div class="dropzone" id="mcq-pdf-dz" style="margin-left: 0; padding: 16px;">
             <div><b>Drop test paper PDF here</b> or click to browse</div>
-            <span style="font-size:11.5px; color:var(--ink-soft); display:block; margin-top:4px;">(Supports .pdf files)</span>
+            <span style="font-size:11.5px; color:var(--ink-soft); display:block; margin-top:4px;">(Supports .pdf
+              files)</span>
           </div>
           <input type="file" id="mcq-pdf-file" accept=".pdf" style="display:none;" />
           <div class="badge-grid" id="mcq-pdf-badge" style="margin-left: 0; margin-bottom: 14px;"></div>
 
-          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Marking Scheme / Answer Key (File or Text Required)</label>
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Marking Scheme / Answer
+            Key (File or Text Required)</label>
           <div class="dropzone" id="mcq-scheme-dz" style="margin-left: 0; padding: 16px;">
             <div><b>Drop marking scheme files or photos here</b> or click to browse</div>
-            <span style="font-size:11.5px; color:var(--ink-soft); display:block; margin-top:4px;">(Supports .pdf, .png, .jpg, .docx, .txt)</span>
+            <span style="font-size:11.5px; color:var(--ink-soft); display:block; margin-top:4px;">(Supports .pdf, .png,
+              .jpg, .docx, .txt)</span>
           </div>
-          <input type="file" id="mcq-scheme-file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp" multiple style="display:none;" />
+          <input type="file" id="mcq-scheme-file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp" multiple
+            style="display:none;" />
           <div class="badge-grid" id="mcq-scheme-badges" style="margin-left: 0; margin-bottom: 6px;"></div>
           <textarea id="mcq-scheme-text" placeholder="Or paste marking scheme / answer key criteria here..."
             style="margin-left: 0; margin-bottom: 14px; min-height: 70px;"></textarea>
 
-          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Audio Track (Optional for Reading, Required for Listening)</label>
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Audio Track (Optional for
+            Reading, Required for Listening)</label>
           <div class="dropzone" id="mcq-audio-dz" style="margin-left: 0; padding: 16px;">
             <div><b>Drop listening audio track here</b> or click to browse</div>
-            <span style="font-size:11.5px; color:var(--ink-soft); display:block; margin-top:4px;">(Supports .mp3, .wav, .m4a, .ogg)</span>
+            <span style="font-size:11.5px; color:var(--ink-soft); display:block; margin-top:4px;">(Supports .mp3, .wav,
+              .m4a, .ogg)</span>
           </div>
           <input type="file" id="mcq-audio-file" accept=".mp3,.wav,.m4a,.ogg,audio/*" style="display:none;" />
           <div class="badge-grid" id="mcq-audio-badge" style="margin-left: 0; margin-bottom: 14px;"></div>
 
-          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Max Audio Plays per Student (0 = Unlimited)</label>
+          <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Max Audio Plays per
+            Student (0 = Unlimited)</label>
           <input type="number" id="mcq-max-plays" min="0" max="100" value="0"
             style="width: 140px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13.5px; margin-bottom: 18px; background: #fff;" />
         </div>
@@ -2414,24 +2538,30 @@
 
       <!-- REVIEW & PUBLISH CARD -->
       <div class="step" id="mcq-review-card" style="display: none;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+        <div
+          style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
           <div>
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
               <h2 class="step-title" id="mcq-review-title" style="margin: 0;">MCQ Test Review</h2>
               <span id="mcq-review-status" class="pill-badge pill-amber">Draft</span>
-              <span id="mcq-autosave-indicator" style="font-size: 12px; font-weight: 600; color: #059669; display: none;">Saved</span>
+              <span id="mcq-autosave-indicator"
+                style="font-size: 12px; font-weight: 600; color: #059669; display: none;">Saved</span>
             </div>
-            <p class="step-desc" style="margin: 4px 0 0 0;">Review generated questions, adjust correct choices, edit prompts or marks, and publish the live student link.</p>
+            <p class="step-desc" style="margin: 4px 0 0 0;">Review generated questions, adjust correct choices, edit
+              prompts or marks, and publish the live student link.</p>
           </div>
           <div style="display: flex; gap: 8px;">
             <button type="button" class="ghost" onclick="resetMcqCreationForm()">↩ Create Another Test</button>
-            <button type="button" class="primary" id="mcq-publish-btn" onclick="publishMcqTest()">🚀 Publish Test Link</button>
+            <button type="button" class="primary" id="mcq-publish-btn" onclick="publishMcqTest()">🚀 Publish Test
+              Link</button>
           </div>
         </div>
 
         <!-- Audio Player Preview -->
-        <div id="mcq-preview-audio-container" style="display: none; background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 20px;">
-          <div style="font-size: 12.5px; font-weight: 600; color: var(--pen); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+        <div id="mcq-preview-audio-container"
+          style="display: none; background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 20px;">
+          <div
+            style="font-size: 12.5px; font-weight: 600; color: var(--pen); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
             <span>🎧 Listening Audio Preview (Signed 1-Hour Stream)</span>
           </div>
           <audio id="mcq-preview-audio" controls style="width: 100%; height: 38px; outline: none;"></audio>
@@ -2440,20 +2570,24 @@
         <!-- Published Shareable Link Box -->
         <div class="link-box" id="mcq-published-link-box" style="display: none; margin-bottom: 20px;">
           <div>
-            <div style="font-size: 11.5px; font-weight: bold; color: #065F46; text-transform: uppercase; margin-bottom: 2px;">
+            <div
+              style="font-size: 11.5px; font-weight: bold; color: #065F46; text-transform: uppercase; margin-bottom: 2px;">
               Shareable Student Test Link:
             </div>
             <div class="link-text" id="mcq-published-link-url"></div>
           </div>
-          <button class="ghost" style="background:#fff; flex-shrink: 0;" onclick="copyMcqPublishedLink()">📋 Copy Link</button>
+          <button class="ghost" style="background:#fff; flex-shrink: 0;" onclick="copyMcqPublishedLink()">📋 Copy
+            Link</button>
         </div>
 
         <!-- Questions Editor Container -->
         <div id="mcq-questions-editor" style="display: flex; flex-direction: column; gap: 16px;"></div>
 
         <!-- Footer Actions -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; gap: 12px;">
-          <button type="button" class="ghost" onclick="addBlankMcqQuestion()" style="font-weight: 600; border-style: dashed; padding: 9px 18px;">
+        <div
+          style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; gap: 12px;">
+          <button type="button" class="ghost" onclick="addBlankMcqQuestion()"
+            style="font-weight: 600; border-style: dashed; padding: 9px 18px;">
             ➕ Add Question
           </button>
           <button type="button" class="primary" id="mcq-publish-btn-bottom" onclick="publishMcqTest()">
@@ -2467,28 +2601,36 @@
     <section id="online-tests-tab" class="tab-pane" style="display: none;">
       <!-- 1. List View -->
       <div id="online-tests-list-view">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
+        <div
+          style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
           <div>
-            <h2 style="font-family: 'Source Serif 4', serif; font-size: 24px; color: var(--ink); margin: 0 0 6px 0;">Online Multi-Part Tests</h2>
-            <p style="font-size: 13.5px; color: var(--ink-soft); margin: 0;">Comprehensive Cambridge, IELTS, and GCSE digital tests with reading, listening, writing, and grammar sections.</p>
+            <h2 style="font-family: 'Source Serif 4', serif; font-size: 24px; color: var(--ink); margin: 0 0 6px 0;">
+              Online Multi-Part Tests</h2>
+            <p style="font-size: 13.5px; color: var(--ink-soft); margin: 0;">Comprehensive Cambridge, IELTS, and GCSE
+              digital tests with reading, listening, writing, and grammar sections.</p>
           </div>
-          <button type="button" class="primary" onclick="openOnlineTestCreateModal()" style="display: flex; align-items: center; gap: 6px; padding: 10px 18px; font-weight: 600;">
+          <button type="button" class="primary" onclick="openOnlineTestCreateModal()"
+            style="display: flex; align-items: center; gap: 6px; padding: 10px 18px; font-weight: 600;">
             <span>➕</span> Create New Online Test
           </button>
         </div>
 
-        <div id="online-tests-loading" style="display: none; padding: 36px; text-align: center; color: var(--ink-soft);">
+        <div id="online-tests-loading"
+          style="display: none; padding: 36px; text-align: center; color: var(--ink-soft);">
           <div style="font-size: 24px; margin-bottom: 8px;">⏳</div>
           <div style="font-size: 14px;">Loading tests...</div>
         </div>
 
-        <div id="online-tests-empty" style="display: none; text-align: center; padding: 50px 20px; background: var(--card); border: 1px dashed var(--border); border-radius: 12px;">
+        <div id="online-tests-empty"
+          style="display: none; text-align: center; padding: 50px 20px; background: var(--card); border: 1px dashed var(--border); border-radius: 12px;">
           <div style="font-size: 36px; margin-bottom: 12px;">📝</div>
-          <h3 style="font-family: 'Source Serif 4', serif; font-size: 18px; color: var(--ink); margin: 0 0 6px 0;">No Online Tests Yet</h3>
+          <h3 style="font-family: 'Source Serif 4', serif; font-size: 18px; color: var(--ink); margin: 0 0 6px 0;">No
+            Online Tests Yet</h3>
           <p style="font-size: 13.5px; color: var(--ink-soft); max-width: 440px; margin: 0 auto 18px auto;">
             Generate multi-part online tests directly from your exam papers and marking schemes with AI extraction.
           </p>
-          <button type="button" class="primary" onclick="openOnlineTestCreateModal()">+ Create Your First Online Test</button>
+          <button type="button" class="primary" onclick="openOnlineTestCreateModal()">+ Create Your First Online
+            Test</button>
         </div>
 
         <div id="online-tests-grid" class="ot-grid"></div>
@@ -2496,41 +2638,56 @@
 
       <!-- 2. Review & Inline Editing Canvas -->
       <div id="online-test-review-canvas" style="display: none;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 14px; flex-wrap: wrap; gap: 12px;">
-          <button type="button" class="ghost" onclick="backToOnlineTestsList()" style="padding: 7px 14px; font-size: 13px; font-weight: 600;">
+        <div
+          style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 14px; flex-wrap: wrap; gap: 12px;">
+          <button type="button" class="ghost" onclick="backToOnlineTestsList()"
+            style="padding: 7px 14px; font-size: 13px; font-weight: 600;">
             ← Back to Tests List
           </button>
           <div style="display: flex; align-items: center; gap: 14px;">
-            <span id="ot-autosave-indicator" style="font-size: 12px; font-family: 'IBM Plex Mono', monospace; color: #059669; opacity: 0.8; transition: opacity 0.3s;">Autosaved ✓</span>
-            <button type="button" class="primary" id="btn-publish-online-test" onclick="publishOnlineTest()" style="padding: 8px 18px; font-size: 13.5px; font-weight: 600;">
+            <span id="ot-autosave-indicator"
+              style="font-size: 12px; font-family: 'IBM Plex Mono', monospace; color: #059669; opacity: 0.8; transition: opacity 0.3s;">Autosaved
+              ✓</span>
+            <button type="button" class="primary" id="btn-publish-online-test" onclick="publishOnlineTest()"
+              style="padding: 8px 18px; font-size: 13.5px; font-weight: 600;">
               🚀 Publish Test
             </button>
           </div>
         </div>
 
-        <div id="online-tests-review-loading" style="display: none; padding: 30px; text-align: center; color: var(--ink-soft);">
+        <div id="online-tests-review-loading"
+          style="display: none; padding: 30px; text-align: center; color: var(--ink-soft);">
           <div>⏳ Loading test details...</div>
         </div>
 
         <!-- Canvas Header Card -->
-        <div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 20px;">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+        <div
+          style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 20px;">
+          <div
+            style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
             <div>
               <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                 <span id="ot-review-status-badge" class="ot-badge ot-badge-draft">Draft</span>
                 <span class="ot-code-badge" id="ot-review-code">CODE</span>
               </div>
-              <h2 id="ot-review-title" style="font-family: 'Source Serif 4', serif; font-size: 22px; margin: 0 0 6px 0; color: var(--ink);">Test Title</h2>
+              <h2 id="ot-review-title"
+                style="font-family: 'Source Serif 4', serif; font-size: 22px; margin: 0 0 6px 0; color: var(--ink);">
+                Test Title</h2>
             </div>
             <div style="text-align: right; background: var(--pen-soft); padding: 8px 14px; border-radius: 8px;">
-              <div style="font-size: 11px; font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; color: var(--pen); font-weight: 600;">Total Marks</div>
-              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 700; color: var(--pen);" id="ot-review-total-marks">0</div>
+              <div
+                style="font-size: 11px; font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; color: var(--pen); font-weight: 600;">
+                Total Marks</div>
+              <div
+                style="font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 700; color: var(--pen);"
+                id="ot-review-total-marks">0</div>
             </div>
           </div>
 
           <!-- Audio Preview Bar -->
           <div id="ot-review-audio-bar" class="ot-audio-bar" style="display: none; margin-top: 16px; margin-bottom: 0;">
-            <div style="font-size: 12.5px; font-weight: 600; color: var(--pen); display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+            <div
+              style="font-size: 12.5px; font-weight: 600; color: var(--pen); display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
               <span>🎧 Test Audio Preview:</span>
             </div>
             <audio id="ot-review-audio-player" controls style="width: 100%; height: 38px; outline: none;"></audio>
@@ -2543,38 +2700,52 @@
 
       <!-- 3. Submissions Table View -->
       <div id="online-test-submissions-view" style="display: none;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 14px; flex-wrap: wrap; gap: 12px;">
-          <button type="button" class="ghost" onclick="backToOnlineTestsList()" style="padding: 7px 14px; font-size: 13px; font-weight: 600;">
+        <div
+          style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 14px; flex-wrap: wrap; gap: 12px;">
+          <button type="button" class="ghost" onclick="backToOnlineTestsList()"
+            style="padding: 7px 14px; font-size: 13px; font-weight: 600;">
             ← Back to Tests List
           </button>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <button type="button" class="ghost" onclick="refreshOnlineTestSubmissions()" style="padding: 7px 14px; font-size: 13px; font-weight: 600;">
+            <button type="button" class="ghost" onclick="refreshOnlineTestSubmissions()"
+              style="padding: 7px 14px; font-size: 13px; font-weight: 600;">
               🔄 Refresh Attempts
             </button>
           </div>
         </div>
 
-        <div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 20px;">
+        <div
+          style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
             <div>
-              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase; color: var(--pen); font-weight: 600; margin-bottom: 4px;">Student Submissions</div>
-              <h2 id="ot-submissions-test-title" style="font-family: 'Source Serif 4', serif; font-size: 20px; margin: 0; color: var(--ink);">Test Submissions</h2>
+              <div
+                style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase; color: var(--pen); font-weight: 600; margin-bottom: 4px;">
+                Student Submissions</div>
+              <h2 id="ot-submissions-test-title"
+                style="font-family: 'Source Serif 4', serif; font-size: 20px; margin: 0; color: var(--ink);">Test
+                Submissions</h2>
             </div>
-            <div id="ot-submissions-count-badge" class="ot-code-badge" style="font-size: 13px; padding: 5px 12px;">0 Attempts</div>
+            <div id="ot-submissions-count-badge" class="ot-code-badge" style="font-size: 13px; padding: 5px 12px;">0
+              Attempts</div>
           </div>
         </div>
 
-        <div id="ot-submissions-loading" style="display: none; padding: 36px; text-align: center; color: var(--ink-soft);">
+        <div id="ot-submissions-loading"
+          style="display: none; padding: 36px; text-align: center; color: var(--ink-soft);">
           <div>⏳ Loading submissions...</div>
         </div>
 
-        <div id="ot-submissions-empty" style="display: none; text-align: center; padding: 40px 20px; background: var(--card); border: 1px dashed var(--border); border-radius: 10px;">
+        <div id="ot-submissions-empty"
+          style="display: none; text-align: center; padding: 40px 20px; background: var(--card); border: 1px dashed var(--border); border-radius: 10px;">
           <div style="font-size: 32px; margin-bottom: 8px;">👥</div>
-          <h3 style="font-family: 'Source Serif 4', serif; font-size: 17px; margin: 0 0 6px 0; color: var(--ink);">No Submissions Yet</h3>
-          <p style="font-size: 13px; color: var(--ink-soft); margin: 0;">Student attempts will appear here automatically once submitted.</p>
+          <h3 style="font-family: 'Source Serif 4', serif; font-size: 17px; margin: 0 0 6px 0; color: var(--ink);">No
+            Submissions Yet</h3>
+          <p style="font-size: 13px; color: var(--ink-soft); margin: 0;">Student attempts will appear here automatically
+            once submitted.</p>
         </div>
 
-        <div id="ot-submissions-table-wrap" style="display: none; background: #fff; border: 1px solid var(--border); border-radius: 10px; overflow-x: auto;">
+        <div id="ot-submissions-table-wrap"
+          style="display: none; background: #fff; border: 1px solid var(--border); border-radius: 10px; overflow-x: auto;">
           <table class="admin-table" style="width: 100%; border-collapse: collapse;">
             <thead>
               <tr>
@@ -2836,79 +3007,102 @@
       style="background: #FBFCFE; border: 1px solid #C2CEE7; border-radius: 12px; max-width: 620px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 26px; box-shadow: 0 16px 36px rgba(0, 0, 0, 0.2);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <div>
-          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase; color: var(--pen); letter-spacing: 0.08em; margin-bottom: 2px;">
+          <div
+            style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase; color: var(--pen); letter-spacing: 0.08em; margin-bottom: 2px;">
             AI Multi-Part Generator
           </div>
-          <h3 style="margin: 0; font-family: 'Source Serif 4', serif; font-size: 20px; color: var(--ink);">Create Online Test</h3>
+          <h3 style="margin: 0; font-family: 'Source Serif 4', serif; font-size: 20px; color: var(--ink);">Create Online
+            Test</h3>
         </div>
-        <button type="button" onclick="closeOnlineTestCreateModal()" style="border: none; background: none; font-size: 22px; cursor: pointer; color: var(--ink-soft);">&times;</button>
+        <button type="button" onclick="closeOnlineTestCreateModal()"
+          style="border: none; background: none; font-size: 22px; cursor: pointer; color: var(--ink-soft);">&times;</button>
       </div>
 
       <form onsubmit="handleOnlineTestCreateSubmit(event)">
         <!-- Test Title -->
         <div style="margin-bottom: 14px;">
           <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px;">Test Title *</label>
-          <input type="text" id="ot-create-title" placeholder="e.g. Cambridge IGCSE English Paper 1 (Reading & Writing)" required
+          <input type="text" id="ot-create-title" placeholder="e.g. Cambridge IGCSE English Paper 1 (Reading & Writing)"
+            required
             style="width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13.5px;" />
         </div>
 
         <!-- Deadline -->
         <div style="margin-bottom: 14px;">
-          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px;">Submission Deadline (Optional)</label>
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px;">Submission Deadline
+            (Optional)</label>
           <input type="datetime-local" id="ot-create-deadline"
             style="width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13.5px;" />
         </div>
 
         <!-- Exam Paper PDF -->
         <div style="margin-bottom: 14px;">
-          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px;">1. Exam Paper PDF *</label>
-          <input type="file" id="ot-create-exam-file" accept=".pdf" style="display: none;" onchange="updateFileInputLabel('ot-create-exam-file', 'ot-label-exam')" />
-          <div class="dropzone" onclick="document.getElementById('ot-create-exam-file').click()" style="padding: 14px; background: #fff; cursor: pointer; text-align: center; border: 1px dashed var(--border); border-radius: 6px;">
-            <div id="ot-label-exam" data-default-text="Click or drop Exam Paper PDF (Required)">📄 Click or drop Exam Paper PDF (Required)</div>
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px;">1. Exam Paper PDF
+            *</label>
+          <input type="file" id="ot-create-exam-file" accept=".pdf" style="display: none;"
+            onchange="updateFileInputLabel('ot-create-exam-file', 'ot-label-exam')" />
+          <div class="dropzone" onclick="document.getElementById('ot-create-exam-file').click()"
+            style="padding: 14px; background: #fff; cursor: pointer; text-align: center; border: 1px dashed var(--border); border-radius: 6px;">
+            <div id="ot-label-exam" data-default-text="Click or drop Exam Paper PDF (Required)">📄 Click or drop Exam
+              Paper PDF (Required)</div>
           </div>
         </div>
 
         <!-- Marking Scheme PDF -->
         <div style="margin-bottom: 14px;">
-          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px;">2. Official Marking Scheme PDF * (Sole Ground Truth)</label>
-          <input type="file" id="ot-create-scheme-file" accept=".pdf" style="display: none;" onchange="updateFileInputLabel('ot-create-scheme-file', 'ot-label-scheme')" />
-          <div class="dropzone" onclick="document.getElementById('ot-create-scheme-file').click()" style="padding: 14px; background: #fff; cursor: pointer; text-align: center; border: 1px dashed var(--border); border-radius: 6px;">
-            <div id="ot-label-scheme" data-default-text="Click or drop Marking Scheme PDF (Required)">⚖️ Click or drop Marking Scheme PDF (Required)</div>
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px;">2. Official Marking
+            Scheme PDF * (Sole Ground Truth)</label>
+          <input type="file" id="ot-create-scheme-file" accept=".pdf" style="display: none;"
+            onchange="updateFileInputLabel('ot-create-scheme-file', 'ot-label-scheme')" />
+          <div class="dropzone" onclick="document.getElementById('ot-create-scheme-file').click()"
+            style="padding: 14px; background: #fff; cursor: pointer; text-align: center; border: 1px dashed var(--border); border-radius: 6px;">
+            <div id="ot-label-scheme" data-default-text="Click or drop Marking Scheme PDF (Required)">⚖️ Click or drop
+              Marking Scheme PDF (Required)</div>
           </div>
         </div>
 
         <!-- Audio Track (Optional) -->
         <div style="margin-bottom: 14px;">
-          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px;">3. Audio Track (Optional — MP3/WAV/M4A up to 100MB)</label>
-          <input type="file" id="ot-create-audio-file" accept="audio/*,.mp3,.wav,.m4a" style="display: none;" onchange="updateFileInputLabel('ot-create-audio-file', 'ot-label-audio')" />
-          <div class="dropzone" onclick="document.getElementById('ot-create-audio-file').click()" style="padding: 14px; background: #fff; cursor: pointer; text-align: center; border: 1px dashed var(--border); border-radius: 6px;">
-            <div id="ot-label-audio" data-default-text="Click or drop Listening Audio Track (Optional)">🎧 Click or drop Listening Audio Track (Optional)</div>
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px;">3. Audio Track (Optional
+            — MP3/WAV/M4A up to 100MB)</label>
+          <input type="file" id="ot-create-audio-file" accept="audio/*,.mp3,.wav,.m4a" style="display: none;"
+            onchange="updateFileInputLabel('ot-create-audio-file', 'ot-label-audio')" />
+          <div class="dropzone" onclick="document.getElementById('ot-create-audio-file').click()"
+            style="padding: 14px; background: #fff; cursor: pointer; text-align: center; border: 1px dashed var(--border); border-radius: 6px;">
+            <div id="ot-label-audio" data-default-text="Click or drop Listening Audio Track (Optional)">🎧 Click or drop
+              Listening Audio Track (Optional)</div>
           </div>
         </div>
 
         <!-- Extra AI Instructions -->
         <div style="margin-bottom: 18px;">
-          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Extra AI Instructions (Optional)</label>
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Extra AI Instructions
+            (Optional)</label>
           <textarea id="ot-create-instructions" maxlength="1000" rows="3"
             placeholder="Optional guidance for Gemini e.g. custom part titles, focus points. Cannot override official marking scheme points."
             style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; resize: vertical;"></textarea>
-          <div style="font-size: 11.5px; color: var(--ink-soft); margin-top: 3px;">Max 1,000 characters. Marking scheme points remain strict ground truth.</div>
+          <div style="font-size: 11.5px; color: var(--ink-soft); margin-top: 3px;">Max 1,000 characters. Marking scheme
+            points remain strict ground truth.</div>
         </div>
 
         <!-- Progress Box -->
-        <div id="ot-create-progress-box" style="display: none; background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+        <div id="ot-create-progress-box"
+          style="display: none; background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
           <div style="display: flex; align-items: center; gap: 10px;">
             <span style="font-size: 18px;">⏳</span>
             <div>
-              <div id="ot-create-progress-text" style="font-size: 13px; font-weight: 600; color: #1E3A8A;">Processing...</div>
-              <div style="font-size: 11.5px; color: #4B5563; margin-top: 2px;">Multi-part extraction analyzes audio & matches keys against the official scheme.</div>
+              <div id="ot-create-progress-text" style="font-size: 13px; font-weight: 600; color: #1E3A8A;">Processing...
+              </div>
+              <div style="font-size: 11.5px; color: #4B5563; margin-top: 2px;">Multi-part extraction analyzes audio &
+                matches keys against the official scheme.</div>
             </div>
           </div>
         </div>
 
         <!-- Actions -->
         <div style="display: flex; justify-content: flex-end; gap: 10px;">
-          <button type="button" class="ghost" onclick="closeOnlineTestCreateModal()" style="padding: 9px 16px;">Cancel</button>
+          <button type="button" class="ghost" onclick="closeOnlineTestCreateModal()"
+            style="padding: 9px 16px;">Cancel</button>
           <button type="submit" class="primary" id="ot-create-submit-btn" style="padding: 9px 20px; font-weight: 600;">
             🚀 Generate Online Test (AI)
           </button>
@@ -2922,28 +3116,37 @@
     style="display: none; position: fixed; inset: 0; background: rgba(22, 35, 63, 0.6); backdrop-filter: blur(4px); z-index: 10006; align-items: center; justify-content: center; padding: 16px;">
     <div class="ot-modal-body"
       style="background: #FBFCFE; border: 1px solid #C2CEE7; border-radius: 12px; max-width: 860px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 26px; box-shadow: 0 16px 36px rgba(0, 0, 0, 0.2); display: flex; flex-direction: column;">
-      
+
       <!-- Modal Top Bar -->
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 14px; flex-wrap: wrap; gap: 12px;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 14px; flex-wrap: wrap; gap: 12px;">
         <div>
           <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
             <span class="ot-code-badge" id="ot-modal-student-name">Student Name</span>
             <span id="ot-modal-status-badge" class="ot-badge ot-badge-draft">Graded</span>
           </div>
-          <h2 id="ot-modal-test-title" style="margin: 0; font-family: 'Source Serif 4', serif; font-size: 20px; color: var(--ink);">Test Breakdown</h2>
+          <h2 id="ot-modal-test-title"
+            style="margin: 0; font-family: 'Source Serif 4', serif; font-size: 20px; color: var(--ink);">Test Breakdown
+          </h2>
         </div>
         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
           <div style="text-align: right; background: var(--pen-soft); padding: 6px 12px; border-radius: 6px;">
-            <div style="font-size: 11px; font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; color: var(--pen); font-weight: 600;">Overall Score</div>
-            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 700; color: var(--pen);" id="ot-modal-score-display">0 / 0</div>
+            <div
+              style="font-size: 11px; font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; color: var(--pen); font-weight: 600;">
+              Overall Score</div>
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 700; color: var(--pen);"
+              id="ot-modal-score-display">0 / 0</div>
           </div>
-          <button type="button" class="primary" style="padding: 7px 12px; font-size: 12.5px;" onclick="printActiveAttemptReport('full')">
+          <button type="button" class="primary" style="padding: 7px 12px; font-size: 12.5px;"
+            onclick="printActiveAttemptReport('full')">
             🖨️ Full Report
           </button>
-          <button type="button" class="ghost" style="padding: 7px 12px; font-size: 12.5px;" onclick="printActiveAttemptReport('feedback')">
+          <button type="button" class="ghost" style="padding: 7px 12px; font-size: 12.5px;"
+            onclick="printActiveAttemptReport('feedback')">
             📋 Feedback Report
           </button>
-          <button type="button" onclick="closeAttemptDetailModal()" style="border: none; background: none; font-size: 22px; cursor: pointer; color: var(--ink-soft);">&times;</button>
+          <button type="button" onclick="closeAttemptDetailModal()"
+            style="border: none; background: none; font-size: 22px; cursor: pointer; color: var(--ink-soft);">&times;</button>
         </div>
       </div>
 
@@ -2951,19 +3154,24 @@
       <div id="ot-modal-proctor-alert" style="display: none; margin-bottom: 16px;"></div>
 
       <!-- Overall AI Diagnostic Summary -->
-      <div id="ot-modal-diag-summary" style="background: #FAFBFD; border: 1px solid var(--border); border-left: 4px solid var(--pen); border-radius: 8px; padding: 14px; margin-bottom: 20px; display: none;">
-        <div style="font-size: 11.5px; font-family: 'IBM Plex Mono', monospace; font-weight: 600; text-transform: uppercase; color: var(--pen); margin-bottom: 4px;">
+      <div id="ot-modal-diag-summary"
+        style="background: #FAFBFD; border: 1px solid var(--border); border-left: 4px solid var(--pen); border-radius: 8px; padding: 14px; margin-bottom: 20px; display: none;">
+        <div
+          style="font-size: 11.5px; font-family: 'IBM Plex Mono', monospace; font-weight: 600; text-transform: uppercase; color: var(--pen); margin-bottom: 4px;">
           Senior Examiner Diagnostic Summary
         </div>
         <div id="ot-modal-diag-summary-text" style="font-size: 13.5px; line-height: 1.5; color: var(--ink);"></div>
       </div>
 
       <!-- Questions Breakdown Container -->
-      <div id="ot-modal-questions-list" style="display: flex; flex-direction: column; gap: 16px; overflow-y: auto; flex: 1; padding-right: 4px;"></div>
+      <div id="ot-modal-questions-list"
+        style="display: flex; flex-direction: column; gap: 16px; overflow-y: auto; flex: 1; padding-right: 4px;"></div>
 
       <!-- Modal Footer -->
-      <div style="display: flex; justify-content: flex-end; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
-        <button type="button" class="ghost" onclick="closeAttemptDetailModal()" style="padding: 8px 18px;">Close</button>
+      <div
+        style="display: flex; justify-content: flex-end; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
+        <button type="button" class="ghost" onclick="closeAttemptDetailModal()"
+          style="padding: 8px 18px;">Close</button>
       </div>
     </div>
   </div>

@@ -366,33 +366,48 @@
     display: none;
   }
 
-  /* Section Cards */
+  /* Section Cards - Reusing .step / .task-card visual pattern */
   .section-card {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 12px;
-    margin-bottom: 24px;
+    margin-bottom: 28px;
     padding: 24px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
   }
 
   .section-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid var(--paper-line);
-    padding-bottom: 12px;
-    margin-bottom: 16px;
+    border-bottom: 2px solid var(--paper-line);
+    padding-bottom: 14px;
+    margin-bottom: 24px; /* CLEAR separation from question content */
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 12px;
   }
 
   .section-title {
     font-family: 'Source Serif 4', serif;
-    font-size: 19px;
+    font-size: 20px;
     font-weight: 700;
     color: var(--ink);
     margin: 0;
+  }
+
+  .section-instructions {
+    background: #FAFBFD;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--pen);
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    margin-bottom: 22px;
+    line-height: 1.55;
   }
 
   .type-badge {
@@ -414,15 +429,15 @@
     background: #F8FAFC;
     border: 1px solid #E2E8F0;
     border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 20px;
+    padding: 18px;
+    margin-bottom: 22px;
   }
 
   .passage-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
   }
 
   .passage-title {
@@ -436,68 +451,128 @@
 
   .passage-content {
     font-family: 'Source Serif 4', Georgia, serif;
-    font-size: 14.5px;
-    line-height: 1.7;
+    font-size: 15px;
+    line-height: 1.75;
     color: #1E293B;
     white-space: pre-wrap;
-    max-height: 360px;
-    overflow-y: auto;
-    padding-right: 6px;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
   }
 
-  .passage-content::-webkit-scrollbar {
-    width: 6px;
-  }
-  .passage-content::-webkit-scrollbar-thumb {
-    background: var(--border);
-    border-radius: 3px;
-  }
-
-  /* Question Cards */
+  /* Question Cards - Distinct Bordered Sub-Cards */
   .q-card {
     border: 1px solid var(--border);
-    background: #fff;
+    background: #ffffff;
     border-radius: 10px;
-    padding: 18px;
-    margin-bottom: 16px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 4px rgba(22, 35, 63, 0.04);
     transition: border-color 0.2s, box-shadow 0.2s;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  .q-card:last-child {
+    margin-bottom: 0;
   }
 
   .q-card:focus-within {
     border-color: var(--pen);
-    box-shadow: 0 0 0 1px var(--pen);
+    box-shadow: 0 0 0 1px var(--pen), 0 3px 12px rgba(29, 58, 102, 0.08);
   }
 
   .q-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 10px;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed var(--border);
   }
 
   .q-num {
     font-family: 'IBM Plex Mono', monospace;
     font-weight: 700;
-    font-size: 13.5px;
+    font-size: 14px;
     color: var(--pen);
   }
 
   .q-points {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--ink-soft);
     background: var(--paper);
-    padding: 2px 7px;
+    padding: 3px 9px;
     border-radius: 4px;
   }
 
   .q-text {
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 15px;
+    line-height: 1.6;
     color: var(--ink);
-    margin-bottom: 14px;
+    margin-bottom: 16px;
     white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  /* Word-Bank Chips - matching .page-chip / .file-chip */
+  .word-bank-box {
+    background: #F8FAFC;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+  }
+
+  .word-bank-header {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--pen);
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .word-bank-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .word-chip, .page-chip {
+    background: var(--pen-soft);
+    border: 1px solid var(--border);
+    color: var(--pen);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .word-chip:hover {
+    background: #fff;
+    border-color: var(--pen);
+    box-shadow: 0 2px 6px rgba(29, 58, 102, 0.12);
+    transform: translateY(-1px);
   }
 
   /* MCQ Options */
@@ -505,19 +580,23 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    overflow: visible !important;
   }
 
   .mcq-choice-row {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 14px;
+    padding: 12px 14px;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: #FAFBFD;
     cursor: pointer;
     transition: all 0.15s;
     user-select: none;
+    min-height: 44px;
+    height: auto !important;
+    overflow: visible !important;
   }
 
   .mcq-choice-row:hover {
@@ -857,35 +936,42 @@
     </div>
   </div>
 
-  <!-- Exam Intro Card -->
-  <div class="intro-card" id="exam-intro-card" style="display:none;">
-    <div class="exam-code-tag" id="exam-code-badge">TEST CODE</div>
-    <h1 class="exam-title" id="exam-title">Loading Assessment...</h1>
-    <div class="exam-teacher" id="exam-teacher"></div>
-    <div class="deadline-box" id="exam-deadline-box"></div>
-    <div class="instructions-box" id="exam-instructions-box" style="display:none;"></div>
-  </div>
+  <!-- Exam Content Wrapper (Hidden until Fullscreen is entered) -->
+  <div id="exam-main-content" style="display:none;">
+    <!-- Exam Intro Card -->
+    <div class="intro-card" id="exam-intro-card" style="display:none;">
+      <div class="exam-code-tag" id="exam-code-badge">TEST CODE</div>
+      <h1 class="exam-title" id="exam-title">Loading Assessment...</h1>
+      <div class="exam-teacher" id="exam-teacher"></div>
+      <div class="deadline-box" id="exam-deadline-box"></div>
+      <div class="instructions-box" id="exam-instructions-box" style="display:none;"></div>
+    </div>
 
-  <!-- Audio Listening Player Box (if test has listening track) -->
-  <div class="audio-bar-box" id="exam-audio-box" style="display:none;">
-    <div class="audio-head">
-      <div style="display:flex; align-items:center; gap:8px;">
-        <span style="font-size:18px;">🎧</span>
-        <span style="font-size:14px; font-weight:600; color:var(--pen);">Listening Track</span>
+    <!-- Audio Listening Player Box (True Hard Single-Play) -->
+    <div class="audio-bar-box" id="exam-audio-box" style="display:none;">
+      <div class="audio-head">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:18px;">🎧</span>
+          <span style="font-size:14px; font-weight:700; color:var(--pen);">Listening Examination Track</span>
+        </div>
+        <span class="audio-badge" id="audio-plays-badge">Single Play (1 of 1)</span>
       </div>
-      <span class="audio-badge" id="audio-plays-badge">Listen 1 of 2</span>
+      <audio id="exam-audio-element" controlsList="nodownload noplaybackrate nofullscreen" preload="auto" style="display:none;"></audio>
+      <button type="button" class="audio-btn-start" id="btn-start-audio" onclick="startAudioPlayback()">
+        ▶ Play Listening Track (One-Time Playback)
+      </button>
+      <!-- Non-interactive, continuous read-only progress bar: NO scrub bar or seek capability -->
+      <div class="audio-progress-wrap" id="audio-progress-wrap" style="pointer-events:none; user-select:none;">
+        <div class="audio-progress-bar" id="audio-progress-bar"></div>
+      </div>
+      <div class="audio-time-label" id="audio-time-label">00:00 / 00:00</div>
+      <div id="audio-locked-notice" style="display:none; margin-top:10px; font-size:13px; color:var(--danger); font-weight:600; background:var(--danger-bg); border:1px solid #FCA5A5; padding:10px 14px; border-radius:6px; line-height:1.5;">
+        🔒 <b>Audio Single-Play Consumed:</b> This exam track has already been played. Under examination regulations, it cannot be re-played or restarted.
+      </div>
     </div>
-    <audio id="exam-audio-element" controlsList="nodownload noplaybackrate" preload="auto" style="display:none;"></audio>
-    <button type="button" class="audio-btn-start" id="btn-start-audio" onclick="startAudioPlayback()">
-      ▶ Start Listening Track
-    </button>
-    <div class="audio-progress-wrap" id="audio-progress-wrap">
-      <div class="audio-progress-bar" id="audio-progress-bar"></div>
-    </div>
-    <div class="audio-time-label" id="audio-time-label">00:00 / 00:00</div>
-    <div id="audio-locked-notice" style="display:none; margin-top:8px; font-size:12px; color:var(--danger); font-weight:600;">
-      🔒 Maximum play attempts reached for this exam track.
-    </div>
+
+    <!-- Sections & Questions Container -->
+    <div id="exam-sections-container"></div>
   </div>
 
   <!-- Already Submitted Lock Screen -->
@@ -899,9 +985,6 @@
       Device ID: <span id="locked-device-id"></span>
     </div>
   </div>
-
-  <!-- Sections & Questions Container -->
-  <div id="exam-sections-container"></div>
 </div>
 
 <!-- Bottom Submission Bar -->
@@ -914,6 +997,22 @@
     <div class="completion-badge" id="completion-badge">Answered 0/0</div>
     <button type="button" class="btn-submit-exam" id="btn-submit-exam" onclick="handleClickSubmit()">
       🚀 Submit Exam
+    </button>
+  </div>
+</div>
+
+<!-- Fullscreen Resume Overlay (Shown when exiting fullscreen mid-test) -->
+<div class="modal-overlay" id="fullscreen-resume-overlay" style="display:none; background:rgba(22, 35, 63, 0.96); backdrop-filter:blur(10px); z-index:10008;">
+  <div class="modal-box" style="text-align:center; padding:36px 28px; max-width:480px; border-top:5px solid var(--warning);">
+    <div style="font-size:46px; margin-bottom:12px;">🔒</div>
+    <h3 class="modal-title" style="font-size:21px; color:var(--ink); margin-bottom:10px;">Fullscreen Required</h3>
+    <p style="font-size:14px; color:var(--ink-soft); line-height:1.6; margin-bottom:24px;">
+      You have exited full screen. Examination content has been temporarily hidden to maintain strict assessment conditions.
+      <br/><br/>
+      <b>Click below to return to fullscreen and resume your test.</b> Your answers and audio progress remain saved.
+    </p>
+    <button type="button" class="btn-lockdown-enter" style="width:100%; justify-content:center;" onclick="resumeFullscreenFromGate()">
+      <span>🔒</span> Return to Fullscreen & Resume
     </button>
   </div>
 </div>
@@ -1000,9 +1099,8 @@ const testCode = (urlParams.get('code') || '').trim();
 let testData = null;
 let clientAnswers = new Map(); // questionId -> { answer, word_count }
 let allQuestionIds = [];
-let audioState = { playCount: 0, hasStarted: false, isLocked: false };
-const MAX_AUDIO_PLAYS = 2; // Cambridge standard
-let audioKey = 'online_audio_state_' + testCode;
+let wasAudioPlayingBeforeExit = false;
+let audioKey = 'online_audio_started_' + testCode;
 
 // Security & Proctoring State
 let strikesCount = 0;
@@ -1059,6 +1157,8 @@ function showToast(msg) {
 function showLockedScreen() {
   const splash = document.getElementById('exam-splash-screen');
   if (splash) splash.style.display = 'none';
+  const mainContent = document.getElementById('exam-main-content');
+  if (mainContent) mainContent.style.display = 'none';
   const intro = document.getElementById('exam-intro-card');
   if (intro) intro.style.display = 'none';
   const sec = document.getElementById('exam-sections-container');
@@ -1163,7 +1263,7 @@ async function loadOnlineTest() {
       splashDdl.innerHTML = `⏳ <b>Deadline:</b> ${formatCairoDateTime(dlDate)} (Cairo Time)`;
     }
 
-    // Pre-render exam components in background (remain hidden until fullscreen entry)
+    // Pre-render exam components in background (remain hidden inside #exam-main-content until fullscreen entry)
     renderExamHeader();
     renderSectionNav();
     renderSections();
@@ -1174,7 +1274,7 @@ async function loadOnlineTest() {
 
     updateCompletionCount();
 
-    // Show lockdown splash screen
+    // Show lockdown splash screen gate
     document.getElementById('exam-splash-screen').style.display = 'block';
   } catch (err) {
     console.error('Failed to load exam:', err);
@@ -1184,7 +1284,7 @@ async function loadOnlineTest() {
   }
 }
 
-// ----------------- 2. LOCKDOWN & FULLSCREEN ENTRY -----------------
+// ----------------- 2. LOCKDOWN & FULLSCREEN ENTRY GATE -----------------
 
 async function startExamWithLockdown() {
   const splashInput = document.getElementById('splash-student-name');
@@ -1202,7 +1302,7 @@ async function startExamWithLockdown() {
   const bottomInput = document.getElementById('student-name-input');
   if (bottomInput) bottomInput.value = studentName;
 
-  // Request Fullscreen
+  // Request Fullscreen (Direct User Interaction Requirement)
   try {
     const elem = document.documentElement;
     if (elem.requestFullscreen) {
@@ -1216,11 +1316,16 @@ async function startExamWithLockdown() {
     }
   } catch (fsErr) {
     console.warn('Fullscreen request blocked or not granted:', fsErr);
-    showToast('⚠️ Fullscreen permission was not granted by browser. Please stay focused on this window.');
+    showToast('⚠️ Fullscreen permission was not granted by browser. Please remain focused on this window.');
   }
 
-  // Hide Splash Screen & Reveal Exam
+  revealExamContent();
+}
+
+function revealExamContent() {
   document.getElementById('exam-splash-screen').style.display = 'none';
+  const mainContent = document.getElementById('exam-main-content');
+  if (mainContent) mainContent.style.display = 'block';
   document.getElementById('exam-intro-card').style.display = 'block';
   document.getElementById('exam-sections-container').style.display = 'block';
   document.getElementById('exam-bottom-bar').style.display = 'flex';
@@ -1234,7 +1339,6 @@ async function startExamWithLockdown() {
 
   isExamActive = true;
 
-  // Start deadline countdown if present
   if (testData?.deadline) {
     startCountdownTimer(new Date(testData.deadline));
   }
@@ -1246,7 +1350,7 @@ function handleSecurityInfraction(type, details) {
   if (!isExamActive || isSubmitted) return;
 
   const now = Date.now();
-  // Debounce duplicate triggers within 1500ms (e.g. fullscreen exit + blur fired simultaneously)
+  // Debounce duplicate triggers within 1500ms
   if (now - lastInfractionTime < 1500) {
     return;
   }
@@ -1254,7 +1358,7 @@ function handleSecurityInfraction(type, details) {
   strikesCount++;
 
   const violation = {
-    type: type, // 'fullscreen_exit', 'tab_switch', 'window_blur'
+    type: type,
     strike: strikesCount,
     timestamp: new Date().toISOString(),
     details: details || ''
@@ -1269,41 +1373,93 @@ function handleSecurityInfraction(type, details) {
     strikeText.innerText = `Strike ${strikesCount} of ${MAX_STRIKES}`;
   }
 
-  if (strikesCount === 1) {
-    // Strike 1 Warning Modal
-    document.getElementById('lockdown-warning-modal').style.display = 'flex';
-  } else if (strikesCount >= MAX_STRIKES) {
+  if (strikesCount >= MAX_STRIKES) {
     // Strike 2 Termination & Auto-Submission
-    document.getElementById('lockdown-warning-modal').style.display = 'none';
+    const warningModal = document.getElementById('lockdown-warning-modal');
+    if (warningModal) warningModal.style.display = 'none';
+    const resumeOverlay = document.getElementById('fullscreen-resume-overlay');
+    if (resumeOverlay) resumeOverlay.style.display = 'none';
     document.getElementById('lockdown-terminated-modal').style.display = 'flex';
     executeSubmission('tab_switch_limit');
   }
 }
 
-function resumeFullscreen() {
-  document.getElementById('lockdown-warning-modal').style.display = 'none';
+async function resumeFullscreenFromGate() {
   const elem = document.documentElement;
   try {
     if (elem.requestFullscreen) {
-      elem.requestFullscreen().catch(() => {});
+      await elem.requestFullscreen();
     } else if (elem.webkitRequestFullscreen) {
-      elem.webkitRequestFullscreen();
+      await elem.webkitRequestFullscreen();
     } else if (elem.mozRequestFullScreen) {
-      elem.mozRequestFullScreen();
+      await elem.mozRequestFullScreen();
     } else if (elem.msRequestFullscreen) {
-      elem.msRequestFullscreen();
+      await elem.msRequestFullscreen();
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn('Could not re-enter fullscreen:', err);
+    showToast('⚠️ Could not activate fullscreen. Click to retry.');
+  }
 }
 
-// Fullscreen exit detection
-['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(evtName => {
-  document.addEventListener(evtName, () => {
-    const isFs = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
-    if (!isFs && isExamActive && !isSubmitted) {
-      handleSecurityInfraction('fullscreen_exit', 'Candidate exited fullscreen mode.');
+function resumeFullscreen() {
+  resumeFullscreenFromGate();
+}
+
+// Fullscreen exit & resume detection
+function handleFullscreenChange() {
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+
+  if (!isFs && isExamActive && !isSubmitted) {
+    // Hide exam content immediately to deter tab switching / unauthorized inspection
+    const mainContent = document.getElementById('exam-main-content');
+    const bottomBar = document.getElementById('exam-bottom-bar');
+    const navStrip = document.getElementById('section-nav-strip');
+    if (mainContent) mainContent.style.display = 'none';
+    if (bottomBar) bottomBar.style.display = 'none';
+    if (navStrip) navStrip.style.display = 'none';
+
+    // Pause audio without resetting progress
+    const player = document.getElementById('exam-audio-element');
+    if (player && !player.paused && !player.ended && player.currentTime > 0) {
+      wasAudioPlayingBeforeExit = true;
+      player.pause();
     }
-  });
+
+    // Show Resume Gate Prompt
+    const resumeOverlay = document.getElementById('fullscreen-resume-overlay');
+    if (resumeOverlay) resumeOverlay.style.display = 'flex';
+
+    handleSecurityInfraction('fullscreen_exit', 'Candidate exited fullscreen mode.');
+  } else if (isFs && isExamActive && !isSubmitted) {
+    // Return to fullscreen: reveal content WITHOUT resetting answers
+    const resumeOverlay = document.getElementById('fullscreen-resume-overlay');
+    if (resumeOverlay) resumeOverlay.style.display = 'none';
+    const warningModal = document.getElementById('lockdown-warning-modal');
+    if (warningModal) warningModal.style.display = 'none';
+
+    const mainContent = document.getElementById('exam-main-content');
+    const bottomBar = document.getElementById('exam-bottom-bar');
+    if (mainContent) mainContent.style.display = 'block';
+    if (bottomBar) bottomBar.style.display = 'flex';
+    if (testData?.sections && testData.sections.length > 1) {
+      const navStrip = document.getElementById('section-nav-strip');
+      if (navStrip) navStrip.style.display = 'flex';
+    }
+
+    // Resume audio playback if it was active before exiting
+    if (wasAudioPlayingBeforeExit) {
+      const player = document.getElementById('exam-audio-element');
+      if (player && !player.ended) {
+        player.play().catch(() => {});
+      }
+      wasAudioPlayingBeforeExit = false;
+    }
+  }
+}
+
+['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(evtName => {
+  document.addEventListener(evtName, handleFullscreenChange);
 });
 
 // Tab visibility detection
@@ -1473,7 +1629,7 @@ function scrollToSection(sectionId) {
   }
 }
 
-// ----------------- 6. AUDIO PLAYER & ANTI-CHEAT DETERRENT -----------------
+// ----------------- 6. AUDIO PLAYER & TRUE SINGLE-PLAY ENFORCEMENT -----------------
 
 function setupAudioTrack(audioUrl) {
   const box = document.getElementById('exam-audio-box');
@@ -1486,40 +1642,32 @@ function setupAudioTrack(audioUrl) {
   const timeLabel = document.getElementById('audio-time-label');
 
   player.src = audioUrl;
-
   box.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  try {
-    const raw = localStorage.getItem(audioKey);
-    if (raw) audioState = JSON.parse(raw);
-  } catch (_) {}
+  const hasPlayed = localStorage.getItem(audioKey) === 'true';
 
-  if (audioState.hasStarted) {
-    audioState.playCount = (audioState.playCount || 0) + 1;
-    audioState.hasStarted = false;
-    if (audioState.playCount >= MAX_AUDIO_PLAYS) {
-      audioState.isLocked = true;
+  if (hasPlayed) {
+    btnStart.style.display = 'none';
+    if (progressWrap) progressWrap.style.display = 'none';
+    if (timeLabel) timeLabel.style.display = 'none';
+    if (badge) badge.innerText = 'Audio: Consumed (1/1)';
+    if (lockedNotice) {
+      lockedNotice.style.display = 'block';
+      lockedNotice.innerHTML = '🔒 <b>Single-Play Audio Locked:</b> This exam track has already been played. Under examination regulations, it cannot be re-played or restarted.';
     }
-    try { localStorage.setItem(audioKey, JSON.stringify(audioState)); } catch (_) {}
-    showToast('⚠️ Play attempt consumed due to page reload during playback.');
-  }
-
-  const plays = audioState.playCount || 0;
-  if (plays >= MAX_AUDIO_PLAYS || audioState.isLocked) {
-    btnStart.disabled = true;
-    btnStart.innerText = `🔒 Audio Locked (${MAX_AUDIO_PLAYS}/${MAX_AUDIO_PLAYS} plays used)`;
-    badge.innerText = `Plays: ${MAX_AUDIO_PLAYS} of ${MAX_AUDIO_PLAYS}`;
-    lockedNotice.style.display = 'block';
     return;
   }
 
-  badge.innerText = `Listen ${plays + 1} of ${MAX_AUDIO_PLAYS}`;
-  btnStart.innerText = `▶ Play Audio Exam Track (Attempt ${plays + 1} of ${MAX_AUDIO_PLAYS})`;
+  if (badge) badge.innerText = 'Single Play (1 of 1)';
+  btnStart.style.display = 'flex';
+  btnStart.disabled = false;
+  btnStart.innerText = '▶ Play Listening Track (One-Time Playback)';
 
   player.addEventListener('pause', () => {
-    if (!player.ended && player.currentTime > 0) {
+    // If not paused by the exit gate handler and not finished, resume immediately
+    if (!player.ended && player.currentTime > 0 && !wasAudioPlayingBeforeExit) {
       player.play().catch(() => {});
-      showToast('⚠️ Exam audio cannot be paused once started.');
+      showToast('⚠️ Exam audio cannot be paused during the test.');
     }
   });
 
@@ -1540,25 +1688,13 @@ function setupAudioTrack(audioUrl) {
   });
 
   player.addEventListener('ended', () => {
-    audioState.playCount = (audioState.playCount || 0) + 1;
-    audioState.hasStarted = false;
-    if (audioState.playCount >= MAX_AUDIO_PLAYS) {
-      audioState.isLocked = true;
-    }
-    try { localStorage.setItem(audioKey, JSON.stringify(audioState)); } catch (_) {}
-
-    progressWrap.style.display = 'none';
-    timeLabel.style.display = 'none';
-
-    if (audioState.isLocked) {
-      btnStart.disabled = true;
-      btnStart.innerText = `🔒 Audio Locked (${MAX_AUDIO_PLAYS}/${MAX_AUDIO_PLAYS} plays used)`;
-      badge.innerText = `Plays: ${MAX_AUDIO_PLAYS} of ${MAX_AUDIO_PLAYS}`;
+    btnStart.style.display = 'none';
+    if (progressWrap) progressWrap.style.display = 'none';
+    if (timeLabel) timeLabel.style.display = 'none';
+    if (badge) badge.innerText = 'Audio: Finished (1/1)';
+    if (lockedNotice) {
       lockedNotice.style.display = 'block';
-    } else {
-      btnStart.disabled = false;
-      btnStart.innerText = `▶ Play Audio Exam Track (Attempt ${audioState.playCount + 1} of ${MAX_AUDIO_PLAYS})`;
-      badge.innerText = `Listen ${audioState.playCount + 1} of ${MAX_AUDIO_PLAYS}`;
+      lockedNotice.innerHTML = '✓ <b>Listening Track Complete:</b> Audio playback has finished. Re-play is locked for this session.';
     }
   });
 
@@ -1583,22 +1719,44 @@ function setupAudioTrack(audioUrl) {
 function startAudioPlayback() {
   const player = document.getElementById('exam-audio-element');
   const btnStart = document.getElementById('btn-start-audio');
-  if (!player || audioState.isLocked) return;
+  if (!player || localStorage.getItem(audioKey) === 'true') return;
 
-  audioState.hasStarted = true;
-  try { localStorage.setItem(audioKey, JSON.stringify(audioState)); } catch (_) {}
+  // HARD SINGLE-PLAY LOCK: Persist immediately to localStorage keyed to testCode
+  localStorage.setItem(audioKey, 'true');
 
   btnStart.disabled = true;
-  btnStart.innerText = '🔊 Playing Audio Track (Continuous Playback)...';
+  btnStart.innerText = '🔊 Playing Exam Audio (Continuous Single-Play)...';
 
   player.play().catch((err) => {
+    console.error('Audio playback error:', err);
+    showToast('Click again to start audio playback.');
     btnStart.disabled = false;
-    showToast('Click again to allow audio playback.');
-    console.error('Audio playback failed:', err);
+    btnStart.innerText = '▶ Play Listening Track (One-Time Playback)';
+    localStorage.removeItem(audioKey);
   });
 }
 
 // ----------------- 7. SECTIONS & QUESTIONS RENDERING -----------------
+
+function formatSectionInstructions(text) {
+  if (!text) return '';
+  const pipeMatch = text.match(/(?:\[\s*)?([A-Za-z0-9_\-']+(?:\s+[A-Za-z0-9_\-']+)?(?:\s*\|\s*[A-Za-z0-9_\-']+(?:\s+[A-Za-z0-9_\-']+)?)+)(?:\s*\])?/);
+  if (pipeMatch) {
+    const rawWords = pipeMatch[1].split('|').map(w => w.trim()).filter(Boolean);
+    if (rawWords.length >= 2) {
+      const cleanPrompt = text.replace(pipeMatch[0], '').trim();
+      return `
+        <div class="section-instructions">
+          <div>${escapeHtml(cleanPrompt)}</div>
+          <div class="word-bank-chips" style="margin-top: 10px;">
+            ${rawWords.map(w => `<span class="word-chip page-chip" style="cursor: default;">${escapeHtml(w)}</span>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+  }
+  return `<div class="section-instructions">${escapeHtml(text)}</div>`;
+}
 
 function renderSections() {
   const container = document.getElementById('exam-sections-container');
@@ -1624,11 +1782,7 @@ function renderSections() {
           ${secTypeBadge}
         </div>
 
-        ${sec.instructions_text ? `
-          <div style="font-size:13px; color:var(--ink-soft); margin-bottom:16px; font-weight:500;">
-            ${escapeHtml(sec.instructions_text)}
-          </div>
-        ` : ''}
+        ${sec.instructions_text ? formatSectionInstructions(sec.instructions_text) : ''}
 
         ${sec.passage_text ? `
           <div class="passage-box">
@@ -1658,9 +1812,60 @@ function getSectionTypeBadge(type) {
   }
 }
 
+function insertWordIntoInput(qId, word) {
+  const input = document.getElementById(`input-q-${qId}`);
+  if (!input) return;
+  input.value = word;
+  handleAnswerInput(qId, word);
+  input.focus();
+}
+
 function renderQuestion(sec, q, displayNum) {
   const qType = q.question_type || 'mcq';
   const pts = q.points || 1;
+  const rawQText = q.question_text || '';
+
+  // Extract word banks from question text or structured options if present
+  let processedQText = rawQText;
+  let wordBankHtml = '';
+
+  // 1. Check if q.options is provided for non-MCQ types (word bank from ingestion)
+  if (['fill_blank', 'rewrite', 'short_answer'].includes(qType) && Array.isArray(q.options) && q.options.length > 0) {
+    wordBankHtml = `
+      <div class="word-bank-box">
+        <div class="word-bank-header">🔤 Word Bank (Click a word to insert):</div>
+        <div class="word-bank-chips">
+          ${q.options.map(opt => `
+            <span class="word-chip page-chip" onclick="insertWordIntoInput(${q.id}, '${escapeHtml(opt).replace(/'/g, "\\'")}')">
+              ${escapeHtml(opt)}
+            </span>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // 2. Also check if raw question text contains pipe-separated word bank (e.g. "Although | Whereas | While" or "[Although | Whereas | While]")
+  const pipeBankMatch = rawQText.match(/(?:\[\s*)?([A-Za-z0-9_\-']+(?:\s+[A-Za-z0-9_\-']+)?(?:\s*\|\s*[A-Za-z0-9_\-']+(?:\s+[A-Za-z0-9_\-']+)?)+)(?:\s*\])?/);
+  if (pipeBankMatch && !wordBankHtml) {
+    const rawBank = pipeBankMatch[1];
+    const words = rawBank.split('|').map(w => w.trim()).filter(Boolean);
+    if (words.length >= 2) {
+      wordBankHtml = `
+        <div class="word-bank-box">
+          <div class="word-bank-header">🔤 Word Bank (Click a word to insert):</div>
+          <div class="word-bank-chips">
+            ${words.map(w => `
+              <span class="word-chip page-chip" onclick="insertWordIntoInput(${q.id}, '${escapeHtml(w).replace(/'/g, "\\'")}')">
+                ${escapeHtml(w)}
+              </span>
+            `).join('')}
+          </div>
+        </div>
+      `;
+      processedQText = rawQText.replace(pipeBankMatch[0], '').trim();
+    }
+  }
 
   let inputMarkup = '';
 
@@ -1673,7 +1878,7 @@ function renderQuestion(sec, q, displayNum) {
           return `
             <div class="mcq-choice-row" id="mcq-opt-${q.id}-${oIdx}" onclick="handleSelectMcq(${q.id}, '${oIdx}')">
               <span class="mcq-letter">${letter}</span>
-              <span class="mcq-text">${escapeHtml(opt)}</span>
+              <span class="mcq-text" style="word-break:break-word; overflow-wrap:break-word; overflow:visible;">${escapeHtml(opt)}</span>
             </div>
           `;
         }).join('')}
@@ -1691,6 +1896,7 @@ function renderQuestion(sec, q, displayNum) {
     `;
   } else if (['fill_blank', 'rewrite', 'short_answer'].includes(qType)) {
     inputMarkup = `
+      ${wordBankHtml}
       <input type="text" class="ot-text-input" id="input-q-${q.id}"
         autocomplete="off" spellcheck="false" placeholder="Type your answer here..."
         oninput="handleAnswerInput(${q.id}, this.value)" />
@@ -1719,7 +1925,7 @@ function renderQuestion(sec, q, displayNum) {
         <span class="q-num">Question ${displayNum}</span>
         <span class="q-points">${pts} Mark${pts === 1 ? '' : 's'}</span>
       </div>
-      <div class="q-text">${escapeHtml(q.question_text)}</div>
+      <div class="q-text">${escapeHtml(processedQText)}</div>
       ${inputMarkup}
     </div>
   `;

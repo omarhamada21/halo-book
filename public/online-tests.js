@@ -314,62 +314,90 @@ function renderOnlineTestReviewCanvas() {
     audioBar.style.display = 'none';
   }
 
-  // Sections
+  // Sections Container
   const sectionsContainer = document.getElementById('ot-review-sections-container');
   if (!sectionsContainer) return;
 
   if (currentReviewSections.length === 0) {
-    sectionsContainer.innerHTML = '<div style="padding:20px; text-align:center; color:var(--ink-soft);">No sections found.</div>';
+    sectionsContainer.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-soft);">No sections found.</div>';
     return;
   }
 
+  // Render each section as a collapsible card (collapsed by default, expand on click)
   sectionsContainer.innerHTML = currentReviewSections.map((sec, sIdx) => {
     const secTypeBadge = getSectionTypeBadge(sec.section_type);
-    const questionsHtml = (sec.questions || []).map((q, qIdx) => renderQuestionCard(sec.id, q, qIdx + 1)).join('');
+    const questions = sec.questions || [];
+    let secMarks = 0;
+    questions.forEach(q => { secMarks += Number(q.points || 0); });
+
+    const questionsHtml = questions.map((q, qIdx) => renderQuestionCard(sec.id, q, qIdx + 1)).join('');
 
     return `
-      <div class="ot-section-card" id="ot-sec-${sec.id}">
-        <div class="ot-section-header">
-          <div style="display:flex; align-items:center; gap:10px; flex:1;">
-            <span class="ot-part-badge">Part ${sec.part_number || (sIdx + 1)}</span>
-            <input type="text" class="ot-section-title-input" value="${escapeHtml(sec.section_title)}"
-              oninput="handleSectionTitleInput(${test.id}, ${sec.id}, this.value)" />
-            ${secTypeBadge}
+      <div class="result-card ot-review-sec-card" id="ot-review-sec-card-${sec.id}" style="margin-bottom: 16px;">
+        <div class="result-head" onclick="toggleReviewSectionCollapse(${sec.id})" style="cursor: pointer; user-select: none;">
+          <div class="badge card-score-badge">${sec.part_number || (sIdx + 1)}</div>
+          <div class="result-name">
+            <span contenteditable="true" class="editable-field ot-sec-title-edit" data-sec-id="${sec.id}" data-field="section_title" onclick="event.stopPropagation()">${escapeHtml(sec.section_title)}</span>
+            <span style="margin-left: 8px;">${secTypeBadge}</span>
+            <span style="font-size: 12.5px; font-weight: normal; color: var(--ink-soft); margin-left: 8px;">(${questions.length} question${questions.length === 1 ? '' : 's'})</span>
           </div>
-          <button class="ghost" style="padding:4px 10px; font-size:12px;" onclick="addNewQuestionToSection(${test.id}, ${sec.id})">
-            ➕ Add Question
-          </button>
+          <div class="result-score" style="display: flex; align-items: center; gap: 8px;">
+            <span>${secMarks} Mark${secMarks === 1 ? '' : 's'}</span>
+            <span id="ot-sec-toggle-icon-${sec.id}" style="font-size: 11px; transition: transform 0.2s;">▼</span>
+          </div>
         </div>
 
-        <div class="ot-stimulus-box">
-          <div style="margin-bottom:8px;">
-            <label class="ot-label">Instructions:</label>
-            <textarea class="ot-textarea" rows="2" placeholder="e.g. For questions 1-5, choose the correct answer..."
-              oninput="handleSectionInstructionsInput(${test.id}, ${sec.id}, this.value)">${escapeHtml(sec.instructions_text || '')}</textarea>
+        <div class="result-body" id="ot-sec-body-${sec.id}">
+          <div class="result-body-inner">
+            <!-- Section Guidance / Stimulus Box (Compact & Inline-Editable) -->
+            <div class="ot-review-stimulus-bar" style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+              <div style="margin-bottom: 10px;">
+                <div class="fb-label">Section Instructions (Click to edit inline):</div>
+                <div contenteditable="true" class="editable-field" data-sec-id="${sec.id}" data-field="instructions_text" style="background:#fff; min-height:26px; padding:6px 10px; border-radius:6px; line-height:1.5;">${escapeHtml(sec.instructions_text || '')}</div>
+              </div>
+
+              ${sec.passage_text !== undefined && sec.passage_text !== null ? `
+              <div style="margin-bottom: 10px;">
+                <div class="fb-label">Reading Passage / Comprehension Text:</div>
+                <div contenteditable="true" class="editable-field" data-sec-id="${sec.id}" data-field="passage_text" style="background:#fff; min-height:50px; padding:8px 10px; border-radius:6px; white-space:pre-wrap; line-height:1.6;">${escapeHtml(sec.passage_text || '')}</div>
+              </div>
+              ` : ''}
+
+              ${sec.transcript ? `
+              <details class="ot-transcript-details" style="margin-top:6px;">
+                <summary class="ot-transcript-summary">🎧 Verbatim Dialogue Transcript (${sec.transcript.length} chars)</summary>
+                <pre class="ot-transcript-pre">${escapeHtml(sec.transcript)}</pre>
+              </details>
+              ` : ''}
+            </div>
+
+            <!-- Vertical Question List (Clear Numbering, No Dense Tables) -->
+            <div class="ot-vertical-questions-list" id="ot-sec-questions-${sec.id}">
+              ${questionsHtml || '<div style="color:var(--ink-soft); font-size:13px; padding:10px 0;">No questions in this section yet.</div>'}
+            </div>
+
+            <!-- Clean Add Question Action -->
+            <div style="margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--paper-line);">
+              <button type="button" class="ghost" style="font-size: 12.5px; padding: 6px 14px;" onclick="addNewQuestionToSection(${test.id}, ${sec.id})">
+                ➕ Add Question to Part ${sec.part_number || (sIdx + 1)}
+              </button>
+            </div>
           </div>
-
-          ${sec.passage_text !== undefined ? `
-          <div style="margin-bottom:8px;">
-            <label class="ot-label">Reading / Prompt Passage Text:</label>
-            <textarea class="ot-textarea" rows="4" placeholder="Passage text for comprehension..."
-              oninput="handleSectionPassageInput(${test.id}, ${sec.id}, this.value)">${escapeHtml(sec.passage_text || '')}</textarea>
-          </div>
-          ` : ''}
-
-          ${sec.transcript ? `
-          <details class="ot-transcript-details">
-            <summary class="ot-transcript-summary">🎧 Verbatim Dialogue Transcript (${sec.transcript.length} chars)</summary>
-            <pre class="ot-transcript-pre">${escapeHtml(sec.transcript)}</pre>
-          </details>
-          ` : ''}
-        </div>
-
-        <div class="ot-questions-list" id="ot-sec-questions-${sec.id}">
-          ${questionsHtml}
         </div>
       </div>
     `;
   }).join('');
+
+  attachInlineEditListeners();
+}
+
+function toggleReviewSectionCollapse(sectionId) {
+  const body = document.getElementById(`ot-sec-body-${sectionId}`);
+  const icon = document.getElementById(`ot-sec-toggle-icon-${sectionId}`);
+  if (body) {
+    const isOpen = body.classList.toggle('open');
+    if (icon) icon.style.transform = isOpen ? 'rotate(180deg)' : 'none';
+  }
 }
 
 function getSectionTypeBadge(type) {
@@ -394,21 +422,22 @@ function renderQuestionCard(sectionId, q, displayNum) {
     const correctIdx = Number(q.correct_answer) || 0;
 
     controlsHtml = `
-      <div class="ot-mcq-options-container">
-        <label class="ot-label">Options (Select radio for correct answer):</label>
-        <div class="ot-options-list">
+      <div style="margin-top:10px;">
+        <div class="fb-label">Options (Click dot to set correct answer):</div>
+        <div class="ot-options-vertical-list">
           ${opts.map((opt, oIdx) => `
-            <div class="ot-option-row ${oIdx === correctIdx ? 'correct-opt' : ''}">
-              <input type="radio" name="mcq-correct-${q.id}" ${oIdx === correctIdx ? 'checked' : ''}
-                onchange="handleMcqOptionCorrectChange(${currentReviewTest.id}, ${q.id}, ${oIdx})" />
-              <input type="text" class="ot-option-input" value="${escapeHtml(opt)}"
-                oninput="handleMcqOptionTextInput(${currentReviewTest.id}, ${q.id}, ${oIdx}, this.value)" />
-              <button type="button" class="ot-remove-opt-btn" onclick="removeMcqOption(${currentReviewTest.id}, ${q.id}, ${oIdx})">✕</button>
+            <div class="ot-opt-row ${oIdx === correctIdx ? 'is-correct' : ''}">
+              <span class="ot-opt-radio" onclick="setMcqCorrectOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Click to set as correct answer">
+                ${oIdx === correctIdx ? '●' : '○'}
+              </span>
+              <span class="ot-opt-letter">${String.fromCharCode(65 + oIdx)}.</span>
+              <span contenteditable="true" class="editable-field ot-editable-opt-text" data-q-id="${q.id}" data-opt-idx="${oIdx}">${escapeHtml(opt)}</span>
+              <button type="button" class="line-delete-btn" onclick="removeMcqOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Remove option">✕</button>
             </div>
           `).join('')}
+          <button type="button" class="ghost" style="font-size:11px; padding:3px 8px; margin-top:4px;"
+            onclick="addMcqOption(${currentReviewTest.id}, ${q.id})">+ Add Option</button>
         </div>
-        <button type="button" class="ghost" style="margin-top:6px; font-size:11px; padding:3px 8px;"
-          onclick="addMcqOption(${currentReviewTest.id}, ${q.id})">+ Add Option</button>
       </div>
     `;
   } else if (qType === 'matching') {
@@ -416,16 +445,13 @@ function renderQuestionCard(sectionId, q, displayNum) {
     const correctIdx = Number(q.correct_answer) || 0;
 
     controlsHtml = `
-      <div style="margin-top:8px;">
-        <label class="ot-label">Shared Statement Match Pool:</label>
-        <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
-          <span style="font-size:12px; color:var(--ink-soft);">Correct Match:</span>
-          <select class="ot-select" onchange="handleMatchingCorrectChange(${currentReviewTest.id}, ${q.id}, this.value)">
-            ${opts.map((opt, oIdx) => `
-              <option value="${oIdx}" ${oIdx === correctIdx ? 'selected' : ''}>Option ${oIdx + 1}: ${escapeHtml(opt.slice(0, 30))}</option>
-            `).join('')}
-          </select>
-        </div>
+      <div style="margin-top:10px;">
+        <div class="fb-label">Correct Statement Match:</div>
+        <select class="ot-select" onchange="handleMatchingCorrectChange(${currentReviewTest.id}, ${q.id}, this.value)" style="margin-top:4px;">
+          ${opts.map((opt, oIdx) => `
+            <option value="${oIdx}" ${oIdx === correctIdx ? 'selected' : ''}>Option ${String.fromCharCode(65 + oIdx)}: ${escapeHtml(opt.slice(0, 45))}</option>
+          `).join('')}
+        </select>
       </div>
     `;
   } else if (['fill_blank', 'rewrite', 'short_answer'].includes(qType)) {
@@ -434,11 +460,10 @@ function renderQuestionCard(sectionId, q, displayNum) {
     else if (typeof q.correct_answer === 'string') accepted = [q.correct_answer];
 
     controlsHtml = `
-      <div style="margin-top:8px;">
-        <label class="ot-label">Acceptable Answers (Comma-separated from Mark Scheme):</label>
-        <input type="text" class="ot-input" value="${escapeHtml(accepted.join(', '))}"
-          placeholder="e.g. 14, fourteen"
-          oninput="handleAcceptableAnswersInput(${currentReviewTest.id}, ${q.id}, this.value)" />
+      <div style="margin-top:10px;">
+        <div class="fb-label">Accepted Answers (from Mark Scheme, comma-separated):</div>
+        <div contenteditable="true" class="editable-field ot-editable-accepted" data-q-id="${q.id}" data-field="correct_answer"
+          style="background:#fff; padding:6px 10px; border-radius:6px; margin-top:2px;">${escapeHtml(accepted.join(', '))}</div>
       </div>
     `;
   } else if (qType === 'writing') {
@@ -447,50 +472,40 @@ function renderQuestionCard(sectionId, q, displayNum) {
     const langCriteria = Array.isArray(rubric.language_criteria) ? rubric.language_criteria.join('\n') : '';
 
     controlsHtml = `
-      <div style="margin-top:8px; display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-        <div>
-          <label class="ot-label">Min Words:</label>
-          <input type="number" class="ot-input" value="${q.min_words || ''}" placeholder="None"
-            oninput="handleWritingWordLimit(${currentReviewTest.id}, ${q.id}, 'min_words', this.value)" />
+      <div style="margin-top:10px;">
+        <div style="display:flex; gap:16px; margin-bottom:8px;">
+          <span style="font-size:12.5px; color:var(--ink-soft);">Min Words: <b contenteditable="true" class="editable-field" data-q-id="${q.id}" data-field="min_words">${q.min_words || '—'}</b></span>
+          <span style="font-size:12.5px; color:var(--ink-soft);">Max Words: <b contenteditable="true" class="editable-field" data-q-id="${q.id}" data-field="max_words">${q.max_words || '—'}</b></span>
         </div>
-        <div>
-          <label class="ot-label">Max Words:</label>
-          <input type="number" class="ot-input" value="${q.max_words || ''}" placeholder="None"
-            oninput="handleWritingWordLimit(${currentReviewTest.id}, ${q.id}, 'max_words', this.value)" />
-        </div>
-      </div>
-      <div style="margin-top:8px;">
-        <label class="ot-label">Official Rubric Content Criteria (One per line):</label>
-        <textarea class="ot-textarea" rows="2" oninput="handleRubricCriteriaChange(${currentReviewTest.id}, ${q.id}, 'content_criteria', this.value)">${escapeHtml(contentCriteria)}</textarea>
-      </div>
-      <div style="margin-top:8px;">
-        <label class="ot-label">Language & Accuracy Criteria (One per line):</label>
-        <textarea class="ot-textarea" rows="2" oninput="handleRubricCriteriaChange(${currentReviewTest.id}, ${q.id}, 'language_criteria', this.value)">${escapeHtml(langCriteria)}</textarea>
+        <div class="fb-label">Official Rubric Content Criteria (One per line):</div>
+        <div contenteditable="true" class="editable-field ot-editable-rubric" data-q-id="${q.id}" data-field="content_criteria"
+          style="background:#fff; padding:6px 10px; border-radius:6px; white-space:pre-wrap; min-height:36px; line-height:1.5;">${escapeHtml(contentCriteria)}</div>
+        <div class="fb-label" style="margin-top:8px;">Language & Accuracy Criteria (One per line):</div>
+        <div contenteditable="true" class="editable-field ot-editable-rubric" data-q-id="${q.id}" data-field="language_criteria"
+          style="background:#fff; padding:6px 10px; border-radius:6px; white-space:pre-wrap; min-height:36px; line-height:1.5;">${escapeHtml(langCriteria)}</div>
       </div>
     `;
   }
 
   return `
-    <div class="ot-question-card" id="ot-q-${q.id}">
-      <div class="ot-q-header">
+    <div class="ot-review-q-card" id="ot-q-${q.id}">
+      <div class="ot-review-q-header">
         <div style="display:flex; align-items:center; gap:8px;">
           <span class="ot-q-num">Q${displayNum}</span>
           <span class="ot-badge" style="font-size:11px;">${qType.toUpperCase()}</span>
         </div>
-        <div style="display:flex; align-items:center; gap:10px;">
-          <div style="display:flex; align-items:center; gap:4px;">
-            <label style="font-size:12px; color:var(--ink-soft);">Points:</label>
-            <input type="number" step="0.5" min="0.5" class="ot-points-input" value="${points}"
-              oninput="handleQuestionPointsInput(${currentReviewTest.id}, ${q.id}, this.value)" />
-          </div>
-          <button class="ghost ghost-danger" style="padding:2px 6px; font-size:12px;" onclick="deleteQuestion(${currentReviewTest.id}, ${q.id})">🗑️</button>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span style="font-size:12.5px; color:var(--ink-soft);">
+            Points: <b contenteditable="true" class="editable-field ot-editable-points" data-q-id="${q.id}" data-field="points">${points}</b>
+          </span>
+          <button class="line-delete-btn" onclick="deleteQuestion(${currentReviewTest.id}, ${q.id})" title="Delete question">🗑️</button>
         </div>
       </div>
 
       <div style="margin-top:8px;">
-        <label class="ot-label">Question Text:</label>
-        <textarea class="ot-textarea" rows="2"
-          oninput="handleQuestionTextInput(${currentReviewTest.id}, ${q.id}, this.value)">${escapeHtml(q.question_text || '')}</textarea>
+        <div class="fb-label">Question Text:</div>
+        <div contenteditable="true" class="editable-field ot-editable-qtext" data-q-id="${q.id}" data-field="question_text"
+          style="font-size:14px; font-weight:500; color:var(--ink); line-height:1.5; min-height:28px;">${escapeHtml(q.question_text || '')}</div>
       </div>
 
       ${controlsHtml}
@@ -635,17 +650,126 @@ function handleMcqOptionTextInput(testId, questionId, optIdx, val) {
   }
 }
 
+function attachInlineEditListeners() {
+  const container = document.getElementById('ot-review-sections-container');
+  if (!container) return;
+
+  container.querySelectorAll('.editable-field').forEach(el => {
+    if (el.dataset.listenerAttached) return;
+    el.dataset.listenerAttached = 'true';
+
+    el.addEventListener('blur', () => {
+      saveInlineField(el);
+    });
+
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !el.classList.contains('ot-editable-rubric') && el.dataset.field !== 'passage_text' && el.dataset.field !== 'instructions_text') {
+        e.preventDefault();
+        el.blur();
+      }
+    });
+  });
+}
+
+function saveInlineField(el) {
+  if (!currentReviewTest) return;
+  const testId = currentReviewTest.id;
+  const rawVal = el.innerText.trim();
+
+  // 1. Section Fields
+  if (el.dataset.secId) {
+    const secId = Number(el.dataset.secId);
+    const field = el.dataset.field;
+    const sec = currentReviewSections.find(s => s.id === secId);
+    if (sec) sec[field] = rawVal;
+    scheduleSectionPatch(testId, secId, field, rawVal);
+    return;
+  }
+
+  // 2. Question Fields
+  if (el.dataset.qId) {
+    const qId = Number(el.dataset.qId);
+    const q = findQuestionInState(qId);
+    if (!q) return;
+
+    // Option text edit
+    if (el.dataset.optIdx !== undefined) {
+      const optIdx = Number(el.dataset.optIdx);
+      if (!Array.isArray(q.options)) q.options = [];
+      q.options[optIdx] = rawVal;
+      scheduleQuestionPatch(testId, qId, 'options', q.options);
+      return;
+    }
+
+    const field = el.dataset.field;
+    if (field === 'points') {
+      const p = parseFloat(rawVal);
+      const pts = !isNaN(p) && p > 0 ? p : 1;
+      q.points = pts;
+      el.innerText = pts.toString();
+      updateReviewTotalMarks();
+      scheduleQuestionPatch(testId, qId, 'points', pts);
+    } else if (field === 'question_text') {
+      q.question_text = rawVal;
+      scheduleQuestionPatch(testId, qId, 'question_text', rawVal);
+    } else if (field === 'correct_answer') {
+      const list = rawVal.split(',').map(s => s.trim()).filter(Boolean);
+      q.correct_answer = list;
+      scheduleQuestionPatch(testId, qId, 'correct_answer', list);
+    } else if (field === 'min_words' || field === 'max_words') {
+      const n = parseInt(rawVal, 10);
+      const num = !isNaN(n) && n > 0 ? n : null;
+      q[field] = num;
+      el.innerText = num !== null ? num.toString() : '—';
+      scheduleQuestionPatch(testId, qId, field, num);
+    } else if (field === 'content_criteria' || field === 'language_criteria') {
+      const lines = rawVal.split('\n').map(s => s.trim()).filter(Boolean);
+      if (!q.correct_answer || typeof q.correct_answer !== 'object') q.correct_answer = {};
+      q.correct_answer[field] = lines;
+      scheduleQuestionPatch(testId, qId, 'correct_answer', q.correct_answer);
+    }
+  }
+}
+
+function setMcqCorrectOption(testId, questionId, correctIdx) {
+  const q = findQuestionInState(questionId);
+  if (q) q.correct_answer = correctIdx;
+
+  const card = document.getElementById(`ot-q-${questionId}`);
+  if (card) {
+    card.querySelectorAll('.ot-opt-row').forEach((row, idx) => {
+      const radio = row.querySelector('.ot-opt-radio');
+      if (idx === correctIdx) {
+        row.classList.add('is-correct');
+        if (radio) radio.innerText = '●';
+      } else {
+        row.classList.remove('is-correct');
+        if (radio) radio.innerText = '○';
+      }
+    });
+  }
+
+  scheduleQuestionPatch(testId, questionId, 'correct_answer', correctIdx);
+}
+
 function addMcqOption(testId, questionId) {
   const q = findQuestionInState(questionId);
   if (q) {
     if (!Array.isArray(q.options)) q.options = [];
-    if (q.options.length >= 5) {
-      alert('Maximum 5 options allowed.');
+    if (q.options.length >= 6) {
+      alert('Maximum 6 options allowed.');
       return;
     }
     q.options.push(`Option ${String.fromCharCode(65 + q.options.length)}`);
     scheduleQuestionPatch(testId, questionId, 'options', q.options);
+    
+    // Preserve expanded section
+    const sec = currentReviewSections.find(s => (s.questions || []).some(item => item.id === questionId));
     renderOnlineTestReviewCanvas();
+    if (sec) {
+      const body = document.getElementById(`ot-sec-body-${sec.id}`);
+      if (body) body.classList.add('open');
+    }
   }
 }
 
@@ -662,7 +786,13 @@ function removeMcqOption(testId, questionId, optIdx) {
       scheduleQuestionPatch(testId, questionId, 'correct_answer', 0);
     }
     scheduleQuestionPatch(testId, questionId, 'options', q.options);
+    
+    const sec = currentReviewSections.find(s => (s.questions || []).some(item => item.id === questionId));
     renderOnlineTestReviewCanvas();
+    if (sec) {
+      const body = document.getElementById(`ot-sec-body-${sec.id}`);
+      if (body) body.classList.add('open');
+    }
   }
 }
 
@@ -712,7 +842,13 @@ async function addNewQuestionToSection(testId, sectionId) {
     const res = await fetch(`/api/online-tests/${testId}/sections/${sectionId}/questions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question_type: 'mcq', question_text: 'New Question Prompt' })
+      body: JSON.stringify({
+        question_type: 'mcq',
+        question_text: 'New Question Prompt',
+        options: ['Option A', 'Option B', 'Option C', 'Option D'],
+        correct_answer: 0,
+        points: 1
+      })
     });
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to add question.');
@@ -722,6 +858,11 @@ async function addNewQuestionToSection(testId, sectionId) {
     const freshData = await freshRes.json();
     currentReviewSections = freshData.sections || [];
     renderOnlineTestReviewCanvas();
+
+    // Reopen section being edited
+    const body = document.getElementById(`ot-sec-body-${sectionId}`);
+    if (body) body.classList.add('open');
+
     showToast('Question added.');
   } catch (err) {
     alert('Error adding question: ' + err.message);
@@ -738,11 +879,19 @@ async function deleteQuestion(testId, questionId) {
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete question.');
 
-    // Remove from local state
+    let parentSecId = null;
     for (const s of currentReviewSections) {
-      s.questions = (s.questions || []).filter(q => q.id !== questionId);
+      const exists = (s.questions || []).some(q => q.id === questionId);
+      if (exists) {
+        parentSecId = s.id;
+        s.questions = s.questions.filter(q => q.id !== questionId);
+      }
     }
     renderOnlineTestReviewCanvas();
+    if (parentSecId) {
+      const body = document.getElementById(`ot-sec-body-${parentSecId}`);
+      if (body) body.classList.add('open');
+    }
     showToast('Question deleted.');
   } catch (err) {
     alert('Error deleting question: ' + err.message);
