@@ -17,6 +17,9 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import fs from 'fs';
 import os from 'os';
+import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
+import sharp from 'sharp';
+import zlib from 'zlib';
 
 const require = createRequire(import.meta.url);
 
@@ -275,12 +278,14 @@ async function initDatabase() {
         section_id INTEGER,
         question_type TEXT, -- 'mcq', 'matching', 'fill_blank', 'rewrite', 'short_answer', 'writing'
         question_text TEXT,
-        options TEXT, -- JSON array of strings
+        options TEXT, -- JSON array of strings or visual option objects
         correct_answer TEXT, -- JSON: index, array of accepted strings, or writing rubric criteria
         min_words INTEGER,
         max_words INTEGER,
         points REAL DEFAULT 1,
-        order_index INTEGER DEFAULT 0
+        order_index INTEGER DEFAULT 0,
+        stimulus_image_url TEXT,
+        has_visual_options INTEGER DEFAULT 0
       );
     `);
 
@@ -304,6 +309,8 @@ async function initDatabase() {
     `);
 
     const autoMigrations = [
+      'ALTER TABLE online_test_questions ADD COLUMN stimulus_image_url TEXT;',
+      'ALTER TABLE online_test_questions ADD COLUMN has_visual_options INTEGER DEFAULT 0;',
       "ALTER TABLE online_test_attempts ADD COLUMN termination_reason TEXT DEFAULT 'normal';",
       "ALTER TABLE online_test_attempts ADD COLUMN security_violations TEXT;",
       'ALTER TABLE assignments ADD COLUMN bundle_code TEXT;',
@@ -388,12 +395,14 @@ async function initDatabase() {
         section_id INTEGER,
         question_type TEXT, -- 'mcq', 'matching', 'fill_blank', 'rewrite', 'short_answer', 'writing'
         question_text TEXT,
-        options TEXT, -- JSON array of strings
+        options TEXT, -- JSON array of strings or visual option objects
         correct_answer TEXT, -- JSON: index, array of accepted strings, or writing rubric criteria
         min_words INTEGER,
         max_words INTEGER,
         points REAL DEFAULT 1,
-        order_index INTEGER DEFAULT 0
+        order_index INTEGER DEFAULT 0,
+        stimulus_image_url TEXT,
+        has_visual_options INTEGER DEFAULT 0
       );`,
       `CREATE TABLE IF NOT EXISTS online_test_attempts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3633,6 +3642,183 @@ async function uploadOnlineTestAudioToFilebase(audioFile) {
   return objectKey;
 }
 
+function unfilterPngPredictor(decompressed, width, height, bytesPerPixel) {
+  const rowBytes = width * bytesPerPixel;
+  const filteredRowLength = rowBytes + 1;
+  const output = Buffer.alloc(width * height * bytesPerPixel);
+
+  for (let y = 0; y < height; y++) {
+    const filterType = decompressed[y * filteredRowLength];
+    const srcRow = decompressed.subarray(y * filteredRowLength + 1, (y + 1) * filteredRowLength);
+    const dstOffset = y * rowBytes;
+    const prevDstOffset = (y - 1) * rowBytes;
+
+    for (let x = 0; x < rowBytes; x++) {
+      const byteVal = srcRow[x];
+      const left = x >= bytesPerPixel ? output[dstOffset + x - bytesPerPixel] : 0;
+      const above = y > 0 ? output[prevDstOffset + x] : 0;
+      const upperLeft = y > 0 && x >= bytesPerPixel ? output[prevDstOffset + x - bytesPerPixel] : 0;
+
+      let rawVal = byteVal;
+      if (filterType === 1) rawVal = (byteVal + left) & 0xff;
+      else if (filterType === 2) rawVal = (byteVal + above) & 0xff;
+      else if (filterType === 3) rawVal = (byteVal + Math.floor((left + above) / 2)) & 0xff;
+      else if (filterType === 4) {
+        const p = left + above - upperLeft;
+        const pa = Math.abs(p - left);
+        const pb = Math.abs(p - above);
+        const pc = Math.abs(p - upperLeft);
+        let pr = upperLeft;
+        if (pa <= pb && pa <= pc) pr = left;
+        else if (pb <= pc) pr = above;
+        rawVal = (byteVal + pr) & 0xff;
+      }
+      output[dstOffset + x] = rawVal;
+    }
+  }
+  return output;
+}
+
+async function extractImagesFromPdf(pdfBuffer) {
+  const extracted = [];
+  try {
+    const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+    const indirectObjects = pdfDoc.context.enumerateIndirectObjects();
+    let imgIndex = 0;
+
+    for (const [ref, obj] of indirectObjects) {
+      if (!(obj instanceof PDFRawStream)) continue;
+      const dict = obj.dict;
+      if (!dict) continue;
+
+      const subtype = dict.get(PDFName.of('Subtype'));
+      if (subtype !== PDFName.of('Image')) continue;
+
+      try {
+        const widthObj = dict.get(PDFName.of('Width'));
+        const heightObj = dict.get(PDFName.of('Height'));
+        const width = typeof widthObj?.asNumber === 'function' ? widthObj.asNumber() : Number(widthObj);
+        const height = typeof heightObj?.asNumber === 'function' ? heightObj.asNumber() : Number(heightObj);
+
+        // Ignore tiny artifacts, icons, hair-lines, or 1x1 masks
+        if (!width || !height || width < 25 || height < 25) continue;
+
+        const filter = dict.get(PDFName.of('Filter'));
+        let imgBuffer = null;
+
+        if (filter === PDFName.of('DCTDecode')) {
+          imgBuffer = await sharp(Buffer.from(obj.contents)).png().toBuffer();
+        } else if (filter === PDFName.of('FlateDecode')) {
+          const decompressed = zlib.inflateSync(Buffer.from(obj.contents));
+          const decodeParms = dict.get(PDFName.of('DecodeParms'));
+          let predictor = 1;
+          if (decodeParms && typeof decodeParms.get === 'function') {
+            const pObj = decodeParms.get(PDFName.of('Predictor'));
+            if (pObj) {
+              predictor = typeof pObj.asNumber === 'function' ? pObj.asNumber() : Number(pObj) || 1;
+            }
+          }
+
+          const cs = dict.get(PDFName.of('ColorSpace'));
+          let channels = 3;
+          if (cs === PDFName.of('DeviceGray')) channels = 1;
+          else if (cs === PDFName.of('DeviceCMYK')) channels = 4;
+
+          let pixelData = decompressed;
+          if (predictor >= 10) {
+            pixelData = unfilterPngPredictor(decompressed, width, height, channels);
+          }
+
+          if (pixelData && pixelData.length >= width * height * channels) {
+            imgBuffer = await sharp(pixelData.subarray(0, width * height * channels), {
+              raw: { width, height, channels }
+            }).png().toBuffer();
+          } else {
+            try {
+              imgBuffer = await sharp(Buffer.from(obj.contents)).png().toBuffer();
+            } catch (_) { }
+          }
+        } else {
+          try {
+            imgBuffer = await sharp(Buffer.from(obj.contents)).png().toBuffer();
+          } catch (_) { }
+        }
+
+        if (imgBuffer && imgBuffer.length > 0) {
+          extracted.push({
+            index: imgIndex++,
+            buffer: imgBuffer,
+            width,
+            height
+          });
+        }
+      } catch (itemErr) {
+        console.warn('[PDF Image Extract Item Notice]:', itemErr.message);
+      }
+    }
+  } catch (err) {
+    console.warn('[PDF Image Extract Notice] Failed to parse PDF for images:', err.message);
+  }
+  return extracted;
+}
+
+async function uploadExamImageToFilebaseOrLocal(buffer, index, testId) {
+  const missing = getMissingFilebaseEnvVars();
+  const folder = testId ? `test_${testId}` : `batch_${Date.now()}`;
+  const objectKey = `online-tests/${folder}/images/img_${index}.png`;
+
+  // 1. Try Filebase S3 if credentials are configured
+  if (missing.length === 0) {
+    try {
+      const endpoint = getFilebaseEndpoint();
+      const s3Client = new S3Client({
+        endpoint,
+        region: 'us-east-1',
+        credentials: {
+          accessKeyId: process.env.FILEBASE_ACCESS_KEY.trim(),
+          secretAccessKey: process.env.FILEBASE_SECRET_KEY.trim()
+        },
+        forcePathStyle: true
+      });
+
+      const bucketName = process.env.FILEBASE_BUCKET_NAME.trim();
+      await s3Client.send(
+        new PutObjectCommand({
+          Bucket: bucketName,
+          Key: objectKey,
+          Body: buffer,
+          ContentType: 'image/png'
+        })
+      );
+
+      // Generate signed URL (valid for 7 days = 604800 seconds)
+      const command = new GetObjectCommand({
+        Bucket: bucketName,
+        Key: objectKey
+      });
+      const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 7 * 24 * 3600 });
+      if (signedUrl) return signedUrl;
+    } catch (s3Err) {
+      console.warn(`[Exam Image S3 Upload Warning for img_${index}]:`, s3Err.message);
+    }
+  }
+
+  // 2. Fallback to local /public/uploads/online-tests/images/
+  try {
+    const localDir = path.join(__dirname, 'public', 'uploads', 'online-tests', 'images');
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    const filename = `img_${folder}_${index}_${crypto.randomBytes(4).toString('hex')}.png`;
+    const fullPath = path.join(localDir, filename);
+    fs.writeFileSync(fullPath, buffer);
+    return `/uploads/online-tests/images/${filename}`;
+  } catch (fsErr) {
+    console.error(`[Exam Image Local Fallback Error for img_${index}]:`, fsErr);
+    throw fsErr;
+  }
+}
+
 function validateOnlineTestStructure(data) {
   if (!data || typeof data !== 'object') {
     return { valid: false, error: 'Expected root JSON object containing a "sections" array.' };
@@ -3708,14 +3894,34 @@ function validateOnlineTestStructure(data) {
       let cleanCorrectAnswer = null;
       let minWords = Number.isInteger(q.min_words) && q.min_words > 0 ? q.min_words : null;
       let maxWords = Number.isInteger(q.max_words) && q.max_words > 0 ? q.max_words : null;
+      const isVisualOptions = !!(q.has_visual_options || (Array.isArray(q.options) && q.options.length > 0 && typeof q.options[0] === 'object' && q.options[0] !== null));
+      const stimulusImageUrl = q.stimulus_image_url ? String(q.stimulus_image_url).trim() : null;
 
       if (qType === 'mcq') {
         if (!Array.isArray(q.options) || q.options.length < 2 || q.options.length > 5) {
           return { valid: false, error: `MCQ Question #${qIdx + 1} in section "${sectionTitle}" must contain between 2 and 5 options.` };
         }
-        cleanOptions = q.options.map((opt) => (opt !== null && opt !== undefined ? String(opt).trim() : '')).filter(Boolean);
-        if (cleanOptions.length < 2) {
-          return { valid: false, error: `MCQ Question #${qIdx + 1} in section "${sectionTitle}" has invalid or empty options.` };
+        if (isVisualOptions) {
+          cleanOptions = q.options.map((opt, oIdx) => {
+            if (typeof opt === 'object' && opt !== null) {
+              const label = typeof opt.label === 'string' && opt.label.trim() ? opt.label.trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+              const caption = typeof opt.caption === 'string' ? opt.caption.trim() : '';
+              const imageUrl = typeof opt.image_url === 'string' ? opt.image_url.trim() : '';
+              const imageIndex = opt.image_index !== undefined ? Number(opt.image_index) : oIdx;
+              return { label, image_url: imageUrl, caption, image_index: imageIndex };
+            }
+            return {
+              label: String.fromCharCode(65 + oIdx),
+              image_url: '',
+              caption: String(opt || '').trim(),
+              image_index: oIdx
+            };
+          });
+        } else {
+          cleanOptions = q.options.map((opt) => (opt !== null && opt !== undefined ? String(opt).trim() : '')).filter(Boolean);
+          if (cleanOptions.length < 2) {
+            return { valid: false, error: `MCQ Question #${qIdx + 1} in section "${sectionTitle}" has invalid or empty options.` };
+          }
         }
 
         const rawAns = Number(q.correct_answer);
@@ -3779,7 +3985,9 @@ function validateOnlineTestStructure(data) {
         min_words: minWords,
         max_words: maxWords,
         points: points,
-        order_index: qIdx
+        order_index: qIdx,
+        stimulus_image_url: stimulusImageUrl,
+        has_visual_options: isVisualOptions ? 1 : 0
       });
     }
 
@@ -3924,7 +4132,29 @@ app.post(
         }
       }
 
-      // 2. Gemini Document Extraction
+      // 2. Gemini Document Extraction & PDF Image Extraction
+      const extractedImages = [];
+      try {
+        const examPdfBuffer = fs.readFileSync(examPdfFile.path);
+        const rawImages = await extractImagesFromPdf(examPdfBuffer);
+        for (const rImg of rawImages) {
+          try {
+            const url = await uploadExamImageToFilebaseOrLocal(rImg.buffer, rImg.index, null);
+            extractedImages.push({
+              index: rImg.index,
+              url,
+              width: rImg.width,
+              height: rImg.height
+            });
+          } catch (upErr) {
+            console.warn(`[Online Tests Image Upload Warning] Failed to upload image #${rImg.index}:`, upErr.message);
+          }
+        }
+        console.log(`[Online Tests Ingestion] Extracted & uploaded ${extractedImages.length} images from exam paper.`);
+      } catch (imgExtractErr) {
+        console.warn('[Online Tests Image Extraction Warning]:', imgExtractErr.message);
+      }
+
       const examUpload = await ai.files.upload({
         file: examPdfFile.path,
         mimeType: 'application/pdf'
@@ -3952,6 +4182,10 @@ app.post(
         }
       ];
 
+      if (extractedImages.length > 0) {
+        contents.push(`\n\nEXTRACTED EXAM PDF IMAGES (${extractedImages.length} images indexed 0 to ${extractedImages.length - 1}):\nImages with indices 0 to ${extractedImages.length - 1} correspond to figures, maps, diagrams, or visual option choices found sequentially in the exam PDF.`);
+      }
+
       if (audioTranscript) {
         contents.push(`\n\nVERBATIM AUDIO TRANSCRIPT (EXAM LISTENING PASSAGE):\n${audioTranscript}`);
       }
@@ -3963,6 +4197,15 @@ CRITICAL RULES:
 - The Marking Scheme is the 100% authoritative ground truth for all questions, points, accepted answers, and writing criteria.
 - Split listening sections into distinct parts (e.g. Part 1, Part 2, Part 3, Part 4) aligned to the dialogue.
 - Extract reading passages verbatim into passage_text for comprehension sections.
+- VISUAL & PICTURE QUESTIONS (Cambridge Listening / Reading Paper style with Picture A, B, C or stimulus diagrams):
+  * If a question relies on pictures/diagrams for its options (e.g. Question 1 shows Picture A, Picture B, Picture C):
+    - Set "has_visual_options": true
+    - Populate "options" as an array of objects:
+      [ { "label": "A", "image_index": 0, "caption": "Sandwiches" }, { "label": "B", "image_index": 1, "caption": "Soup" }, { "label": "C", "image_index": 2, "caption": "Pizza" } ]
+    - "correct_answer": integer index (0 for A, 1 for B, 2 for C) matching the mark scheme.
+  * If a question has a central stimulus diagram, map, chart, or figure shared by questions:
+    - Set "stimulus_image_index": <integer index of the extracted image> (e.g. 0, 1, 2)
+  * For standard text-only MCQ questions, "has_visual_options" is false and "options" is a standard array of strings ["Option A", "Option B", "Option C"].
 - For question_type 'mcq': options array must contain 2 to 5 items; correct_answer is the integer index (0-based).
 - For question_type 'matching': options array contains the shared statement pool (A-H); correct_answer is the integer index.
 - For question_type 'fill_blank', 'rewrite', 'short_answer': options is null; correct_answer is an array of acceptable string variations extracted directly from the mark scheme.
@@ -3985,6 +4228,8 @@ OUTPUT SCHEMA (Strict JSON):
         {
           "question_type": "mcq",
           "question_text": "...",
+          "has_visual_options": false,
+          "stimulus_image_index": null,
           "options": ["Option A", "Option B", "Option C"],
           "correct_answer": 0,
           "min_words": null,
@@ -4054,6 +4299,38 @@ OUTPUT SCHEMA (Strict JSON):
           cleanText = cleanText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
         }
         parsedJson = JSON.parse(cleanText);
+
+        // Map extracted image indices to URLs
+        if (parsedJson && Array.isArray(parsedJson.sections)) {
+          for (const sec of parsedJson.sections) {
+            if (Array.isArray(sec.questions)) {
+              for (const q of sec.questions) {
+                if (q.stimulus_image_index !== undefined && q.stimulus_image_index !== null) {
+                  const sIdx = Number(q.stimulus_image_index);
+                  const matchedStim = extractedImages.find(img => img.index === sIdx) || extractedImages[sIdx];
+                  q.stimulus_image_url = matchedStim ? matchedStim.url : null;
+                }
+
+                if (q.has_visual_options || (Array.isArray(q.options) && q.options.length > 0 && typeof q.options[0] === 'object')) {
+                  q.has_visual_options = true;
+                  q.options = q.options.map((opt, oIdx) => {
+                    if (typeof opt === 'object' && opt !== null) {
+                      const optImgIdx = opt.image_index !== undefined ? Number(opt.image_index) : oIdx;
+                      const matchedOpt = extractedImages.find(img => img.index === optImgIdx) || extractedImages[optImgIdx];
+                      return {
+                        label: opt.label || String.fromCharCode(65 + oIdx),
+                        image_url: matchedOpt ? matchedOpt.url : (opt.image_url || ''),
+                        caption: opt.caption || '',
+                        image_index: optImgIdx
+                      };
+                    }
+                    return opt;
+                  });
+                }
+              }
+            }
+          }
+        }
       } catch (parseErr) {
         if (uploadedAudioKey) {
           try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) { }
@@ -4151,8 +4428,8 @@ OUTPUT SCHEMA (Strict JSON):
 
         for (const q of section.questions) {
           await db.execute({
-            sql: `INSERT INTO online_test_questions (section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            sql: `INSERT INTO online_test_questions (section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             args: [
               sectionId,
               q.question_type,
@@ -4162,7 +4439,9 @@ OUTPUT SCHEMA (Strict JSON):
               q.min_words,
               q.max_words,
               q.points,
-              q.order_index
+              q.order_index,
+              q.stimulus_image_url || null,
+              q.has_visual_options ? 1 : 0
             ]
           });
         }
@@ -4279,7 +4558,7 @@ app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, asy
 
     for (const sec of sectionsRes.rows) {
       const questionsRes = await db.execute({
-        sql: `SELECT id, section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index
+        sql: `SELECT id, section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options
               FROM online_test_questions
               WHERE section_id = ?
               ORDER BY order_index ASC, id ASC`,
@@ -4303,7 +4582,9 @@ app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, asy
           ...q,
           options: parsedOptions,
           correct_answer: parsedCorrect,
-          points: pts
+          points: pts,
+          stimulus_image_url: q.stimulus_image_url || null,
+          has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true
         };
       });
 
@@ -4472,6 +4753,14 @@ app.patch('/api/online-tests/:testId/questions/:questionId', authenticateToken, 
         updates.push('points = ?');
         args.push(p);
       }
+    }
+    if (req.body.stimulus_image_url !== undefined) {
+      updates.push('stimulus_image_url = ?');
+      args.push(req.body.stimulus_image_url ? String(req.body.stimulus_image_url).trim() : null);
+    }
+    if (req.body.has_visual_options !== undefined) {
+      updates.push('has_visual_options = ?');
+      args.push(req.body.has_visual_options ? 1 : 0);
     }
 
     if (updates.length === 0) {
@@ -4815,7 +5104,7 @@ app.get('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, requ
 
     for (const sec of sectionsRes.rows) {
       const questionsRes = await db.execute({
-        sql: `SELECT id, section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index
+        sql: `SELECT id, section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options
               FROM online_test_questions
               WHERE section_id = ?
               ORDER BY order_index ASC, id ASC`,
@@ -4836,6 +5125,8 @@ app.get('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, requ
           options: parsedOptions,
           correct_answer: parsedCorrect,
           points: Number(q.points) || 1,
+          stimulus_image_url: q.stimulus_image_url || null,
+          has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true,
           section_title: sec.section_title,
           section_type: sec.section_type,
           passage_text: sec.passage_text,
@@ -5043,7 +5334,7 @@ app.get('/api/public/online-tests/:code', async (req, res) => {
       // STRICT ANSWER-KEY & RUBRIC STRIPPING:
       // DO NOT SELECT correct_answer or any rubric criteria from database
       const questionsRes = await db.execute({
-        sql: `SELECT id, section_id, question_type, question_text, options, min_words, max_words, points, order_index
+        sql: `SELECT id, section_id, question_type, question_text, options, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options
               FROM online_test_questions
               WHERE section_id = ?
               ORDER BY order_index ASC, id ASC`,
@@ -5064,6 +5355,8 @@ app.get('/api/public/online-tests/:code', async (req, res) => {
           question_type: q.question_type || 'mcq',
           question_text: q.question_text || '',
           options: Array.isArray(opts) ? opts : [],
+          stimulus_image_url: q.stimulus_image_url || null,
+          has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true,
           min_words: q.min_words !== null && q.min_words !== undefined ? Number(q.min_words) : null,
           max_words: q.max_words !== null && q.max_words !== undefined ? Number(q.max_words) : null,
           points: Number(q.points) || 1,
@@ -5255,7 +5548,7 @@ app.post(
 
       // Ingest all questions for deterministic objective grading
       const questionsRes = await db.execute({
-        sql: `SELECT q.id, q.section_id, q.question_type, q.question_text, q.options, q.correct_answer, q.min_words, q.max_words, q.points, s.section_type
+        sql: `SELECT q.id, q.section_id, q.question_type, q.question_text, q.options, q.correct_answer, q.min_words, q.max_words, q.points, q.stimulus_image_url, q.has_visual_options, s.section_type
               FROM online_test_questions q
               JOIN online_test_sections s ON q.section_id = s.id
               WHERE s.test_id = ?
@@ -5347,7 +5640,9 @@ app.post(
           max_points: qPts,
           min_words: q.min_words,
           max_words: q.max_words,
-          word_count: wordCount
+          word_count: wordCount,
+          stimulus_image_url: q.stimulus_image_url || null,
+          has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true
         });
       }
 

@@ -465,29 +465,78 @@ function renderQuestionCard(sectionId, q, displayNum) {
 
   let controlsHtml = '';
 
+  let stimulusHtml = '';
+  if (q.stimulus_image_url) {
+    stimulusHtml = `
+      <div class="ot-stimulus-preview-box" style="margin-top:10px; padding:10px 14px; background:var(--paper); border:1px solid var(--border); border-radius:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <span class="fb-label" style="margin:0; font-size:12px;">Stimulus Diagram / Figure:</span>
+          <a href="${escapeHtml(q.stimulus_image_url)}" target="_blank" style="font-size:12px; color:var(--pen); text-decoration:underline;">View Full Size ↗</a>
+        </div>
+        <img src="${escapeHtml(q.stimulus_image_url)}" alt="Stimulus Diagram" class="ot-stimulus-thumb" style="max-height:160px; max-width:100%; border-radius:6px; border:1px solid var(--paper-line); display:block; object-fit:contain; background:#fff;" />
+      </div>
+    `;
+  }
+
   if (qType === 'mcq') {
     const opts = Array.isArray(q.options) ? q.options : [];
     const correctIdx = Number(q.correct_answer) || 0;
+    const isVisual = q.has_visual_options || (opts.length > 0 && typeof opts[0] === 'object' && opts[0] !== null);
 
-    controlsHtml = `
-      <div style="margin-top:10px;">
-        <div class="fb-label">Options (Click dot to set correct answer):</div>
-        <div class="ot-options-vertical-list">
-          ${opts.map((opt, oIdx) => `
-            <div class="ot-opt-row ${oIdx === correctIdx ? 'is-correct' : ''}">
-              <span class="ot-opt-radio" onclick="setMcqCorrectOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Click to set as correct answer">
-                ${oIdx === correctIdx ? '●' : '○'}
-              </span>
-              <span class="ot-opt-letter">${String.fromCharCode(65 + oIdx)}.</span>
-              <span contenteditable="true" class="editable-field ot-editable-opt-text" data-q-id="${q.id}" data-opt-idx="${oIdx}">${escapeHtml(opt)}</span>
-              <button type="button" class="line-delete-btn" onclick="removeMcqOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Remove option">✕</button>
-            </div>
-          `).join('')}
-          <button type="button" class="ghost" style="font-size:11px; padding:3px 8px; margin-top:4px;"
-            onclick="addMcqOption(${currentReviewTest.id}, ${q.id})">+ Add Option</button>
+    if (isVisual) {
+      controlsHtml = `
+        <div style="margin-top:10px;">
+          <div class="fb-label">Visual Options (Click radio to set correct answer, edit caption below):</div>
+          <div class="ot-visual-options-admin-grid">
+            ${opts.map((opt, oIdx) => {
+              const letter = (opt && opt.label) ? opt.label : String.fromCharCode(65 + oIdx);
+              const imgUrl = (opt && opt.image_url) ? opt.image_url : '';
+              const caption = (opt && opt.caption) ? opt.caption : '';
+              const isCorrect = oIdx === correctIdx;
+              return `
+                <div class="ot-visual-opt-admin-card ${isCorrect ? 'is-correct' : ''}">
+                  <div class="ot-visual-opt-admin-img-wrap">
+                    ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Picture ${letter}" class="ot-visual-opt-admin-img" />` : `<div style="font-size:12px; color:var(--ink-soft);">No image</div>`}
+                  </div>
+                  <div class="ot-visual-opt-admin-meta">
+                    <div style="display:flex; align-items:center; justify-content:space-between; width:100%; margin-bottom:4px;">
+                      <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="ot-opt-radio" onclick="setMcqCorrectOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Click to set as correct answer" style="cursor:pointer; font-size:14px; color:${isCorrect ? '#059669' : 'var(--ink-soft)'};">
+                          ${isCorrect ? '●' : '○'}
+                        </span>
+                        <span style="font-weight:700; font-size:12px; color:var(--pen);">Picture ${letter}</span>
+                      </div>
+                      <button type="button" class="line-delete-btn" onclick="removeMcqOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Remove option">✕</button>
+                    </div>
+                    <div contenteditable="true" class="editable-field ot-editable-opt-text" data-q-id="${q.id}" data-opt-idx="${oIdx}" placeholder="Caption (optional)" style="font-size:12px; padding:4px 6px; border:1px solid var(--border); border-radius:4px; background:#fff; min-height:22px; width:100%; box-sizing:border-box;">${escapeHtml(caption)}</div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
         </div>
-      </div>
-    `;
+      `;
+    } else {
+      controlsHtml = `
+        <div style="margin-top:10px;">
+          <div class="fb-label">Options (Click dot to set correct answer):</div>
+          <div class="ot-options-vertical-list">
+            ${opts.map((opt, oIdx) => `
+              <div class="ot-opt-row ${oIdx === correctIdx ? 'is-correct' : ''}">
+                <span class="ot-opt-radio" onclick="setMcqCorrectOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Click to set as correct answer">
+                  ${oIdx === correctIdx ? '●' : '○'}
+                </span>
+                <span class="ot-opt-letter">${String.fromCharCode(65 + oIdx)}.</span>
+                <span contenteditable="true" class="editable-field ot-editable-opt-text" data-q-id="${q.id}" data-opt-idx="${oIdx}">${escapeHtml(opt)}</span>
+                <button type="button" class="line-delete-btn" onclick="removeMcqOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Remove option">✕</button>
+              </div>
+            `).join('')}
+            <button type="button" class="ghost" style="font-size:11px; padding:3px 8px; margin-top:4px;"
+              onclick="addMcqOption(${currentReviewTest.id}, ${q.id})">+ Add Option</button>
+          </div>
+        </div>
+      `;
+    }
   } else if (qType === 'matching') {
     const opts = Array.isArray(q.options) ? q.options : [];
     const correctIdx = Number(q.correct_answer) || 0;
@@ -556,6 +605,7 @@ function renderQuestionCard(sectionId, q, displayNum) {
           style="font-size:14px; font-weight:500; color:var(--ink); line-height:1.5; min-height:28px;">${escapeHtml(q.question_text || '')}</div>
       </div>
 
+      ${stimulusHtml}
       ${controlsHtml}
     </div>
   `;
@@ -744,7 +794,11 @@ function saveInlineField(el) {
     if (el.dataset.optIdx !== undefined) {
       const optIdx = Number(el.dataset.optIdx);
       if (!Array.isArray(q.options)) q.options = [];
-      q.options[optIdx] = rawVal;
+      if (typeof q.options[optIdx] === 'object' && q.options[optIdx] !== null) {
+        q.options[optIdx].caption = rawVal;
+      } else {
+        q.options[optIdx] = rawVal;
+      }
       scheduleQuestionPatch(testId, qId, 'options', q.options);
       return;
     }
@@ -785,14 +839,20 @@ function setMcqCorrectOption(testId, questionId, correctIdx) {
 
   const card = document.getElementById(`ot-q-${questionId}`);
   if (card) {
-    card.querySelectorAll('.ot-opt-row').forEach((row, idx) => {
+    card.querySelectorAll('.ot-opt-row, .ot-visual-opt-admin-card').forEach((row, idx) => {
       const radio = row.querySelector('.ot-opt-radio');
       if (idx === correctIdx) {
         row.classList.add('is-correct');
-        if (radio) radio.innerText = '●';
+        if (radio) {
+          radio.innerText = '●';
+          radio.style.color = '#059669';
+        }
       } else {
         row.classList.remove('is-correct');
-        if (radio) radio.innerText = '○';
+        if (radio) {
+          radio.innerText = '○';
+          radio.style.color = 'var(--ink-soft)';
+        }
       }
     });
   }

@@ -23,10 +23,12 @@
         "mammoth": "^1.12.1",
         "multer": "^2.2.0",
         "nodemailer": "^9.0.5",
+        "pdf-lib": "^1.17.1",
         "pdf-parse": "^2.4.5",
         "puppeteer": "^25.11.0",
         "puppeteer-core": "^25.11.0",
-        "resend": "^6.20.0"
+        "resend": "^6.20.0",
+        "sharp": "^0.35.4"
     },
     "allowScripts": {
         "puppeteer@25.11.0": true,

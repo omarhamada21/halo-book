@@ -1506,6 +1506,83 @@
         color: var(--ink);
       }
 
+      /* Teacher Canvas Stimulus Preview & Visual Options */
+      .ot-stimulus-preview-box {
+        margin-top: 10px;
+        padding: 12px 14px;
+        background: #F8FAFC;
+        border: 1px solid var(--paper-line);
+        border-radius: 8px;
+      }
+
+      .ot-stimulus-thumb {
+        max-height: 180px;
+        max-width: 100%;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        display: block;
+        object-fit: contain;
+        background: #fff;
+        transition: transform 0.2s;
+      }
+
+      .ot-stimulus-thumb:hover {
+        transform: scale(1.01);
+      }
+
+      .ot-visual-options-admin-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 12px;
+        margin-top: 8px;
+      }
+
+      .ot-visual-opt-admin-card {
+        background: #FAFBFD;
+        border: 1.5px solid var(--border);
+        border-radius: 8px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        transition: all 0.15s;
+      }
+
+      .ot-visual-opt-admin-card:hover {
+        border-color: var(--pen);
+        box-shadow: 0 2px 8px rgba(22, 35, 63, 0.06);
+      }
+
+      .ot-visual-opt-admin-card.is-correct {
+        border-color: #059669;
+        background: #F0FDF4;
+        box-shadow: 0 0 0 1px #059669;
+      }
+
+      .ot-visual-opt-admin-img-wrap {
+        width: 100%;
+        height: 120px;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+
+      .ot-visual-opt-admin-img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+      }
+
+      .ot-visual-opt-admin-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
       /* Refined Modern SaaS Footer */
       .app-footer,
       footer {

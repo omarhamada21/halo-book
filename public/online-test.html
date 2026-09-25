@@ -638,6 +638,244 @@
     flex: 1;
   }
 
+  /* Stimulus Diagram / Figure Box */
+  .q-stimulus-wrap {
+    margin-bottom: 14px;
+    background: #F8FAFC;
+    border: 1px solid var(--paper-line);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .q-stimulus-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .q-stimulus-label {
+    font-size: 12px;
+    font-weight: 700;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--pen);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .q-stimulus-expand-btn {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .q-stimulus-expand-btn:hover {
+    color: var(--pen);
+    border-color: var(--pen);
+    background: var(--pen-soft);
+  }
+
+  .q-stimulus-img-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    overflow: hidden;
+  }
+
+  .q-stimulus-img {
+    max-width: 100%;
+    max-height: 380px;
+    object-fit: contain;
+    border-radius: 4px;
+    cursor: zoom-in;
+    transition: transform 0.2s;
+  }
+
+  .q-stimulus-img:hover {
+    transform: scale(1.01);
+  }
+
+  /* Visual MCQ Options Grid */
+  .mcq-visual-options-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+    margin-top: 10px;
+  }
+
+  .mcq-visual-card {
+    background: #FAFBFD;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 10px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    user-select: none;
+    position: relative;
+  }
+
+  .mcq-visual-card:hover {
+    background: var(--pen-soft);
+    border-color: var(--pen);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(29, 58, 102, 0.08);
+  }
+
+  .mcq-visual-card.selected {
+    background: #EEF2FF;
+    border-color: var(--pen);
+    box-shadow: 0 0 0 2px var(--pen);
+  }
+
+  .mcq-visual-img-wrap {
+    width: 100%;
+    height: 160px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .mcq-visual-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    cursor: zoom-in;
+    transition: transform 0.2s;
+  }
+
+  .mcq-visual-img:hover {
+    transform: scale(1.03);
+  }
+
+  .mcq-visual-placeholder {
+    font-size: 13px;
+    color: var(--ink-soft);
+    font-weight: 500;
+  }
+
+  .mcq-visual-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 2px 4px;
+  }
+
+  .mcq-visual-radio-indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: #fff;
+    flex-shrink: 0;
+    transition: all 0.15s;
+    position: relative;
+  }
+
+  .mcq-visual-card.selected .mcq-visual-radio-indicator {
+    border-color: var(--pen);
+    background: var(--pen);
+    box-shadow: inset 0 0 0 3px #fff;
+  }
+
+  .mcq-visual-text-block {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .mcq-visual-letter {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--pen);
+  }
+
+  .mcq-visual-caption {
+    font-size: 12.5px;
+    color: var(--ink);
+    line-height: 1.3;
+    word-break: break-word;
+  }
+
+  /* Lightbox Overlay for full-size diagram viewing */
+  .diagram-lightbox-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(4px);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .diagram-lightbox-content {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    background: #fff;
+    border-radius: 10px;
+    padding: 12px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .diagram-lightbox-content img {
+    max-width: 85vw;
+    max-height: 85vh;
+    object-fit: contain;
+    border-radius: 6px;
+  }
+
+  .diagram-lightbox-close {
+    position: absolute;
+    top: -14px;
+    right: -14px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid var(--border);
+    color: var(--ink);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s;
+  }
+
+  .diagram-lightbox-close:hover {
+    transform: scale(1.1);
+    background: #FEE2E2;
+    color: #DC2626;
+  }
+
   /* Text Inputs */
   .ot-text-input {
     width: 100%;
@@ -1867,23 +2105,66 @@ function renderQuestion(sec, q, displayNum) {
     }
   }
 
+  let stimulusHtml = '';
+  if (q.stimulus_image_url) {
+    stimulusHtml = `
+      <div class="q-stimulus-wrap">
+        <div class="q-stimulus-bar">
+          <span class="q-stimulus-label">Stimulus Diagram / Figure</span>
+          <button type="button" class="q-stimulus-expand-btn" onclick="openDiagramLightbox('${escapeHtml(q.stimulus_image_url)}')">🔍 Click to Enlarge</button>
+        </div>
+        <div class="q-stimulus-img-container">
+          <img src="${escapeHtml(q.stimulus_image_url)}" alt="Stimulus Diagram for Question ${displayNum}" class="q-stimulus-img" onclick="openDiagramLightbox('${escapeHtml(q.stimulus_image_url)}')" />
+        </div>
+      </div>
+    `;
+  }
+
   let inputMarkup = '';
 
   if (qType === 'mcq') {
     const opts = Array.isArray(q.options) ? q.options : [];
-    inputMarkup = `
-      <div class="mcq-options-grid" id="mcq-group-${q.id}">
-        ${opts.map((opt, oIdx) => {
-          const letter = String.fromCharCode(65 + oIdx);
-          return `
-            <div class="mcq-choice-row" id="mcq-opt-${q.id}-${oIdx}" onclick="handleSelectMcq(${q.id}, '${oIdx}')">
-              <span class="mcq-letter">${letter}</span>
-              <span class="mcq-text" style="word-break:break-word; overflow-wrap:break-word; overflow:visible;">${escapeHtml(opt)}</span>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
+    const isVisual = q.has_visual_options || (opts.length > 0 && typeof opts[0] === 'object' && opts[0] !== null);
+
+    if (isVisual) {
+      inputMarkup = `
+        <div class="mcq-visual-options-grid" id="mcq-group-${q.id}">
+          ${opts.map((opt, oIdx) => {
+            const letter = (opt && opt.label) ? opt.label : String.fromCharCode(65 + oIdx);
+            const imgUrl = (opt && opt.image_url) ? opt.image_url : '';
+            const caption = (opt && opt.caption) ? opt.caption : '';
+            return `
+              <div class="mcq-visual-card" id="mcq-opt-${q.id}-${oIdx}" onclick="handleSelectMcq(${q.id}, '${oIdx}')">
+                <div class="mcq-visual-img-wrap">
+                  ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Picture ${letter}" class="mcq-visual-img" loading="lazy" onclick="event.stopPropagation(); openDiagramLightbox('${escapeHtml(imgUrl)}')" />` : `<div class="mcq-visual-placeholder">[Picture ${letter}]</div>`}
+                </div>
+                <div class="mcq-visual-footer">
+                  <div class="mcq-visual-radio-indicator"></div>
+                  <div class="mcq-visual-text-block">
+                    <span class="mcq-visual-letter">Picture ${letter}</span>
+                    ${caption ? `<span class="mcq-visual-caption">${escapeHtml(caption)}</span>` : ''}
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    } else {
+      inputMarkup = `
+        <div class="mcq-options-grid" id="mcq-group-${q.id}">
+          ${opts.map((opt, oIdx) => {
+            const letter = String.fromCharCode(65 + oIdx);
+            return `
+              <div class="mcq-choice-row" id="mcq-opt-${q.id}-${oIdx}" onclick="handleSelectMcq(${q.id}, '${oIdx}')">
+                <span class="mcq-letter">${letter}</span>
+                <span class="mcq-text" style="word-break:break-word; overflow-wrap:break-word; overflow:visible;">${escapeHtml(opt)}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
   } else if (qType === 'matching') {
     const opts = Array.isArray(q.options) ? q.options : [];
     inputMarkup = `
@@ -1926,6 +2207,7 @@ function renderQuestion(sec, q, displayNum) {
         <span class="q-points">${pts} Mark${pts === 1 ? '' : 's'}</span>
       </div>
       <div class="q-text">${escapeHtml(processedQText)}</div>
+      ${stimulusHtml}
       ${inputMarkup}
     </div>
   `;
@@ -1936,13 +2218,39 @@ function renderQuestion(sec, q, displayNum) {
 function handleSelectMcq(questionId, optIndexStr) {
   const group = document.getElementById(`mcq-group-${questionId}`);
   if (group) {
-    group.querySelectorAll('.mcq-choice-row').forEach(row => row.classList.remove('selected'));
+    group.querySelectorAll('.mcq-choice-row, .mcq-visual-card').forEach(row => row.classList.remove('selected'));
   }
   const selectedRow = document.getElementById(`mcq-opt-${questionId}-${optIndexStr}`);
   if (selectedRow) selectedRow.classList.add('selected');
 
   clientAnswers.set(questionId, { answer: optIndexStr, word_count: null });
   updateCompletionCount();
+}
+
+function openDiagramLightbox(src) {
+  if (!src) return;
+  let modal = document.getElementById('diagram-lightbox-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'diagram-lightbox-modal';
+    modal.className = 'diagram-lightbox-overlay';
+    modal.onclick = closeDiagramLightbox;
+    modal.innerHTML = `
+      <div class="diagram-lightbox-content" onclick="event.stopPropagation()">
+        <button type="button" class="diagram-lightbox-close" onclick="closeDiagramLightbox()">✕</button>
+        <img id="diagram-lightbox-img" src="" alt="Enlarged Diagram" />
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+  const img = document.getElementById('diagram-lightbox-img');
+  if (img) img.src = src;
+  modal.style.display = 'flex';
+}
+
+function closeDiagramLightbox() {
+  const modal = document.getElementById('diagram-lightbox-modal');
+  if (modal) modal.style.display = 'none';
 }
 
 function handleAnswerInput(questionId, val) {
