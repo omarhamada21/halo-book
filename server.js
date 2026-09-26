@@ -4967,21 +4967,19 @@ OUTPUT SCHEMA (Strict JSON):
 
 // ----------------- ONLINE TESTS: TEACHER REVIEW & MANAGEMENT API -----------------
 
-// 1. GET /api/online-tests - List all tests for the authenticated teacher
+// 1. GET /api/online-tests - List all tests for the authenticated teacher ONLY (strict tenancy)
 app.get('/api/online-tests', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
-    const isElevated = ['root', 'admin'].includes(req.user.role);
     const sql = `
       SELECT t.id, t.teacher_id, t.title, t.deadline, t.status, t.code, t.audio_path, t.created_at,
              (SELECT COUNT(*) FROM online_test_attempts a WHERE a.test_id = t.id) AS attempt_count,
              (SELECT COUNT(*) FROM online_test_sections s WHERE s.test_id = t.id) AS section_count,
              (SELECT COALESCE(SUM(q.points), 0) FROM online_test_questions q WHERE q.section_id IN (SELECT id FROM online_test_sections WHERE test_id = t.id)) AS total_marks
       FROM online_tests t
-      ${isElevated ? '' : 'WHERE t.teacher_id = ?'}
+      WHERE t.teacher_id = ?
       ORDER BY t.created_at DESC, t.id DESC
     `;
-    const args = isElevated ? [] : [req.user.id];
-    const result = await db.execute({ sql, args });
+    const result = await db.execute({ sql, args: [req.user.id] });
     return res.json({ success: true, tests: result.rows || [] });
   } catch (err) {
     console.error('Error fetching online tests:', err);
@@ -4989,7 +4987,7 @@ app.get('/api/online-tests', authenticateToken, requireApprovedUser, async (req,
   }
 });
 
-// Helper: Strict Multi-Tenancy & Authorization Validator
+// Helper: Strict Multi-Tenancy & Authorization Validator (Only the creator can access/modify their test)
 async function getAuthoritativeTestOrCheckAuth(testId, user) {
   const testRes = await db.execute({
     sql: 'SELECT id, teacher_id, title, deadline, status, code, audio_path, extra_instructions, created_at FROM online_tests WHERE id = ?',
@@ -4999,8 +4997,7 @@ async function getAuthoritativeTestOrCheckAuth(testId, user) {
   if (!test) {
     return { test: null, status: 404, error: 'Online test not found.' };
   }
-  const isElevated = user && ['root', 'admin'].includes(user.role);
-  if (!isElevated && Number(test.teacher_id) !== Number(user.id)) {
+  if (!user || Number(test.teacher_id) !== Number(user.id)) {
     return { test: null, status: 403, error: 'Forbidden: You do not have permission to access or modify this test.' };
   }
   return { test, status: 200, error: null };
