@@ -430,7 +430,8 @@ async function initDatabase() {
         termination_reason TEXT DEFAULT 'normal',
         security_violations TEXT,
         submitted_at TEXT DEFAULT CURRENT_TIMESTAMP
-      );`
+      );`,
+      'ALTER TABLE online_test_questions ADD COLUMN word_bank TEXT;'
     ];
 
     for (const sql of autoMigrations) {
@@ -1930,6 +1931,48 @@ async function generateSignedAudioUrl(objectKey) {
     console.warn(`[Filebase Pre-sign Warning] Failed to generate signed URL for ${objectKey}:`, err.message);
     return null;
   }
+}
+
+async function generateSignedImageUrl(objectKey) {
+  if (!objectKey) return null;
+  const missing = getMissingFilebaseEnvVars();
+  if (missing.length === 0) {
+    try {
+      const endpoint = getFilebaseEndpoint();
+      const s3Client = new S3Client({
+        endpoint,
+        region: 'us-east-1',
+        credentials: {
+          accessKeyId: process.env.FILEBASE_ACCESS_KEY.trim(),
+          secretAccessKey: process.env.FILEBASE_SECRET_KEY.trim()
+        },
+        forcePathStyle: true
+      });
+
+      const command = new GetObjectCommand({
+        Bucket: process.env.FILEBASE_BUCKET_NAME.trim(),
+        Key: objectKey
+      });
+
+      // Valid for 1 hour (3600 seconds), matching audio pre-sign
+      return await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+    } catch (err) {
+      console.warn(`[Filebase Image Pre-sign Warning] Failed to generate signed URL for ${objectKey}:`, err.message);
+    }
+  }
+
+  // Local fallback if local path or Filebase is unavailable
+  if (typeof objectKey === 'string') {
+    if (objectKey.startsWith('/uploads/') || objectKey.startsWith('uploads/')) {
+      return objectKey.startsWith('/') ? objectKey : `/${objectKey}`;
+    }
+    const localRel = `/uploads/online-tests/images/${path.basename(objectKey)}`;
+    const fullPath = path.join(__dirname, 'public', 'uploads', 'online-tests', 'images', path.basename(objectKey));
+    if (fs.existsSync(fullPath)) {
+      return localRel;
+    }
+  }
+  return null;
 }
 
 async function deleteAudioFromFilebase(objectKey) {
@@ -3871,6 +3914,23 @@ async function extractImagesFromPdf(pdfBuffer) {
   return extracted;
 }
 
+/**
+ * Visual Option Extraction Engine:
+ * 
+ * IMPORTANT LIMITATION NOTICE:
+ * This automated extraction heuristic (vector render-and-crop based on option label geometry)
+ * has ONLY been validated against Cambridge English exam papers (specifically 0876/02 listening
+ * papers with 3-picture horizontal A/B/C option layout).
+ * 
+ * Extraction success is NOT guaranteed to be predictable across arbitrary exam formats, 
+ * different publishers, non-standard DPI, varied font metrics, or custom teacher layouts.
+ * 
+ * The automated pipeline is a best-effort convenience feature. Teachers MUST be prepared 
+ * to routinely utilize the mandatory manual fallback ("Upload Image" in the Review UI) whenever 
+ * automated extraction fails, crops inaccurately, or encounters an unsupported layout. 
+ * The system enforces this contract by strictly blocking test publication (HTTP 422) if any 
+ * picture-choice option is missing a valid image.
+ */
 async function extractVisualOptionCropsFromPdf(pdfBuffer) {
   const crops = [];
   try {
@@ -3915,7 +3975,8 @@ async function extractVisualOptionCropsFromPdf(pdfBuffer) {
             const precedingText = precedingItems.map(it => it.str).join(' ');
             if (/example/i.test(precedingText)) continue;
 
-            const qNumMatch = precedingText.match(/(?:^|\s|\b)([1-9]\d?)\b/);
+            const cleanPrec = precedingText.replace(/\[\d+\]/g, '').trim();
+            const qNumMatch = cleanPrec.match(/(?:^|\s|\b)([1-9]\d?)\b/);
             const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : crops.length + 1;
 
             if (!pageBuf) {
@@ -3989,13 +4050,13 @@ async function uploadExamImageToFilebaseOrLocal(buffer, index, testId) {
         })
       );
 
-      // Generate signed URL (valid for 7 days = 604800 seconds)
+      // Generate signed URL (valid for 1 hour, matching audio)
       const command = new GetObjectCommand({
         Bucket: bucketName,
         Key: objectKey
       });
-      const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 7 * 24 * 3600 });
-      if (signedUrl) return signedUrl;
+      const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+      if (signedUrl) return { objectKey, url: signedUrl };
     } catch (s3Err) {
       console.warn(`[Exam Image S3 Upload Warning for img_${index}]:`, s3Err.message);
     }
@@ -4010,7 +4071,8 @@ async function uploadExamImageToFilebaseOrLocal(buffer, index, testId) {
     const filename = `img_${folder}_${index}_${crypto.randomBytes(4).toString('hex')}.png`;
     const fullPath = path.join(localDir, filename);
     fs.writeFileSync(fullPath, buffer);
-    return `/uploads/online-tests/images/${filename}`;
+    const localRel = `/uploads/online-tests/images/${filename}`;
+    return { objectKey: localRel, url: localRel };
   } catch (fsErr) {
     console.error(`[Exam Image Local Fallback Error for img_${index}]:`, fsErr);
     throw fsErr;
@@ -4092,7 +4154,16 @@ function validateOnlineTestStructure(data) {
       let cleanCorrectAnswer = null;
       let minWords = Number.isInteger(q.min_words) && q.min_words > 0 ? q.min_words : null;
       let maxWords = Number.isInteger(q.max_words) && q.max_words > 0 ? q.max_words : null;
-      const isVisualOptions = !!(q.has_visual_options || (Array.isArray(q.options) && q.options.length > 0 && typeof q.options[0] === 'object' && q.options[0] !== null));
+      const isVisualOptions = !!(
+        q.has_visual_options === true ||
+        (Array.isArray(q.options) && q.options.some(opt => {
+          if (typeof opt === 'object' && opt !== null) {
+            return opt.type === 'image' || Boolean(opt.object_key) || Boolean(opt.image_url) || (typeof opt.caption === 'string' && /\[?picture\s*[a-z]\]?/i.test(opt.caption));
+          }
+          const s = String(opt || '').trim().toLowerCase();
+          return /\[?picture\s*[a-z]\]?/i.test(s) || s.startsWith('picture ');
+        }))
+      );
       const stimulusImageUrl = q.stimulus_image_url ? String(q.stimulus_image_url).trim() : null;
 
       if (qType === 'mcq') {
@@ -4104,19 +4175,29 @@ function validateOnlineTestStructure(data) {
             if (typeof opt === 'object' && opt !== null) {
               const label = typeof opt.label === 'string' && opt.label.trim() ? opt.label.trim().toUpperCase() : String.fromCharCode(65 + oIdx);
               const caption = typeof opt.caption === 'string' ? opt.caption.trim() : '';
+              const objectKey = typeof opt.object_key === 'string' && opt.object_key.trim() ? opt.object_key.trim() : (typeof opt.objectKey === 'string' ? opt.objectKey.trim() : null);
               const imageUrl = typeof opt.image_url === 'string' ? opt.image_url.trim() : '';
               const imageIndex = opt.image_index !== undefined ? Number(opt.image_index) : oIdx;
-              return { label, image_url: imageUrl, caption, image_index: imageIndex };
+              return { type: 'image', label, object_key: objectKey, image_url: imageUrl, caption, image_index: imageIndex };
             }
             return {
+              type: 'image',
               label: String.fromCharCode(65 + oIdx),
+              object_key: null,
               image_url: '',
               caption: String(opt || '').trim(),
               image_index: oIdx
             };
           });
         } else {
-          cleanOptions = q.options.map((opt) => (opt !== null && opt !== undefined ? String(opt).trim() : '')).filter(Boolean);
+          cleanOptions = q.options.map((opt, oIdx) => {
+            if (typeof opt === 'object' && opt !== null) {
+              const label = typeof opt.label === 'string' && opt.label.trim() ? opt.label.trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+              const value = opt.value !== undefined ? String(opt.value).trim() : (opt.text ? String(opt.text).trim() : '');
+              return { type: 'text', label, value };
+            }
+            return { type: 'text', label: String.fromCharCode(65 + oIdx), value: String(opt || '').trim() };
+          }).filter(o => Boolean(o.value));
           if (cleanOptions.length < 2) {
             return { valid: false, error: `MCQ Question #${qIdx + 1} in section "${sectionTitle}" has invalid or empty options.` };
           }
@@ -4132,7 +4213,14 @@ function validateOnlineTestStructure(data) {
         if (!Array.isArray(q.options) || q.options.length < 2) {
           return { valid: false, error: `Matching Question #${qIdx + 1} in section "${sectionTitle}" must contain at least 2 options.` };
         }
-        cleanOptions = q.options.map((opt) => (opt !== null && opt !== undefined ? String(opt).trim() : '')).filter(Boolean);
+        cleanOptions = q.options.map((opt, oIdx) => {
+          if (typeof opt === 'object' && opt !== null) {
+            const label = typeof opt.label === 'string' && opt.label.trim() ? opt.label.trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+            const value = opt.value !== undefined ? String(opt.value).trim() : (opt.text ? String(opt.text).trim() : '');
+            return { type: 'text', label, value };
+          }
+          return { type: 'text', label: String.fromCharCode(65 + oIdx), value: String(opt || '').trim() };
+        }).filter(o => Boolean(o.value));
         if (cleanOptions.length < 2) {
           return { valid: false, error: `Matching Question #${qIdx + 1} in section "${sectionTitle}" has invalid or empty options.` };
         }
@@ -4177,52 +4265,53 @@ function validateOnlineTestStructure(data) {
 
       let groupTitle = typeof q.group_title === 'string' && q.group_title.trim() ? q.group_title.trim() : null;
       let groupInstructions = typeof q.group_instructions === 'string' && q.group_instructions.trim() ? q.group_instructions.trim() : null;
-      let sharedWordBank = null;
-      if (Array.isArray(q.shared_word_bank)) {
-        const cleanBank = q.shared_word_bank.map(w => String(w || '').trim()).filter(Boolean);
-        if (cleanBank.length > 0) sharedWordBank = JSON.stringify(cleanBank);
-      } else if (typeof q.shared_word_bank === 'string' && q.shared_word_bank.trim()) {
+      let wordBankArray = null;
+      const rawBank = q.word_bank || q.shared_word_bank;
+      if (Array.isArray(rawBank)) {
+        wordBankArray = rawBank.map(w => String(w || '').trim()).filter(Boolean);
+      } else if (typeof rawBank === 'string' && rawBank.trim()) {
         try {
-          const parsed = JSON.parse(q.shared_word_bank);
+          let parsed = JSON.parse(rawBank);
+          if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch (_) {} }
           if (Array.isArray(parsed)) {
-            sharedWordBank = JSON.stringify(parsed.map(w => String(w || '').trim()).filter(Boolean));
+            wordBankArray = parsed.map(w => String(w || '').trim()).filter(Boolean);
           } else {
-            sharedWordBank = JSON.stringify([q.shared_word_bank.trim()]);
+            wordBankArray = [rawBank.trim()];
           }
         } catch (_) {
-          const parts = q.shared_word_bank.split(/[|,]/).map(s => s.trim()).filter(Boolean);
-          sharedWordBank = JSON.stringify(parts.length > 0 ? parts : [q.shared_word_bank.trim()]);
+          const parts = rawBank.split(/[|,]/).map(s => s.trim()).filter(Boolean);
+          wordBankArray = parts.length > 0 ? parts : [rawBank.trim()];
         }
       }
 
-      // Auto-recovery regex fallback: If sharedWordBank is null, inspect group_instructions, group_title, instructions_text, and question_text
-      if (!sharedWordBank) {
+      // Auto-recovery regex fallback: If wordBankArray is null/empty, inspect group_instructions, group_title, instructions_text, and question_text
+      if (!wordBankArray || wordBankArray.length === 0) {
         const textToScan = [groupInstructions, groupTitle, instructionsText, q.question_text].filter(Boolean).join('\n');
         // Pattern 1: pipe-separated: "Simile | Metaphor | Personification | Alliteration | Onomatopoeia"
         const pipeMatch = textToScan.match(/(?:\[\s*)?([A-Za-z0-9_\- ']+(?:\s*\|\s*[A-Za-z0-9_\- ']+){2,})(?:\s*\])?/);
         if (pipeMatch) {
           const words = pipeMatch[1].split('|').map(s => s.trim().replace(/^\[|\]$/g, '')).filter(s => s.length > 0 && s.length < 60);
           if (words.length >= 3) {
-            sharedWordBank = JSON.stringify(words);
+            wordBankArray = words;
           }
         }
         // Pattern 2: slash-separated: "Although / Whereas / While"
-        if (!sharedWordBank) {
+        if (!wordBankArray || wordBankArray.length === 0) {
           const slashMatch = textToScan.match(/(?:\[\s*|\(\s*)?([A-Za-z0-9_\- ']+(?:\s*\/\s*[A-Za-z0-9_\- ']+){2,})(?:\s*\]|\s*\))?/);
           if (slashMatch) {
             const words = slashMatch[1].split('/').map(s => s.trim().replace(/^\[|\]$/g, '')).filter(s => s.length > 0 && s.length < 60);
             if (words.length >= 3) {
-              sharedWordBank = JSON.stringify(words);
+              wordBankArray = words;
             }
           }
         }
         // Pattern 3: Explicit Box / Word bank keywords: e.g. "Choose from: (word1, word2, word3)" or "Word Bank: word1, word2, word3"
-        if (!sharedWordBank) {
+        if (!wordBankArray || wordBankArray.length === 0) {
           const boxMatch = textToScan.match(/(?:word\s*bank|reference\s*box|choose\s*from|box)[\s:]*\[?([A-Za-z0-9_\- ',;/]+)\]?/i);
           if (boxMatch) {
             const words = boxMatch[1].split(/[,;/]/).map(s => s.trim()).filter(s => s.length > 0 && s.length < 60);
             if (words.length >= 3) {
-              sharedWordBank = JSON.stringify(words);
+              wordBankArray = words;
             }
           }
         }
@@ -4241,20 +4330,22 @@ function validateOnlineTestStructure(data) {
         has_visual_options: isVisualOptions ? 1 : 0,
         group_title: groupTitle,
         group_instructions: groupInstructions,
-        shared_word_bank: sharedWordBank
+        word_bank: (wordBankArray && wordBankArray.length > 0) ? wordBankArray : null,
+        shared_word_bank: (wordBankArray && wordBankArray.length > 0) ? wordBankArray : null
       });
     }
 
-    // Propagate shared_word_bank across all questions sharing the same group_title
+    // Propagate word_bank across all questions sharing the same group_title
     const groupBankMap = new Map();
     for (const q of sanitizedQuestions) {
-      if (q.group_title && q.shared_word_bank) {
-        groupBankMap.set(q.group_title, q.shared_word_bank);
+      if (q.group_title && Array.isArray(q.word_bank) && q.word_bank.length > 0) {
+        groupBankMap.set(q.group_title, q.word_bank);
       }
     }
     for (const q of sanitizedQuestions) {
-      if (q.group_title && !q.shared_word_bank && groupBankMap.has(q.group_title)) {
-        q.shared_word_bank = groupBankMap.get(q.group_title);
+      if (q.group_title && (!q.word_bank || q.word_bank.length === 0) && groupBankMap.has(q.group_title)) {
+        q.word_bank = groupBankMap.get(q.group_title);
+        q.shared_word_bank = q.word_bank;
       }
     }
 
@@ -4407,10 +4498,11 @@ app.post(
         const rawImages = await extractImagesFromPdf(examPdfBuffer);
         for (const rImg of rawImages) {
           try {
-            const url = await uploadExamImageToFilebaseOrLocal(rImg.buffer, rImg.index, null);
+            const uploadRes = await uploadExamImageToFilebaseOrLocal(rImg.buffer, rImg.index, null);
             extractedImages.push({
               index: rImg.index,
-              url,
+              object_key: uploadRes.objectKey,
+              url: uploadRes.url,
               width: rImg.width,
               height: rImg.height
             });
@@ -4426,10 +4518,11 @@ app.post(
           let cropCounter = 0;
           for (const c of rawCrops) {
             try {
-              const url = await uploadExamImageToFilebaseOrLocal(c.buffer, `crop_q${c.questionNumber}_${c.letter}_${cropCounter++}`, null);
+              const uploadRes = await uploadExamImageToFilebaseOrLocal(c.buffer, `crop_q${c.questionNumber}_${c.letter}_${cropCounter++}`, null);
               const cropObj = {
                 index: extractedImages.length,
-                url,
+                object_key: uploadRes.objectKey,
+                url: uploadRes.url,
                 questionNumber: c.questionNumber,
                 letter: c.letter,
                 width: c.width,
@@ -4623,12 +4716,17 @@ OUTPUT SCHEMA (Strict JSON):
                 }
 
                 const hasVisualChoicePattern = Array.isArray(q.options) && q.options.some(opt => {
-                  if (typeof opt === 'object' && opt !== null) return true;
+                  if (typeof opt === 'object' && opt !== null) {
+                    if (opt.type === 'image' || opt.image_index !== undefined || opt.image_url || opt.object_key) return true;
+                    const val = String(opt.value || opt.text || opt.caption || '').trim().toLowerCase();
+                    return /\[?picture\s*[a-z]\]?/i.test(val) || val.startsWith('picture ');
+                  }
                   const s = String(opt || '').trim().toLowerCase();
-                  return s.includes('picture') || s.includes('image') || s.includes('diagram') || /^\[picture\s+[a-z]\]$/i.test(s);
+                  return /\[?picture\s*[a-z]\]?/i.test(s) || s.startsWith('picture ');
                 });
 
-                if (q.has_visual_options || hasVisualChoicePattern || (Array.isArray(q.options) && q.options.length > 0 && typeof q.options[0] === 'object')) {
+                const isExplicitlyVisual = q.has_visual_options === true || hasVisualChoicePattern;
+                if (isExplicitlyVisual) {
                   q.has_visual_options = true;
                   let qNum = null;
                   const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
@@ -4670,13 +4768,30 @@ OUTPUT SCHEMA (Strict JSON):
 
                     const matchedOpt = matchedCrop || extractedImages.find(img => img.index === optImgIdx) || extractedImages[optImgIdx];
                     return {
+                      type: 'image',
                       label,
+                      object_key: matchedOpt ? matchedOpt.object_key : (opt?.object_key || null),
                       image_url: matchedOpt ? matchedOpt.url : (existingUrl || ''),
                       caption,
                       image_index: optImgIdx
                     };
                   });
                   globalChoiceImgCounter += q.options.length;
+                } else if (Array.isArray(q.options)) {
+                  q.options = q.options.map((opt, oIdx) => {
+                    if (typeof opt === 'object' && opt !== null) {
+                      return {
+                        type: 'text',
+                        label: opt.label || String.fromCharCode(65 + oIdx),
+                        value: opt.value !== undefined ? String(opt.value).trim() : (opt.text ? String(opt.text).trim() : '')
+                      };
+                    }
+                    return {
+                      type: 'text',
+                      label: String.fromCharCode(65 + oIdx),
+                      value: String(opt || '').trim()
+                    };
+                  });
                 }
               }
             }
@@ -4778,9 +4893,13 @@ OUTPUT SCHEMA (Strict JSON):
         }
 
         for (const q of section.questions) {
+          const wordBankJson = Array.isArray(q.word_bank) && q.word_bank.length > 0
+            ? JSON.stringify(q.word_bank)
+            : (Array.isArray(q.shared_word_bank) && q.shared_word_bank.length > 0 ? JSON.stringify(q.shared_word_bank) : null);
+
           await db.execute({
-            sql: `INSERT INTO online_test_questions (section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options, group_title, group_instructions, shared_word_bank)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            sql: `INSERT INTO online_test_questions (section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options, group_title, group_instructions, shared_word_bank, word_bank)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             args: [
               sectionId,
               q.question_type,
@@ -4795,7 +4914,8 @@ OUTPUT SCHEMA (Strict JSON):
               q.has_visual_options ? 1 : 0,
               q.group_title || null,
               q.group_instructions || null,
-              typeof q.shared_word_bank === 'string' ? q.shared_word_bank : (q.shared_word_bank ? JSON.stringify(q.shared_word_bank) : null)
+              wordBankJson,
+              wordBankJson
             ]
           });
         }
@@ -4922,31 +5042,60 @@ app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, asy
 
     for (const sec of sectionsRes.rows) {
       const questionsRes = await db.execute({
-        sql: `SELECT id, section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options, group_title, group_instructions, shared_word_bank
+        sql: `SELECT id, section_id, question_type, question_text, options, correct_answer, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options, group_title, group_instructions, shared_word_bank, word_bank
               FROM online_test_questions
               WHERE section_id = ?
               ORDER BY order_index ASC, id ASC`,
         args: [sec.id]
       });
 
-      const parsedQuestions = questionsRes.rows.map((q) => {
+      const parsedQuestions = [];
+      for (const q of questionsRes.rows) {
         let parsedOptions = q.options;
         if (typeof parsedOptions === 'string') {
           try { parsedOptions = JSON.parse(parsedOptions); } catch (_) { }
         }
+        if (Array.isArray(parsedOptions)) {
+          for (const opt of parsedOptions) {
+            if (opt && typeof opt === 'object') {
+              if (opt.type === 'image' || opt.object_key) {
+                opt.type = 'image';
+                if (opt.object_key) {
+                  try {
+                    opt.image_url = (await generateSignedImageUrl(opt.object_key)) || opt.image_url || '';
+                  } catch (_) {}
+                }
+              } else if (!opt.type) {
+                opt.type = 'text';
+              }
+            }
+          }
+        }
+
         let parsedCorrect = q.correct_answer;
         if (typeof parsedCorrect === 'string') {
           try { parsedCorrect = JSON.parse(parsedCorrect); } catch (_) { }
         }
-        let parsedSharedWordBank = q.shared_word_bank;
-        if (typeof parsedSharedWordBank === 'string') {
-          try { parsedSharedWordBank = JSON.parse(parsedSharedWordBank); } catch (_) { }
+
+        let cleanWordBank = null;
+        const rawBank = q.word_bank || q.shared_word_bank;
+        if (Array.isArray(rawBank)) {
+          cleanWordBank = rawBank;
+        } else if (typeof rawBank === 'string' && rawBank.trim()) {
+          try {
+            let p = JSON.parse(rawBank);
+            if (typeof p === 'string') { try { p = JSON.parse(p); } catch (_) {} }
+            if (Array.isArray(p)) cleanWordBank = p;
+          } catch (_) {
+            const parts = rawBank.split(/[|,]/).map(s => s.trim()).filter(Boolean);
+            if (parts.length > 0) cleanWordBank = parts;
+          }
         }
 
         const pts = Number(q.points) || 1;
         totalMarks += pts;
 
-        return {
+        parsedQuestions.push({
           ...q,
           options: parsedOptions,
           correct_answer: parsedCorrect,
@@ -4955,9 +5104,10 @@ app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, asy
           has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true,
           group_title: q.group_title || null,
           group_instructions: q.group_instructions || null,
-          shared_word_bank: parsedSharedWordBank || null
-        };
-      });
+          word_bank: cleanWordBank || null,
+          shared_word_bank: cleanWordBank || null
+        });
+      }
 
       sections.push({
         ...sec,
@@ -5205,13 +5355,15 @@ app.patch('/api/online-tests/:testId/questions/:questionId', authenticateToken, 
       updates.push('group_instructions = ?');
       args.push(req.body.group_instructions ? String(req.body.group_instructions).trim() : null);
     }
-    if (req.body.shared_word_bank !== undefined) {
+    if (req.body.word_bank !== undefined || req.body.shared_word_bank !== undefined) {
+      const rawBank = req.body.word_bank !== undefined ? req.body.word_bank : req.body.shared_word_bank;
+      const bankVal = rawBank !== null
+        ? (typeof rawBank === 'string' ? rawBank : JSON.stringify(rawBank))
+        : null;
+      updates.push('word_bank = ?');
+      args.push(bankVal);
       updates.push('shared_word_bank = ?');
-      args.push(
-        req.body.shared_word_bank !== null
-          ? (typeof req.body.shared_word_bank === 'string' ? req.body.shared_word_bank : JSON.stringify(req.body.shared_word_bank))
-          : null
-      );
+      args.push(bankVal);
     }
 
     if (updates.length === 0) {
@@ -5230,6 +5382,113 @@ app.patch('/api/online-tests/:testId/questions/:questionId', authenticateToken, 
     return res.status(500).json({ success: false, error: 'Failed to update question.' });
   }
 });
+
+// 6b. POST /api/online-tests/:testId/questions/:questionId/options/:optIdx/image - Manual fallback image upload for visual options
+app.post(
+  '/api/online-tests/:testId/questions/:questionId/options/:optIdx/image',
+  authenticateToken,
+  requireApprovedUser,
+  (req, res, next) => {
+    onlineTestUpload.single('image')(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ success: false, error: `Upload error: ${err.message}` });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      const testId = parseInt(req.params.testId, 10);
+      const questionId = parseInt(req.params.questionId, 10);
+      const optIdx = parseInt(req.params.optIdx, 10);
+
+      if (isNaN(testId) || isNaN(questionId) || isNaN(optIdx) || optIdx < 0) {
+        return res.status(400).json({ success: false, error: 'Invalid test, question, or option index.' });
+      }
+
+      const imgBuffer = req.file?.buffer || (req.file?.path ? fs.readFileSync(req.file.path) : null);
+      if (!req.file || !imgBuffer) {
+        return res.status(400).json({ success: false, error: 'Image file is required.' });
+      }
+
+      const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+      if (!auth.test) {
+        if (req.file?.path) { try { fs.unlinkSync(req.file.path); } catch (_) {} }
+        return res.status(auth.status).json({ success: false, error: auth.error });
+      }
+
+      const qCheck = await db.execute({
+        sql: `SELECT q.id, q.options, q.has_visual_options, s.section_title
+              FROM online_test_questions q
+              JOIN online_test_sections s ON q.section_id = s.id
+              WHERE q.id = ? AND s.test_id = ?`,
+        args: [questionId, testId]
+      });
+
+      if (qCheck.rows.length === 0) {
+        if (req.file?.path) { try { fs.unlinkSync(req.file.path); } catch (_) {} }
+        return res.status(404).json({ success: false, error: 'Question not found for this test.' });
+      }
+
+      const qRow = qCheck.rows[0];
+      let opts = qRow.options;
+      if (typeof opts === 'string') {
+        try { opts = JSON.parse(opts); } catch (_) { opts = []; }
+      }
+      if (!Array.isArray(opts)) opts = [];
+
+      // Upload image to Filebase or local fallback
+      const uploadRes = await uploadExamImageToFilebaseOrLocal(
+        imgBuffer,
+        `manual_q${questionId}_opt${optIdx}_${Date.now()}`,
+        testId
+      );
+      if (req.file?.path) { try { fs.unlinkSync(req.file.path); } catch (_) {} }
+
+      while (opts.length <= optIdx) {
+        opts.push({
+          type: 'image',
+          label: String.fromCharCode(65 + opts.length),
+          object_key: null,
+          image_url: '',
+          caption: ''
+        });
+      }
+
+      const currentOpt = opts[optIdx];
+      const label = (typeof currentOpt === 'object' && currentOpt && currentOpt.label)
+        ? currentOpt.label
+        : String.fromCharCode(65 + optIdx);
+      const caption = (typeof currentOpt === 'object' && currentOpt && currentOpt.caption)
+        ? currentOpt.caption
+        : '';
+
+      opts[optIdx] = {
+        type: 'image',
+        label,
+        object_key: uploadRes.objectKey,
+        image_url: uploadRes.url,
+        caption
+      };
+
+      await db.execute({
+        sql: 'UPDATE online_test_questions SET options = ?, has_visual_options = 1 WHERE id = ?',
+        args: [JSON.stringify(opts), questionId]
+      });
+
+      return res.json({
+        success: true,
+        object_key: uploadRes.objectKey,
+        image_url: uploadRes.url,
+        option: opts[optIdx],
+        options: opts
+      });
+    } catch (err) {
+      console.error('Error uploading question option image:', err);
+      return res.status(500).json({ success: false, error: `Failed to upload image: ${err.message}` });
+    }
+  }
+);
 
 // 7. POST /api/online-tests/:testId/sections/:sectionId/questions - Add question to a section
 app.post('/api/online-tests/:testId/sections/:sectionId/questions', authenticateToken, requireApprovedUser, async (req, res) => {
@@ -5366,7 +5625,7 @@ app.post('/api/online-tests/:testId/publish', authenticateToken, requireApproved
     }
 
     const questionsRes = await db.execute({
-      sql: `SELECT q.id, q.question_type, q.question_text, q.correct_answer, q.points, s.section_title
+      sql: `SELECT q.id, q.question_type, q.question_text, q.options, q.has_visual_options, q.correct_answer, q.points, s.section_title
             FROM online_test_questions q
             JOIN online_test_sections s ON q.section_id = s.id
             WHERE s.test_id = ?`,
@@ -5395,6 +5654,29 @@ app.post('/api/online-tests/:testId/publish', authenticateToken, requireApproved
           success: false,
           error: `Question ID ${q.id} in section "${q.section_title}" has an empty answer key or rubric.`
         });
+      }
+
+      // Check picture-choice questions: every picture option must have an image and no placeholders
+      if (Number(q.has_visual_options) === 1 || (q.options && q.options.includes('"type":"image"'))) {
+        let opts = q.options;
+        if (typeof opts === 'string') {
+          try { opts = JSON.parse(opts); } catch (_) { opts = []; }
+        }
+        if (Array.isArray(opts)) {
+          for (let i = 0; i < opts.length; i++) {
+            const opt = opts[i];
+            const isImg = opt && (opt.type === 'image' || opt.object_key || opt.image_url || opt.image_index !== undefined);
+            const hasKey = opt && (opt.object_key || opt.image_url);
+            const caption = opt ? (opt.caption || opt.value || '') : '';
+            const isPlaceholder = /\[?picture\s*[a-z]\]?/i.test(caption) && !hasKey;
+            if (isImg && (!hasKey || isPlaceholder)) {
+              return res.status(422).json({
+                success: false,
+                error: `Cannot publish: Question #${q.id} in "${q.section_title}" option ${opt?.label || String.fromCharCode(65 + i)} is missing an image. Please upload an image for this option before publishing.`
+              });
+            }
+          }
+        }
       }
     }
 
@@ -5782,26 +6064,54 @@ app.get('/api/public/online-tests/:code', async (req, res) => {
       // STRICT ANSWER-KEY & RUBRIC STRIPPING:
       // DO NOT SELECT correct_answer or any rubric criteria from database
       const questionsRes = await db.execute({
-        sql: `SELECT id, section_id, question_type, question_text, options, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options, group_title, group_instructions, shared_word_bank
+        sql: `SELECT id, section_id, question_type, question_text, options, min_words, max_words, points, order_index, stimulus_image_url, has_visual_options, group_title, group_instructions, shared_word_bank, word_bank
               FROM online_test_questions
               WHERE section_id = ?
               ORDER BY order_index ASC, id ASC`,
         args: [sec.id]
       });
 
-      const sanitizedQuestions = questionsRes.rows.map((q) => {
+      const sanitizedQuestions = [];
+      for (const q of questionsRes.rows) {
         let opts = q.options;
         if (typeof opts === 'string') {
           try { opts = JSON.parse(opts); } catch (_) { opts = []; }
         }
-        let parsedSharedWordBank = q.shared_word_bank;
-        if (typeof parsedSharedWordBank === 'string') {
-          try { parsedSharedWordBank = JSON.parse(parsedSharedWordBank); } catch (_) { }
+        if (Array.isArray(opts)) {
+          for (const opt of opts) {
+            if (opt && typeof opt === 'object') {
+              if (opt.type === 'image' || opt.object_key) {
+                opt.type = 'image';
+                if (opt.object_key) {
+                  try {
+                    opt.image_url = (await generateSignedImageUrl(opt.object_key)) || opt.image_url || '';
+                  } catch (_) {}
+                }
+              } else if (!opt.type) {
+                opt.type = 'text';
+              }
+            }
+          }
+        }
+
+        let cleanWordBank = null;
+        const rawBank = q.word_bank || q.shared_word_bank;
+        if (Array.isArray(rawBank)) {
+          cleanWordBank = rawBank;
+        } else if (typeof rawBank === 'string' && rawBank.trim()) {
+          try {
+            let p = JSON.parse(rawBank);
+            if (typeof p === 'string') { try { p = JSON.parse(p); } catch (_) {} }
+            if (Array.isArray(p)) cleanWordBank = p;
+          } catch (_) {
+            const parts = rawBank.split(/[|,]/).map(s => s.trim()).filter(Boolean);
+            if (parts.length > 0) cleanWordBank = parts;
+          }
         }
 
         totalQuestionsCount++;
 
-        return {
+        sanitizedQuestions.push({
           id: Number(q.id),
           section_id: Number(q.section_id),
           question_type: q.question_type || 'mcq',
@@ -5811,13 +6121,14 @@ app.get('/api/public/online-tests/:code', async (req, res) => {
           has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true,
           group_title: q.group_title || null,
           group_instructions: q.group_instructions || null,
-          shared_word_bank: parsedSharedWordBank || null,
+          word_bank: cleanWordBank || null,
+          shared_word_bank: cleanWordBank || null,
           min_words: q.min_words !== null && q.min_words !== undefined ? Number(q.min_words) : null,
           max_words: q.max_words !== null && q.max_words !== undefined ? Number(q.max_words) : null,
           points: Number(q.points) || 1,
           order_index: Number(q.order_index) || 0
-        };
-      });
+        });
+      }
 
       sections.push({
         id: Number(sec.id),

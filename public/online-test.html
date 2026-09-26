@@ -2402,34 +2402,44 @@ function renderQuestion(sec, q, displayNum) {
   let processedQText = rawQText;
   let wordBankHtml = '';
 
-  // Parse question's shared_word_bank if present
+  // Parse question's word_bank or shared_word_bank if present
   let qSharedBank = null;
-  if (Array.isArray(q.shared_word_bank) && q.shared_word_bank.length > 0) {
-    qSharedBank = q.shared_word_bank;
-  } else if (typeof q.shared_word_bank === 'string' && q.shared_word_bank.trim()) {
+  const rawBank = q.word_bank || q.shared_word_bank;
+  if (Array.isArray(rawBank) && rawBank.length > 0) {
+    qSharedBank = rawBank;
+  } else if (typeof rawBank === 'string' && rawBank.trim()) {
     try {
-      let p = JSON.parse(q.shared_word_bank);
+      let p = JSON.parse(rawBank);
       if (typeof p === 'string') { try { p = JSON.parse(p); } catch (_) {} }
       if (Array.isArray(p) && p.length > 0) qSharedBank = p;
     } catch (_) {
-      const parts = q.shared_word_bank.split(/[|,]/).map(s => s.trim()).filter(Boolean);
+      const parts = rawBank.split(/[|,]/).map(s => s.trim()).filter(Boolean);
       if (parts.length > 0) qSharedBank = parts;
     }
   }
 
-  // 1. Check if q.options or q.shared_word_bank is provided for non-MCQ types (word bank from ingestion)
+  // 1. Check if q.word_bank or q.shared_word_bank is provided for non-MCQ types (word bank from ingestion)
   if (['fill_blank', 'rewrite', 'short_answer'].includes(qType)) {
-    const bankTerms = (Array.isArray(q.options) && q.options.length > 0) ? q.options : (qSharedBank || []);
+    const bankTerms = (Array.isArray(q.word_bank) && q.word_bank.length > 0) ? q.word_bank : (qSharedBank || []);
     if (bankTerms.length > 0) {
       wordBankHtml = `
-        <div class="word-bank-box">
-          <div class="word-bank-header">🔤 Word Bank (Click a word to insert):</div>
-          <div class="word-bank-chips">
+        <div class="word-bank-box" style="border:1.5px dashed #3b82f6; background:#eff6ff; border-radius:8px; padding:10px 14px; margin-bottom:12px;">
+          <div class="word-bank-header" style="font-weight:700; font-size:12px; color:#1e40af; margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+            <span>🔤 Word Bank (Click a word or choose from dropdown):</span>
+          </div>
+          <div class="word-bank-chips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
             ${bankTerms.map(opt => `
-              <span class="word-chip q-group-chip page-chip" onclick="insertWordIntoInput(${q.id}, '${escapeHtml(opt).replace(/'/g, "\\'")}')">
+              <span class="word-chip q-group-chip page-chip" style="cursor:pointer; background:#fff; border:1px solid #93c5fd; color:#1e3a8a; padding:3px 10px; border-radius:6px; font-weight:600; font-size:12px; box-shadow:0 1px 2px rgba(0,0,0,0.05);" onclick="insertWordIntoInput(${q.id}, '${escapeHtml(opt).replace(/'/g, "\\'")}')">
                 ${escapeHtml(opt)}
               </span>
             `).join('')}
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:12px; font-weight:600; color:#1e40af;">Select:</span>
+            <select class="ot-select ot-bank-dropdown" onchange="if (this.value) { insertWordIntoInput(${q.id}, this.value); this.value=''; }" style="max-width:300px; padding:4px 8px; font-size:12px; border:1px solid #93c5fd; border-radius:6px; background:#fff;">
+              <option value="">-- Choose from Word Bank --</option>
+              ${bankTerms.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('')}
+            </select>
           </div>
         </div>
       `;
@@ -2443,14 +2453,23 @@ function renderQuestion(sec, q, displayNum) {
     const words = rawBank.split('|').map(w => w.trim()).filter(Boolean);
     if (words.length >= 2) {
       wordBankHtml = `
-        <div class="word-bank-box">
-          <div class="word-bank-header">🔤 Word Bank (Click a word to insert):</div>
-          <div class="word-bank-chips">
+        <div class="word-bank-box" style="border:1.5px dashed #3b82f6; background:#eff6ff; border-radius:8px; padding:10px 14px; margin-bottom:12px;">
+          <div class="word-bank-header" style="font-weight:700; font-size:12px; color:#1e40af; margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+            <span>🔤 Word Bank (Click a word or choose from dropdown):</span>
+          </div>
+          <div class="word-bank-chips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
             ${words.map(w => `
-              <span class="word-chip q-group-chip page-chip" onclick="insertWordIntoInput(${q.id}, '${escapeHtml(w).replace(/'/g, "\\'")}')">
+              <span class="word-chip q-group-chip page-chip" style="cursor:pointer; background:#fff; border:1px solid #93c5fd; color:#1e3a8a; padding:3px 10px; border-radius:6px; font-weight:600; font-size:12px; box-shadow:0 1px 2px rgba(0,0,0,0.05);" onclick="insertWordIntoInput(${q.id}, '${escapeHtml(w).replace(/'/g, "\\'")}')">
                 ${escapeHtml(w)}
               </span>
             `).join('')}
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:12px; font-weight:600; color:#1e40af;">Select:</span>
+            <select class="ot-select ot-bank-dropdown" onchange="if (this.value) { insertWordIntoInput(${q.id}, this.value); this.value=''; }" style="max-width:300px; padding:4px 8px; font-size:12px; border:1px solid #93c5fd; border-radius:6px; background:#fff;">
+              <option value="">-- Choose from Word Bank --</option>
+              ${words.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('')}
+            </select>
           </div>
         </div>
       `;
@@ -2477,7 +2496,7 @@ function renderQuestion(sec, q, displayNum) {
 
   if (qType === 'mcq') {
     const opts = Array.isArray(q.options) ? q.options : [];
-    const isVisual = q.has_visual_options || (opts.length > 0 && typeof opts[0] === 'object' && opts[0] !== null);
+    const isVisual = q.has_visual_options || (opts.length > 0 && typeof opts[0] === 'object' && opts[0] !== null && (opts[0].type === 'image' || opts[0].image_url || opts[0].object_key));
 
     if (isVisual) {
       inputMarkup = `
@@ -2485,11 +2504,11 @@ function renderQuestion(sec, q, displayNum) {
           ${opts.map((opt, oIdx) => {
             const letter = (opt && opt.label) ? opt.label : String.fromCharCode(65 + oIdx);
             const imgUrl = (opt && opt.image_url) ? opt.image_url : '';
-            const caption = (opt && opt.caption) ? opt.caption : '';
+            const caption = (opt && (opt.caption || opt.value)) ? (opt.caption || opt.value) : '';
             return `
               <div class="mcq-visual-card" id="mcq-opt-${q.id}-${oIdx}" onclick="handleSelectMcq(${q.id}, '${oIdx}')">
                 <div class="mcq-visual-img-wrap">
-                  ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Picture ${letter}" class="mcq-visual-img" loading="lazy" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'mcq-visual-placeholder\\'>[Picture ${letter}]</div>';" onclick="event.stopPropagation(); openDiagramLightbox('${escapeHtml(imgUrl)}')" />` : `<div class="mcq-visual-placeholder">[Picture ${letter}]</div>`}
+                  ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Picture ${letter}" class="mcq-visual-img" loading="lazy" onclick="event.stopPropagation(); openDiagramLightbox('${escapeHtml(imgUrl)}')" />` : `<div class="mcq-visual-placeholder">⚠️ Missing image for Picture ${letter}</div>`}
                 </div>
                 <div class="mcq-visual-footer">
                   <div class="mcq-visual-radio-indicator"></div>
@@ -2507,11 +2526,12 @@ function renderQuestion(sec, q, displayNum) {
       inputMarkup = `
         <div class="mcq-options-grid" id="mcq-group-${q.id}">
           ${opts.map((opt, oIdx) => {
-            const letter = String.fromCharCode(65 + oIdx);
+            const letter = (typeof opt === 'object' && opt && opt.label) ? opt.label : String.fromCharCode(65 + oIdx);
+            const textVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.caption || '')) : String(opt || '');
             return `
               <div class="mcq-choice-row" id="mcq-opt-${q.id}-${oIdx}" onclick="handleSelectMcq(${q.id}, '${oIdx}')">
                 <span class="mcq-letter">${letter}</span>
-                <span class="mcq-text" style="word-break:break-word; overflow-wrap:break-word; overflow:visible;">${escapeHtml(opt)}</span>
+                <span class="mcq-text" style="word-break:break-word; overflow-wrap:break-word; overflow:visible;">${escapeHtml(textVal)}</span>
               </div>
             `;
           }).join('')}
@@ -2523,9 +2543,13 @@ function renderQuestion(sec, q, displayNum) {
     inputMarkup = `
       <select class="ot-select-input" id="input-q-${q.id}" onchange="handleAnswerInput(${q.id}, this.value)">
         <option value="">-- Select matching option --</option>
-        ${opts.map((opt, oIdx) => `
-          <option value="${oIdx}">Option ${String.fromCharCode(65 + oIdx)}: ${escapeHtml(opt)}</option>
-        `).join('')}
+        ${opts.map((opt, oIdx) => {
+          const letter = (typeof opt === 'object' && opt && opt.label) ? opt.label : String.fromCharCode(65 + oIdx);
+          const textVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.caption || '')) : String(opt || '');
+          return `
+            <option value="${oIdx}">Option ${letter}: ${escapeHtml(textVal)}</option>
+          `;
+        }).join('')}
       </select>
     `;
   } else if (['fill_blank', 'rewrite', 'short_answer'].includes(qType)) {
@@ -2614,6 +2638,40 @@ function handleAnswerInput(questionId, val) {
     clientAnswers.delete(questionId);
   }
   updateCompletionCount();
+  refreshMatchingOptionDisables();
+}
+
+function refreshMatchingOptionDisables() {
+  if (!currentOnlineTestData || !Array.isArray(currentOnlineTestData.sections)) return;
+  for (const sec of currentOnlineTestData.sections) {
+    const matchingQs = (sec.questions || []).filter(q => q.question_type === 'matching');
+    if (matchingQs.length <= 1) continue;
+    const selectedMap = new Map();
+    for (const mq of matchingQs) {
+      const ans = clientAnswers.get(mq.id);
+      if (ans && ans.answer !== undefined && ans.answer !== '') {
+        selectedMap.set(ans.answer.toString(), mq.id);
+      }
+    }
+
+    for (const mq of matchingQs) {
+      const selectEl = document.getElementById(`input-q-${mq.id}`);
+      if (!selectEl) continue;
+      for (const optEl of selectEl.options) {
+        if (!optEl.value) continue;
+        const whoSelected = selectedMap.get(optEl.value);
+        if (whoSelected && whoSelected !== mq.id) {
+          optEl.disabled = true;
+          if (!optEl.text.includes('(already selected)')) {
+            optEl.text = optEl.text + ' (already selected)';
+          }
+        } else {
+          optEl.disabled = false;
+          optEl.text = optEl.text.replace(' (already selected)', '');
+        }
+      }
+    }
+  }
 }
 
 function handleWritingInput(questionId, text, minW, maxW) {

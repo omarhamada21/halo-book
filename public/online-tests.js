@@ -494,17 +494,23 @@ function renderQuestionCard(sectionId, q, displayNum) {
     if (isVisual) {
       controlsHtml = `
         <div style="margin-top:10px;">
-          <div class="fb-label">Visual Options (Click radio to set correct answer, edit caption below):</div>
+          <div class="fb-label">Visual Options (Click radio to set correct answer, upload/replace image, or edit caption):</div>
           <div class="ot-visual-options-admin-grid">
             ${opts.map((opt, oIdx) => {
               const letter = (opt && opt.label) ? opt.label : String.fromCharCode(65 + oIdx);
               const imgUrl = (opt && opt.image_url) ? opt.image_url : '';
-              const caption = (opt && opt.caption) ? opt.caption : '';
+              const caption = (opt && (opt.caption || opt.value)) ? (opt.caption || opt.value) : '';
               const isCorrect = oIdx === correctIdx;
               return `
                 <div class="ot-visual-opt-admin-card ${isCorrect ? 'is-correct' : ''}">
-                  <div class="ot-visual-opt-admin-img-wrap">
-                    ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Picture ${letter}" class="ot-visual-opt-admin-img" />` : `<div style="font-size:12px; color:var(--ink-soft);">No image</div>`}
+                  <div class="ot-visual-opt-admin-img-wrap" style="min-height:90px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:4px; margin-bottom:6px; border:1px solid var(--paper-line);">
+                    ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Picture ${letter}" class="ot-visual-opt-admin-img" style="max-height:100px; max-width:100%; object-fit:contain;" />` : `<div style="font-size:11px; font-weight:600; color:#b91c1c; padding:6px; background:#fef2f2; border:1px dashed #f87171; border-radius:4px;">⚠️ Missing Image</div>`}
+                  </div>
+                  <div style="margin-bottom:6px; text-align:center;">
+                    <label class="ghost" style="display:inline-flex; align-items:center; gap:4px; font-size:11px; padding:2px 8px; cursor:pointer; border:1px solid var(--border); border-radius:4px; background:#fff;">
+                      📷 ${imgUrl ? 'Change Image' : 'Upload Image'}
+                      <input type="file" accept="image/*" style="display:none;" onchange="uploadOptionImageFile(${currentReviewTest.id}, ${q.id}, ${oIdx}, this)" />
+                    </label>
                   </div>
                   <div class="ot-visual-opt-admin-meta">
                     <div style="display:flex; align-items:center; justify-content:space-between; width:100%; margin-bottom:4px;">
@@ -529,16 +535,18 @@ function renderQuestionCard(sectionId, q, displayNum) {
         <div style="margin-top:10px;">
           <div class="fb-label">Options (Click dot to set correct answer):</div>
           <div class="ot-options-vertical-list">
-            ${opts.map((opt, oIdx) => `
+            ${opts.map((opt, oIdx) => {
+              const optVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.caption || '')) : String(opt || '');
+              return `
               <div class="ot-opt-row ${oIdx === correctIdx ? 'is-correct' : ''}">
                 <span class="ot-opt-radio" onclick="setMcqCorrectOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Click to set as correct answer">
                   ${oIdx === correctIdx ? '●' : '○'}
                 </span>
                 <span class="ot-opt-letter">${String.fromCharCode(65 + oIdx)}.</span>
-                <span contenteditable="true" class="editable-field ot-editable-opt-text" data-q-id="${q.id}" data-opt-idx="${oIdx}">${escapeHtml(opt)}</span>
+                <span contenteditable="true" class="editable-field ot-editable-opt-text" data-q-id="${q.id}" data-opt-idx="${oIdx}">${escapeHtml(optVal)}</span>
                 <button type="button" class="line-delete-btn" onclick="removeMcqOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Remove option">✕</button>
               </div>
-            `).join('')}
+            `;}).join('')}
             <button type="button" class="ghost" style="font-size:11px; padding:3px 8px; margin-top:4px;"
               onclick="addMcqOption(${currentReviewTest.id}, ${q.id})">+ Add Option</button>
           </div>
@@ -553,9 +561,11 @@ function renderQuestionCard(sectionId, q, displayNum) {
       <div style="margin-top:10px;">
         <div class="fb-label">Correct Statement Match:</div>
         <select class="ot-select" onchange="handleMatchingCorrectChange(${currentReviewTest.id}, ${q.id}, this.value)" style="margin-top:4px;">
-          ${opts.map((opt, oIdx) => `
-            <option value="${oIdx}" ${oIdx === correctIdx ? 'selected' : ''}>Option ${String.fromCharCode(65 + oIdx)}: ${escapeHtml(opt.slice(0, 45))}</option>
-          `).join('')}
+          ${opts.map((opt, oIdx) => {
+            const optVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.caption || '')) : String(opt || '');
+            return `
+            <option value="${oIdx}" ${oIdx === correctIdx ? 'selected' : ''}>Option ${String.fromCharCode(65 + oIdx)}: ${escapeHtml(optVal.slice(0, 45))}</option>
+          `;}).join('')}
         </select>
       </div>
     `;
@@ -593,16 +603,17 @@ function renderQuestionCard(sectionId, q, displayNum) {
   }
 
   let groupInfoHtml = '';
-  if (q.group_title || q.group_instructions || q.shared_word_bank) {
+  if (q.group_title || q.group_instructions || q.word_bank || q.shared_word_bank) {
     let bankList = [];
-    if (Array.isArray(q.shared_word_bank)) bankList = q.shared_word_bank;
-    else if (typeof q.shared_word_bank === 'string') {
+    const rawBank = q.word_bank || q.shared_word_bank;
+    if (Array.isArray(rawBank)) bankList = rawBank;
+    else if (typeof rawBank === 'string') {
       try {
-        let p = JSON.parse(q.shared_word_bank);
+        let p = JSON.parse(rawBank);
         if (typeof p === 'string') { try { p = JSON.parse(p); } catch(_) {} }
         if (Array.isArray(p)) bankList = p;
       } catch (_) {
-        bankList = q.shared_word_bank.split(/[|,]/).map(s => s.trim()).filter(Boolean);
+        bankList = rawBank.split(/[|,]/).map(s => s.trim()).filter(Boolean);
       }
     }
     groupInfoHtml = `
@@ -827,9 +838,13 @@ function saveInlineField(el) {
       const optIdx = Number(el.dataset.optIdx);
       if (!Array.isArray(q.options)) q.options = [];
       if (typeof q.options[optIdx] === 'object' && q.options[optIdx] !== null) {
-        q.options[optIdx].caption = rawVal;
+        if (q.options[optIdx].type === 'image') {
+          q.options[optIdx].caption = rawVal;
+        } else {
+          q.options[optIdx].value = rawVal;
+        }
       } else {
-        q.options[optIdx] = rawVal;
+        q.options[optIdx] = { type: 'text', label: String.fromCharCode(65 + optIdx), value: rawVal };
       }
       scheduleQuestionPatch(testId, qId, 'options', q.options);
       return;
@@ -965,6 +980,30 @@ function handleRubricCriteriaChange(testId, questionId, field, val) {
     if (!q.correct_answer || typeof q.correct_answer !== 'object') q.correct_answer = {};
     q.correct_answer[field] = lines;
     scheduleQuestionPatch(testId, questionId, 'correct_answer', q.correct_answer);
+  }
+}
+
+async function uploadOptionImageFile(testId, questionId, optIdx, fileInput) {
+  if (!fileInput.files || fileInput.files.length === 0) return;
+  const file = fileInput.files[0];
+  const formData = new FormData();
+  formData.append('image', file);
+
+  try {
+    showToast('Uploading option image...', 'info');
+    const res = await fetch(`/api/online-tests/${testId}/questions/${questionId}/options/${optIdx}/image`, {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to upload image.');
+    }
+    showToast(`Image uploaded for option ${String.fromCharCode(65 + optIdx)}!`, 'success');
+    await openOnlineTestReview(testId);
+  } catch (err) {
+    console.error('Upload option image error:', err);
+    alert(`Failed to upload option image: ${err.message}`);
   }
 }
 
