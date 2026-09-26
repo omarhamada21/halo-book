@@ -592,6 +592,28 @@ function renderQuestionCard(sectionId, q, displayNum) {
     `;
   }
 
+  let groupInfoHtml = '';
+  if (q.group_title || q.group_instructions || q.shared_word_bank) {
+    let bankList = [];
+    if (Array.isArray(q.shared_word_bank)) bankList = q.shared_word_bank;
+    else if (typeof q.shared_word_bank === 'string') {
+      try {
+        let p = JSON.parse(q.shared_word_bank);
+        if (typeof p === 'string') { try { p = JSON.parse(p); } catch(_) {} }
+        if (Array.isArray(p)) bankList = p;
+      } catch (_) {
+        bankList = q.shared_word_bank.split(/[|,]/).map(s => s.trim()).filter(Boolean);
+      }
+    }
+    groupInfoHtml = `
+      <div style="margin-top:6px; padding:8px 12px; background:var(--paper); border:1px dashed var(--border); border-radius:6px; font-size:12.5px;">
+        ${q.group_title ? `<div style="font-weight:700; color:var(--pen); margin-bottom:2px;">📌 ${escapeHtml(q.group_title)}</div>` : ''}
+        ${q.group_instructions ? `<div style="color:var(--ink-soft); font-size:12px; margin-bottom:4px;">${escapeHtml(q.group_instructions)}</div>` : ''}
+        ${bankList && bankList.length > 0 ? `<div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center;"><span style="font-size:11px; font-weight:600; color:var(--ink-soft);">Word Bank:</span> ${bankList.map(w => `<span style="background:#fff; border:1px solid var(--border); border-radius:4px; padding:2px 8px; font-size:11px; font-family:'IBM Plex Mono',monospace;">${escapeHtml(w)}</span>`).join('')}</div>` : ''}
+      </div>
+    `;
+  }
+
   return `
     <div class="ot-review-q-card" id="ot-q-${q.id}">
       <div class="ot-review-q-header">
@@ -606,6 +628,8 @@ function renderQuestionCard(sectionId, q, displayNum) {
           <button class="line-delete-btn" onclick="deleteQuestion(${currentReviewTest.id}, ${q.id})" title="Delete question">🗑️</button>
         </div>
       </div>
+
+      ${groupInfoHtml}
 
       <div style="margin-top:8px;">
         <div class="fb-label">Question Text:</div>

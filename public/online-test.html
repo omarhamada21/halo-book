@@ -1316,8 +1316,14 @@
     <p style="font-size:14px; color:var(--ink-soft); max-width:480px; margin:0 auto 16px auto; line-height:1.5;">
       An assessment attempt from this device has already been submitted for this test. Resubmissions are locked to preserve exam integrity.
     </p>
-    <div style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--pen); background:var(--pen-soft); padding:8px 14px; border-radius:6px; display:inline-block;">
+    <div style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--pen); background:var(--pen-soft); padding:8px 14px; border-radius:6px; display:inline-block; margin-bottom:18px;">
       Device ID: <span id="locked-device-id"></span>
+    </div>
+    <div>
+      <button type="button" class="btn-check-retake" onclick="loadOnlineTest()"
+        style="background:var(--pen); color:#fff; border:none; padding:10px 22px; border-radius:8px; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:8px;">
+        <span>🔄</span> Check Status / Retake Exam
+      </button>
     </div>
   </div>
 </div>
@@ -1577,11 +1583,18 @@ async function loadOnlineTest() {
       localStorage.removeItem('online_test_locked_' + testCode);
       localStorage.removeItem('online_test_submitted_' + testCode);
       localStorage.removeItem('online_audio_started_' + testCode);
+      localStorage.removeItem('online_test_draft_' + testCode);
       sessionStorage.removeItem('online_test_submitted_' + testCode);
+      sessionStorage.removeItem('online_test_draft_' + testCode);
+      if (typeof clientAnswers !== 'undefined' && clientAnswers.clear) {
+        clientAnswers.clear();
+      }
       isSubmitted = false;
       isExamActive = false;
       isProctoringLocked = false;
       violationCount = 0;
+      strikesCount = 0;
+      securityViolations = [];
       const lockedScreen = document.getElementById('exam-locked-screen');
       if (lockedScreen) lockedScreen.style.display = 'none';
     } else {
@@ -2192,25 +2205,41 @@ function renderSections() {
     const questions = sec.questions || [];
     questions.forEach(q => allQuestionIds.push(q.id));
 
-    let prevGroupTitle = null;
+    let prevGroupKey = null;
     const questionsHtml = questions.map((q, qIdx) => {
       let groupHeaderHtml = '';
       const currentGroupTitle = (q.group_title || '').trim();
       const currentGroupInstructions = (q.group_instructions || '').trim();
-      const currentSharedBank = Array.isArray(q.shared_word_bank) && q.shared_word_bank.length > 0 ? q.shared_word_bank : null;
-      const hasGroup = Boolean(currentGroupTitle || currentGroupInstructions || currentSharedBank);
 
-      // Only render group header once at the start of a consecutive group of questions
-      if (hasGroup && currentGroupTitle && currentGroupTitle !== prevGroupTitle) {
-        prevGroupTitle = currentGroupTitle;
+      let currentSharedBank = null;
+      if (Array.isArray(q.shared_word_bank) && q.shared_word_bank.length > 0) {
+        currentSharedBank = q.shared_word_bank;
+      } else if (typeof q.shared_word_bank === 'string' && q.shared_word_bank.trim()) {
+        try {
+          let parsed = JSON.parse(q.shared_word_bank);
+          if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch (_) {} }
+          if (Array.isArray(parsed) && parsed.length > 0) currentSharedBank = parsed;
+        } catch (_) {
+          const parts = q.shared_word_bank.split(/[|,]/).map(s => s.trim()).filter(Boolean);
+          if (parts.length > 0) currentSharedBank = parts;
+        }
+      }
+
+      // Group key based on title, instructions, or word bank
+      const groupKey = currentGroupTitle || currentGroupInstructions || (currentSharedBank ? currentSharedBank.join('|') : '');
+      const hasGroup = Boolean(groupKey);
+
+      // Render group header once at the start of each distinct group of questions
+      if (hasGroup && groupKey !== prevGroupKey) {
+        prevGroupKey = groupKey;
         let wordBankChipsHtml = '';
-        if (currentSharedBank) {
+        if (currentSharedBank && currentSharedBank.length > 0) {
           wordBankChipsHtml = `
             <div class="q-group-word-bank">
-              <div class="q-group-bank-label">🔤 Word Bank / Options:</div>
+              <div class="q-group-bank-label">🔤 Word Bank / Reference Terms (Click to insert):</div>
               <div class="q-group-bank-chips">
                 ${currentSharedBank.map(word => `
-                  <span class="word-chip q-group-chip" onclick="insertWordIntoActiveInput('${escapeHtml(word).replace(/'/g, "\\'")}')">
+                  <span class="word-chip q-group-chip page-chip" onclick="insertWordIntoActiveInput('${escapeHtml(word).replace(/'/g, "\\'")}')">
                     ${escapeHtml(word)}
                   </span>
                 `).join('')}
@@ -2226,8 +2255,8 @@ function renderSections() {
             ${wordBankChipsHtml}
           </div>
         `;
-      } else if (!currentGroupTitle) {
-        prevGroupTitle = null;
+      } else if (!hasGroup) {
+        prevGroupKey = null;
       }
 
       return groupHeaderHtml + renderQuestion(sec, q, qIdx + 1);
@@ -2341,12 +2370,17 @@ function insertWordIntoActiveInput(word) {
     targetInput = document.querySelector('.ot-text-input:focus, .ot-writing-textarea:focus');
   }
   if (!targetInput) {
-    targetInput = document.querySelector('.ot-text-input, .ot-writing-textarea');
+    const allInputs = Array.from(document.querySelectorAll('.ot-text-input, .ot-writing-textarea'));
+    targetInput = allInputs.find(inp => !inp.value.trim()) || allInputs[0];
   }
   if (!targetInput) return;
 
   targetInput.value = word;
   targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+  const match = targetInput.id && targetInput.id.match(/^input-q-(\d+)$/);
+  if (match) {
+    handleAnswerInput(parseInt(match[1], 10), word);
+  }
   targetInput.focus();
 }
 
@@ -2368,20 +2402,38 @@ function renderQuestion(sec, q, displayNum) {
   let processedQText = rawQText;
   let wordBankHtml = '';
 
-  // 1. Check if q.options is provided for non-MCQ types (word bank from ingestion)
-  if (['fill_blank', 'rewrite', 'short_answer'].includes(qType) && Array.isArray(q.options) && q.options.length > 0) {
-    wordBankHtml = `
-      <div class="word-bank-box">
-        <div class="word-bank-header">🔤 Word Bank (Click a word to insert):</div>
-        <div class="word-bank-chips">
-          ${q.options.map(opt => `
-            <span class="word-chip page-chip" onclick="insertWordIntoInput(${q.id}, '${escapeHtml(opt).replace(/'/g, "\\'")}')">
-              ${escapeHtml(opt)}
-            </span>
-          `).join('')}
+  // Parse question's shared_word_bank if present
+  let qSharedBank = null;
+  if (Array.isArray(q.shared_word_bank) && q.shared_word_bank.length > 0) {
+    qSharedBank = q.shared_word_bank;
+  } else if (typeof q.shared_word_bank === 'string' && q.shared_word_bank.trim()) {
+    try {
+      let p = JSON.parse(q.shared_word_bank);
+      if (typeof p === 'string') { try { p = JSON.parse(p); } catch (_) {} }
+      if (Array.isArray(p) && p.length > 0) qSharedBank = p;
+    } catch (_) {
+      const parts = q.shared_word_bank.split(/[|,]/).map(s => s.trim()).filter(Boolean);
+      if (parts.length > 0) qSharedBank = parts;
+    }
+  }
+
+  // 1. Check if q.options or q.shared_word_bank is provided for non-MCQ types (word bank from ingestion)
+  if (['fill_blank', 'rewrite', 'short_answer'].includes(qType)) {
+    const bankTerms = (Array.isArray(q.options) && q.options.length > 0) ? q.options : (qSharedBank || []);
+    if (bankTerms.length > 0) {
+      wordBankHtml = `
+        <div class="word-bank-box">
+          <div class="word-bank-header">🔤 Word Bank (Click a word to insert):</div>
+          <div class="word-bank-chips">
+            ${bankTerms.map(opt => `
+              <span class="word-chip q-group-chip page-chip" onclick="insertWordIntoInput(${q.id}, '${escapeHtml(opt).replace(/'/g, "\\'")}')">
+                ${escapeHtml(opt)}
+              </span>
+            `).join('')}
+          </div>
         </div>
-      </div>
-    `;
+      `;
+    }
   }
 
   // 2. Also check if raw question text contains pipe-separated word bank (e.g. "Although | Whereas | While" or "[Although | Whereas | While]")
@@ -2395,7 +2447,7 @@ function renderQuestion(sec, q, displayNum) {
           <div class="word-bank-header">🔤 Word Bank (Click a word to insert):</div>
           <div class="word-bank-chips">
             ${words.map(w => `
-              <span class="word-chip page-chip" onclick="insertWordIntoInput(${q.id}, '${escapeHtml(w).replace(/'/g, "\\'")}')">
+              <span class="word-chip q-group-chip page-chip" onclick="insertWordIntoInput(${q.id}, '${escapeHtml(w).replace(/'/g, "\\'")}')">
                 ${escapeHtml(w)}
               </span>
             `).join('')}
@@ -2437,7 +2489,7 @@ function renderQuestion(sec, q, displayNum) {
             return `
               <div class="mcq-visual-card" id="mcq-opt-${q.id}-${oIdx}" onclick="handleSelectMcq(${q.id}, '${oIdx}')">
                 <div class="mcq-visual-img-wrap">
-                  ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Picture ${letter}" class="mcq-visual-img" loading="lazy" onclick="event.stopPropagation(); openDiagramLightbox('${escapeHtml(imgUrl)}')" />` : `<div class="mcq-visual-placeholder">[Picture ${letter}]</div>`}
+                  ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Picture ${letter}" class="mcq-visual-img" loading="lazy" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'mcq-visual-placeholder\\'>[Picture ${letter}]</div>';" onclick="event.stopPropagation(); openDiagramLightbox('${escapeHtml(imgUrl)}')" />` : `<div class="mcq-visual-placeholder">[Picture ${letter}]</div>`}
                 </div>
                 <div class="mcq-visual-footer">
                   <div class="mcq-visual-radio-indicator"></div>

@@ -312,6 +312,8 @@ async function initDatabase() {
     `);
 
     const autoMigrations = [
+      'ALTER TABLE online_tests ADD COLUMN teacher_id INTEGER;',
+      'UPDATE online_tests SET teacher_id = 1 WHERE teacher_id IS NULL;',
       'ALTER TABLE online_test_questions ADD COLUMN stimulus_image_url TEXT;',
       'ALTER TABLE online_test_questions ADD COLUMN has_visual_options INTEGER DEFAULT 0;',
       'ALTER TABLE online_test_questions ADD COLUMN group_title TEXT;',
@@ -3869,6 +3871,95 @@ async function extractImagesFromPdf(pdfBuffer) {
   return extracted;
 }
 
+async function extractVisualOptionCropsFromPdf(pdfBuffer) {
+  const crops = [];
+  try {
+    const { createCanvas } = await import('@napi-rs/canvas');
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(pdfBuffer) }).promise;
+    const scale = 2.0;
+
+    for (let pNum = 1; pNum <= doc.numPages; pNum++) {
+      const page = await doc.getPage(pNum);
+      const viewport = page.getViewport({ scale: 1.0 });
+      const textContent = await page.getTextContent();
+
+      const items = [];
+      for (const item of textContent.items) {
+        const str = (item.str || '').trim();
+        if (!str) continue;
+        const tx = pdfjs.Util.transform(viewport.transform, item.transform);
+        items.push({ str, x: tx[4], y: tx[5], w: item.width, h: item.height });
+      }
+
+      const letterItems = items.filter(it => /^[A-D]$/.test(it.str));
+      const rowGroups = [];
+      for (const lit of letterItems) {
+        let grp = rowGroups.find(g => Math.abs(g.y - lit.y) < 12);
+        if (!grp) {
+          grp = { y: lit.y, letters: [] };
+          rowGroups.push(grp);
+        }
+        grp.letters.push(lit);
+      }
+
+      let pageBuf = null;
+      let renderViewport = null;
+
+      for (const grp of rowGroups) {
+        grp.letters.sort((a, b) => a.x - b.x);
+        if (grp.letters.length >= 3) {
+          const span = grp.letters[grp.letters.length - 1].x - grp.letters[0].x;
+          if (span > 150) { // genuine spaced picture options
+            const precedingItems = items.filter(it => it.y < grp.y && it.y > grp.y - 180);
+            const precedingText = precedingItems.map(it => it.str).join(' ');
+            if (/example/i.test(precedingText)) continue;
+
+            const qNumMatch = precedingText.match(/(?:^|\s|\b)([1-9]\d?)\b/);
+            const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : crops.length + 1;
+
+            if (!pageBuf) {
+              renderViewport = page.getViewport({ scale });
+              const canvas = createCanvas(renderViewport.width, renderViewport.height);
+              const ctx = canvas.getContext('2d');
+              await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
+              pageBuf = canvas.toBuffer('image/png');
+            }
+
+            for (const l of grp.letters) {
+              const centerX = l.x + (l.w ? l.w / 2 : 5);
+              const labelY = l.y;
+              const left = Math.max(0, Math.round((centerX - 70) * scale));
+              const top = Math.max(0, Math.round((labelY - 130) * scale));
+              const width = Math.min(renderViewport.width - left, Math.round(140 * scale));
+              const height = Math.min(renderViewport.height - top, Math.round(120 * scale));
+
+              if (width >= 40 && height >= 40) {
+                const cropped = await sharp(pageBuf)
+                  .extract({ left, top, width, height })
+                  .png()
+                  .toBuffer();
+
+                crops.push({
+                  page: pNum,
+                  questionNumber: qNum,
+                  letter: l.str,
+                  buffer: cropped,
+                  width,
+                  height
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[PDF Visual Option Crop Engine Notice]:', err.message);
+  }
+  return crops;
+}
+
 async function uploadExamImageToFilebaseOrLocal(buffer, index, testId) {
   const missing = getMissingFilebaseEnvVars();
   const folder = testId ? `test_${testId}` : `batch_${Date.now()}`;
@@ -4104,6 +4195,39 @@ function validateOnlineTestStructure(data) {
         }
       }
 
+      // Auto-recovery regex fallback: If sharedWordBank is null, inspect group_instructions, group_title, instructions_text, and question_text
+      if (!sharedWordBank) {
+        const textToScan = [groupInstructions, groupTitle, instructionsText, q.question_text].filter(Boolean).join('\n');
+        // Pattern 1: pipe-separated: "Simile | Metaphor | Personification | Alliteration | Onomatopoeia"
+        const pipeMatch = textToScan.match(/(?:\[\s*)?([A-Za-z0-9_\- ']+(?:\s*\|\s*[A-Za-z0-9_\- ']+){2,})(?:\s*\])?/);
+        if (pipeMatch) {
+          const words = pipeMatch[1].split('|').map(s => s.trim().replace(/^\[|\]$/g, '')).filter(s => s.length > 0 && s.length < 60);
+          if (words.length >= 3) {
+            sharedWordBank = JSON.stringify(words);
+          }
+        }
+        // Pattern 2: slash-separated: "Although / Whereas / While"
+        if (!sharedWordBank) {
+          const slashMatch = textToScan.match(/(?:\[\s*|\(\s*)?([A-Za-z0-9_\- ']+(?:\s*\/\s*[A-Za-z0-9_\- ']+){2,})(?:\s*\]|\s*\))?/);
+          if (slashMatch) {
+            const words = slashMatch[1].split('/').map(s => s.trim().replace(/^\[|\]$/g, '')).filter(s => s.length > 0 && s.length < 60);
+            if (words.length >= 3) {
+              sharedWordBank = JSON.stringify(words);
+            }
+          }
+        }
+        // Pattern 3: Explicit Box / Word bank keywords: e.g. "Choose from: (word1, word2, word3)" or "Word Bank: word1, word2, word3"
+        if (!sharedWordBank) {
+          const boxMatch = textToScan.match(/(?:word\s*bank|reference\s*box|choose\s*from|box)[\s:]*\[?([A-Za-z0-9_\- ',;/]+)\]?/i);
+          if (boxMatch) {
+            const words = boxMatch[1].split(/[,;/]/).map(s => s.trim()).filter(s => s.length > 0 && s.length < 60);
+            if (words.length >= 3) {
+              sharedWordBank = JSON.stringify(words);
+            }
+          }
+        }
+      }
+
       sanitizedQuestions.push({
         question_type: qType,
         question_text: q.question_text.trim(),
@@ -4119,6 +4243,19 @@ function validateOnlineTestStructure(data) {
         group_instructions: groupInstructions,
         shared_word_bank: sharedWordBank
       });
+    }
+
+    // Propagate shared_word_bank across all questions sharing the same group_title
+    const groupBankMap = new Map();
+    for (const q of sanitizedQuestions) {
+      if (q.group_title && q.shared_word_bank) {
+        groupBankMap.set(q.group_title, q.shared_word_bank);
+      }
+    }
+    for (const q of sanitizedQuestions) {
+      if (q.group_title && !q.shared_word_bank && groupBankMap.has(q.group_title)) {
+        q.shared_word_bank = groupBankMap.get(q.group_title);
+      }
     }
 
     sanitizedSections.push({
@@ -4264,6 +4401,7 @@ app.post(
 
       // 2. Gemini Document Extraction & PDF Image Extraction
       const extractedImages = [];
+      const visualCrops = [];
       try {
         const examPdfBuffer = fs.readFileSync(examPdfFile.path);
         const rawImages = await extractImagesFromPdf(examPdfBuffer);
@@ -4280,6 +4418,34 @@ app.post(
             console.warn(`[Online Tests Image Upload Warning] Failed to upload image #${rImg.index}:`, upErr.message);
           }
         }
+
+        // If standard raster extraction yielded 0 images, run high-DPI visual crop engine for Cambridge vector/form illustrations
+        if (extractedImages.length === 0) {
+          console.log('[Online Tests Ingestion] Running Visual Option Crop Engine for vector/form-based PDF exam...');
+          const rawCrops = await extractVisualOptionCropsFromPdf(examPdfBuffer);
+          let cropCounter = 0;
+          for (const c of rawCrops) {
+            try {
+              const url = await uploadExamImageToFilebaseOrLocal(c.buffer, `crop_q${c.questionNumber}_${c.letter}_${cropCounter++}`, null);
+              const cropObj = {
+                index: extractedImages.length,
+                url,
+                questionNumber: c.questionNumber,
+                letter: c.letter,
+                width: c.width,
+                height: c.height
+              };
+              extractedImages.push(cropObj);
+              visualCrops.push(cropObj);
+            } catch (cropUpErr) {
+              console.warn(`[Online Tests Crop Upload Warning] Failed for Q${c.questionNumber} ${c.letter}:`, cropUpErr.message);
+            }
+          }
+          if (visualCrops.length > 0) {
+            console.log(`[Online Tests Ingestion] Visual Option Crop Engine extracted & uploaded ${visualCrops.length} choice illustrations.`);
+          }
+        }
+
         console.log(`[Online Tests Ingestion] Extracted & uploaded ${extractedImages.length} images from exam paper.`);
       } catch (imgExtractErr) {
         console.warn('[Online Tests Image Extraction Warning]:', imgExtractErr.message);
@@ -4327,16 +4493,17 @@ CRITICAL RULES:
 - The Marking Scheme is the 100% authoritative ground truth for all questions, points, accepted answers, and writing criteria.
 - Split listening sections into distinct parts (e.g. Part 1, Part 2, Part 3, Part 4) aligned to the dialogue.
 - Extract reading passages verbatim into passage_text for comprehension sections.
-- GROUP HEADINGS & EXERCISE INSTRUCTIONS (Grammar / Reading / Vocabulary papers):
-  * When an exam paper presents a numbered or named group of sub-questions (e.g. '2. Contrast Conjunctions (Although / Whereas / While)' followed by instruction 'Fill in each blank with the most appropriate contrast conjunction from the options given:' and sub-items a, b, c...):
-    - DO NOT prepend the heading or group instruction to sub-question (a).
-    - Set "group_title" to the heading (e.g., '2. Contrast Conjunctions (Although / Whereas / While)').
-    - Set "group_instructions" to the group prompt (e.g., 'Fill in each blank with the most appropriate contrast conjunction from the options given:').
-    - If there is a reference box or word bank, extract it into "shared_word_bank": ["Although", "Whereas", "While"].
-    - For each sub-item (a, b, c...), populate "question_text" strictly with that sub-item's sentence (e.g., 'a) _____ the storm raged outside, the family remained warm and secure inside the log cabin.').
+- GROUP HEADINGS, REFERENCE BOXES & WORD BANKS:
+  * Exam papers frequently provide a boxed reference list, dashed-line reference box, word bank, or delimited list of choices (e.g. dashed border box with 'Simile | Metaphor | Personification | Alliteration | Onomatopoeia', or '(Although / Whereas / While)', or 'Choose from the box: [...]').
+  * Whenever a section, heading, group of questions, or individual question contains a word bank or reference box:
+    - ALWAYS extract every single term verbatim into "shared_word_bank": ["Simile", "Metaphor", "Personification", "Alliteration", "Onomatopoeia"].
+    - Do NOT drop, skip, or omit the reference box.
+    - Set "group_title" to the group heading (e.g., '7. Identification of Figurative Language').
+    - Set "group_instructions" to the instruction prompt (e.g., 'Identify the figurative language technique used in each sentence:').
+    - For each sub-item (a, b, c...), populate "question_text" strictly with that sentence.
+    - All sub-questions that belong to the same exercise group MUST have the exact same "shared_word_bank" array.
     - Word banks belong to the group stimulus/instructions and must NOT be repeated inside each sub-question text.
-    - All sub-questions that belong to the same exercise group share the exact same "group_title" and "group_instructions".
-    - For standalone questions without group headings, set "group_title": null, "group_instructions": null, "shared_word_bank": null.
+  * For standalone questions without group headings, set "group_title": null, "group_instructions": null, "shared_word_bank": null.
 - VISUAL & PICTURE QUESTIONS (Cambridge Listening / Reading Paper style with Picture A, B, C or stimulus diagrams):
   * If a question relies on pictures/diagrams for its options (e.g. Question 1 shows Picture A, Picture B, Picture C):
     - Set "has_visual_options": true
@@ -4463,6 +4630,12 @@ OUTPUT SCHEMA (Strict JSON):
 
                 if (q.has_visual_options || hasVisualChoicePattern || (Array.isArray(q.options) && q.options.length > 0 && typeof q.options[0] === 'object')) {
                   q.has_visual_options = true;
+                  let qNum = null;
+                  const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+                  if (qNumMatch) {
+                    qNum = parseInt(qNumMatch[1], 10);
+                  }
+
                   q.options = (Array.isArray(q.options) ? q.options : []).map((opt, oIdx) => {
                     let label = String.fromCharCode(65 + oIdx);
                     let caption = '';
@@ -4470,7 +4643,7 @@ OUTPUT SCHEMA (Strict JSON):
                     let existingUrl = '';
 
                     if (typeof opt === 'object' && opt !== null) {
-                      label = opt.label || label;
+                      label = (opt.label ? String(opt.label).trim().toUpperCase() : label);
                       caption = opt.caption || '';
                       if (opt.image_index !== undefined && opt.image_index !== null) {
                         optImgIdx = Number(opt.image_index);
@@ -4483,7 +4656,19 @@ OUTPUT SCHEMA (Strict JSON):
                       caption = str.replace(/\[?picture\s*[a-z]\]?/gi, '').trim();
                     }
 
-                    const matchedOpt = extractedImages.find(img => img.index === optImgIdx) || extractedImages[optImgIdx];
+                    // Priority 1: Match by visualCrops with question number & letter
+                    let matchedCrop = null;
+                    if (visualCrops.length > 0) {
+                      if (qNum) {
+                        matchedCrop = visualCrops.find(c => c.questionNumber === qNum && c.letter === label);
+                      }
+                      // Priority 2: Match by sequential position in visualCrops
+                      if (!matchedCrop && optImgIdx < visualCrops.length) {
+                        matchedCrop = visualCrops[optImgIdx];
+                      }
+                    }
+
+                    const matchedOpt = matchedCrop || extractedImages.find(img => img.index === optImgIdx) || extractedImages[optImgIdx];
                     return {
                       label,
                       image_url: matchedOpt ? matchedOpt.url : (existingUrl || ''),
@@ -4610,7 +4795,7 @@ OUTPUT SCHEMA (Strict JSON):
               q.has_visual_options ? 1 : 0,
               q.group_title || null,
               q.group_instructions || null,
-              q.shared_word_bank ? JSON.stringify(q.shared_word_bank) : null
+              typeof q.shared_word_bank === 'string' ? q.shared_word_bank : (q.shared_word_bank ? JSON.stringify(q.shared_word_bank) : null)
             ]
           });
         }
@@ -4684,6 +4869,23 @@ app.get('/api/online-tests', authenticateToken, requireApprovedUser, async (req,
   }
 });
 
+// Helper: Strict Multi-Tenancy & Authorization Validator
+async function getAuthoritativeTestOrCheckAuth(testId, user) {
+  const testRes = await db.execute({
+    sql: 'SELECT id, teacher_id, title, deadline, status, code, audio_path, extra_instructions, created_at FROM online_tests WHERE id = ?',
+    args: [testId]
+  });
+  const test = testRes.rows[0];
+  if (!test) {
+    return { test: null, status: 404, error: 'Online test not found.' };
+  }
+  const isElevated = user && ['root', 'admin'].includes(user.role);
+  if (!isElevated && Number(test.teacher_id) !== Number(user.id)) {
+    return { test: null, status: 403, error: 'Forbidden: You do not have permission to access or modify this test.' };
+  }
+  return { test, status: 200, error: null };
+}
+
 // 2. GET /api/online-tests/:testId - Get complete nested test details with sections & questions
 app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
@@ -4692,18 +4894,11 @@ app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, asy
       return res.status(400).json({ success: false, error: 'Invalid test ID format.' });
     }
 
-    const isElevated = ['root', 'admin'].includes(req.user.role);
-    const testRes = await db.execute({
-      sql: `SELECT id, teacher_id, title, deadline, status, code, audio_path, extra_instructions, created_at
-            FROM online_tests
-            WHERE id = ? ${isElevated ? '' : 'AND teacher_id = ?'}`,
-      args: isElevated ? [testId] : [testId, req.user.id]
-    });
-
-    const test = testRes.rows[0];
-    if (!test) {
-      return res.status(404).json({ success: false, error: 'Online test not found or unauthorized.' });
+    const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+    if (!auth.test) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
+    const test = auth.test;
 
     let signedAudioUrl = null;
     if (test.audio_path) {
@@ -4785,7 +4980,65 @@ app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, asy
   }
 });
 
-// 3. GET /api/online-tests/:testId/audio-url - Fetch a fresh signed URL for audio on demand
+// 3. PATCH /api/online-tests/:testId - Update test metadata (title, deadline, extra_instructions, status)
+app.patch('/api/online-tests/:testId', authenticateToken, requireApprovedUser, async (req, res) => {
+  try {
+    const testId = parseInt(req.params.testId, 10);
+    if (isNaN(testId) || testId <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid test ID.' });
+    }
+
+    const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+    if (!auth.test) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
+    }
+
+    const updates = [];
+    const args = [];
+
+    if (req.body.title !== undefined) {
+      const t = String(req.body.title).trim();
+      if (!t) return res.status(400).json({ success: false, error: 'Test title cannot be empty.' });
+      updates.push('title = ?');
+      args.push(t);
+    }
+    if (req.body.deadline !== undefined) {
+      const d = req.body.deadline ? String(req.body.deadline).trim() : null;
+      updates.push('deadline = ?');
+      args.push(d);
+    }
+    if (req.body.extra_instructions !== undefined) {
+      const inst = req.body.extra_instructions ? String(req.body.extra_instructions).trim() : null;
+      updates.push('extra_instructions = ?');
+      args.push(inst);
+    }
+    if (req.body.status !== undefined) {
+      const st = String(req.body.status).trim().toLowerCase();
+      if (!['draft', 'published', 'archived', 'closed'].includes(st)) {
+        return res.status(400).json({ success: false, error: 'Invalid test status.' });
+      }
+      updates.push('status = ?');
+      args.push(st);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid update fields provided.' });
+    }
+
+    args.push(testId);
+    await db.execute({
+      sql: `UPDATE online_tests SET ${updates.join(', ')} WHERE id = ?`,
+      args
+    });
+
+    return res.json({ success: true, message: 'Online test updated successfully.' });
+  } catch (err) {
+    console.error('Error updating online test:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update online test.' });
+  }
+});
+
+// 4. GET /api/online-tests/:testId/audio-url - Fetch a fresh signed URL for audio on demand
 app.get('/api/online-tests/:testId/audio-url', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const testId = parseInt(req.params.testId, 10);
@@ -4793,14 +5046,13 @@ app.get('/api/online-tests/:testId/audio-url', authenticateToken, requireApprove
       return res.status(400).json({ success: false, error: 'Invalid test ID.' });
     }
 
-    const isElevated = ['root', 'admin'].includes(req.user.role);
-    const testRes = await db.execute({
-      sql: `SELECT id, audio_path FROM online_tests WHERE id = ? ${isElevated ? '' : 'AND teacher_id = ?'}`,
-      args: isElevated ? [testId] : [testId, req.user.id]
-    });
+    const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+    if (!auth.test) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
+    }
 
-    const test = testRes.rows[0];
-    if (!test || !test.audio_path) {
+    const test = auth.test;
+    if (!test.audio_path) {
       return res.status(404).json({ success: false, error: 'Audio not found for this test.' });
     }
 
@@ -4816,7 +5068,7 @@ app.get('/api/online-tests/:testId/audio-url', authenticateToken, requireApprove
   }
 });
 
-// 4. PATCH /api/online-tests/:testId/sections/:sectionId - Update section metadata
+// 5. PATCH /api/online-tests/:testId/sections/:sectionId - Update section metadata
 app.patch('/api/online-tests/:testId/sections/:sectionId', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const testId = parseInt(req.params.testId, 10);
@@ -4825,13 +5077,17 @@ app.patch('/api/online-tests/:testId/sections/:sectionId', authenticateToken, re
       return res.status(400).json({ success: false, error: 'Invalid test or section ID.' });
     }
 
-    const isElevated = ['root', 'admin'].includes(req.user.role);
-    const authCheck = await db.execute({
-      sql: `SELECT id FROM online_tests WHERE id = ? ${isElevated ? '' : 'AND teacher_id = ?'}`,
-      args: isElevated ? [testId] : [testId, req.user.id]
+    const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+    if (!auth.test) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
+    }
+
+    const secCheck = await db.execute({
+      sql: 'SELECT id FROM online_test_sections WHERE id = ? AND test_id = ?',
+      args: [sectionId, testId]
     });
-    if (authCheck.rows.length === 0) {
-      return res.status(403).json({ success: false, error: 'Unauthorized to modify this test.' });
+    if (secCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Section not found for this test.' });
     }
 
     const updates = [];
@@ -4867,7 +5123,7 @@ app.patch('/api/online-tests/:testId/sections/:sectionId', authenticateToken, re
   }
 });
 
-// 5. PATCH /api/online-tests/:testId/questions/:questionId - Inline Autosave for questions
+// 6. PATCH /api/online-tests/:testId/questions/:questionId - Inline Autosave for questions
 app.patch('/api/online-tests/:testId/questions/:questionId', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const testId = parseInt(req.params.testId, 10);
@@ -4876,16 +5132,19 @@ app.patch('/api/online-tests/:testId/questions/:questionId', authenticateToken, 
       return res.status(400).json({ success: false, error: 'Invalid test or question ID.' });
     }
 
-    const isElevated = ['root', 'admin'].includes(req.user.role);
-    const authCheck = await db.execute({
+    const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+    if (!auth.test) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
+    }
+
+    const qCheck = await db.execute({
       sql: `SELECT q.id FROM online_test_questions q
             JOIN online_test_sections s ON q.section_id = s.id
-            JOIN online_tests t ON s.test_id = t.id
-            WHERE q.id = ? AND t.id = ? ${isElevated ? '' : 'AND t.teacher_id = ?'}`,
-      args: isElevated ? [questionId, testId] : [questionId, testId, req.user.id]
+            WHERE q.id = ? AND s.test_id = ?`,
+      args: [questionId, testId]
     });
-    if (authCheck.rows.length === 0) {
-      return res.status(403).json({ success: false, error: 'Unauthorized to modify this question.' });
+    if (qCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Question not found for this test.' });
     }
 
     const updates = [];
@@ -4972,7 +5231,7 @@ app.patch('/api/online-tests/:testId/questions/:questionId', authenticateToken, 
   }
 });
 
-// 6. POST /api/online-tests/:testId/sections/:sectionId/questions - Add question to a section
+// 7. POST /api/online-tests/:testId/sections/:sectionId/questions - Add question to a section
 app.post('/api/online-tests/:testId/sections/:sectionId/questions', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const testId = parseInt(req.params.testId, 10);
@@ -4981,15 +5240,17 @@ app.post('/api/online-tests/:testId/sections/:sectionId/questions', authenticate
       return res.status(400).json({ success: false, error: 'Invalid test or section ID.' });
     }
 
-    const isElevated = ['root', 'admin'].includes(req.user.role);
-    const authCheck = await db.execute({
-      sql: `SELECT s.id FROM online_test_sections s
-            JOIN online_tests t ON s.test_id = t.id
-            WHERE s.id = ? AND t.id = ? ${isElevated ? '' : 'AND t.teacher_id = ?'}`,
-      args: isElevated ? [sectionId, testId] : [sectionId, testId, req.user.id]
+    const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+    if (!auth.test) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
+    }
+
+    const secCheck = await db.execute({
+      sql: 'SELECT id FROM online_test_sections WHERE id = ? AND test_id = ?',
+      args: [sectionId, testId]
     });
-    if (authCheck.rows.length === 0) {
-      return res.status(403).json({ success: false, error: 'Unauthorized to add question to this section.' });
+    if (secCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Section not found for this test.' });
     }
 
     const qCountRes = await db.execute({
@@ -5045,7 +5306,7 @@ app.post('/api/online-tests/:testId/sections/:sectionId/questions', authenticate
   }
 });
 
-// 7. DELETE /api/online-tests/:testId/questions/:questionId - Delete question
+// 8. DELETE /api/online-tests/:testId/questions/:questionId - Delete question
 app.delete('/api/online-tests/:testId/questions/:questionId', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const testId = parseInt(req.params.testId, 10);
@@ -5054,16 +5315,19 @@ app.delete('/api/online-tests/:testId/questions/:questionId', authenticateToken,
       return res.status(400).json({ success: false, error: 'Invalid test or question ID.' });
     }
 
-    const isElevated = ['root', 'admin'].includes(req.user.role);
-    const authCheck = await db.execute({
+    const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+    if (!auth.test) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
+    }
+
+    const qCheck = await db.execute({
       sql: `SELECT q.id FROM online_test_questions q
             JOIN online_test_sections s ON q.section_id = s.id
-            JOIN online_tests t ON s.test_id = t.id
-            WHERE q.id = ? AND t.id = ? ${isElevated ? '' : 'AND t.teacher_id = ?'}`,
-      args: isElevated ? [questionId, testId] : [questionId, testId, req.user.id]
+            WHERE q.id = ? AND s.test_id = ?`,
+      args: [questionId, testId]
     });
-    if (authCheck.rows.length === 0) {
-      return res.status(403).json({ success: false, error: 'Unauthorized to delete this question.' });
+    if (qCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Question not found for this test.' });
     }
 
     await db.execute({
@@ -5078,7 +5342,7 @@ app.delete('/api/online-tests/:testId/questions/:questionId', authenticateToken,
   }
 });
 
-// 8. POST /api/online-tests/:testId/publish - Publish the test with strict completeness verification
+// 9. POST /api/online-tests/:testId/publish - Publish the test with strict completeness verification
 app.post('/api/online-tests/:testId/publish', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const testId = parseInt(req.params.testId, 10);
@@ -5086,15 +5350,11 @@ app.post('/api/online-tests/:testId/publish', authenticateToken, requireApproved
       return res.status(400).json({ success: false, error: 'Invalid test ID.' });
     }
 
-    const isElevated = ['root', 'admin'].includes(req.user.role);
-    const testRes = await db.execute({
-      sql: `SELECT id, code, status, title FROM online_tests WHERE id = ? ${isElevated ? '' : 'AND teacher_id = ?'}`,
-      args: isElevated ? [testId] : [testId, req.user.id]
-    });
-    const test = testRes.rows[0];
-    if (!test) {
-      return res.status(404).json({ success: false, error: 'Online test not found or unauthorized.' });
+    const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+    if (!auth.test) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
+    const test = auth.test;
 
     // Completeness validation: at least 1 section and all questions valid
     const sectionsRes = await db.execute({
@@ -5154,7 +5414,7 @@ app.post('/api/online-tests/:testId/publish', authenticateToken, requireApproved
   }
 });
 
-// 9. DELETE /api/online-tests/:testId - Delete entire test and related data
+// 10. DELETE /api/online-tests/:testId - Delete entire test and related data
 app.delete('/api/online-tests/:testId', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const testId = parseInt(req.params.testId, 10);
@@ -5162,16 +5422,11 @@ app.delete('/api/online-tests/:testId', authenticateToken, requireApprovedUser, 
       return res.status(400).json({ success: false, error: 'Invalid test ID.' });
     }
 
-    const isElevated = ['root', 'admin'].includes(req.user.role);
-    const testRes = await db.execute({
-      sql: `SELECT id, audio_path FROM online_tests WHERE id = ? ${isElevated ? '' : 'AND teacher_id = ?'}`,
-      args: isElevated ? [testId] : [testId, req.user.id]
-    });
-
-    const test = testRes.rows[0];
-    if (!test) {
-      return res.status(404).json({ success: false, error: 'Online test not found or unauthorized.' });
+    const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+    if (!auth.test) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
+    const test = auth.test;
 
     if (test.audio_path) {
       try { await deleteAudioFromFilebase(test.audio_path); } catch (_) { }
@@ -5206,7 +5461,7 @@ app.delete('/api/online-tests/:testId', authenticateToken, requireApprovedUser, 
 
 // ----------------- ONLINE TESTS: TEACHER SUBMISSIONS & OVERRIDE API -----------------
 
-// 1. GET /api/online-tests/:testId/attempts - List student attempts
+// 11. GET /api/online-tests/:testId/attempts - List student attempts
 app.get('/api/online-tests/:testId/attempts', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const testId = parseInt(req.params.testId, 10);
@@ -5214,14 +5469,9 @@ app.get('/api/online-tests/:testId/attempts', authenticateToken, requireApproved
       return res.status(400).json({ success: false, error: 'Invalid test ID.' });
     }
 
-    const isElevated = ['root', 'admin'].includes(req.user.role);
-    const testCheck = await db.execute({
-      sql: `SELECT id, title FROM online_tests WHERE id = ? ${isElevated ? '' : 'AND teacher_id = ?'}`,
-      args: isElevated ? [testId] : [testId, req.user.id]
-    });
-
-    if (testCheck.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Online test not found or unauthorized.' });
+    const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+    if (!auth.test) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
 
     const attemptsRes = await db.execute({
@@ -5234,7 +5484,7 @@ app.get('/api/online-tests/:testId/attempts', authenticateToken, requireApproved
 
     return res.json({
       success: true,
-      test_title: testCheck.rows[0].title,
+      test_title: auth.test.title,
       attempts: attemptsRes.rows || []
     });
   } catch (err) {
@@ -5243,7 +5493,7 @@ app.get('/api/online-tests/:testId/attempts', authenticateToken, requireApproved
   }
 });
 
-// 2. GET /api/online-tests/:testId/attempts/:attemptId - Detailed attempt breakdown
+// 12. GET /api/online-tests/:testId/attempts/:attemptId - Detailed attempt breakdown
 app.get('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const testId = parseInt(req.params.testId, 10);
@@ -5252,13 +5502,9 @@ app.get('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, requ
       return res.status(400).json({ success: false, error: 'Invalid test or attempt ID.' });
     }
 
-    const isElevated = ['root', 'admin'].includes(req.user.role);
-    const authCheck = await db.execute({
-      sql: `SELECT id, title FROM online_tests WHERE id = ? ${isElevated ? '' : 'AND teacher_id = ?'}`,
-      args: isElevated ? [testId] : [testId, req.user.id]
-    });
-    if (authCheck.rows.length === 0) {
-      return res.status(403).json({ success: false, error: 'Unauthorized to view this attempt.' });
+    const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+    if (!auth.test) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
 
     const attemptRes = await db.execute({
@@ -5361,7 +5607,7 @@ app.get('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, requ
 
     return res.json({
       success: true,
-      test_title: authCheck.rows[0].title,
+      test_title: auth.test.title,
       attempt: {
         ...attempt,
         answers: mergedAnswers,
@@ -5376,7 +5622,7 @@ app.get('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, requ
   }
 });
 
-// 3. PATCH /api/online-tests/:testId/attempts/:attemptId - Teacher manual override
+// 13. PATCH /api/online-tests/:testId/attempts/:attemptId - Teacher manual override
 app.patch('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const testId = parseInt(req.params.testId, 10);
@@ -5385,13 +5631,9 @@ app.patch('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, re
       return res.status(400).json({ success: false, error: 'Invalid test or attempt ID.' });
     }
 
-    const isElevated = ['root', 'admin'].includes(req.user.role);
-    const authCheck = await db.execute({
-      sql: `SELECT id FROM online_tests WHERE id = ? ${isElevated ? '' : 'AND teacher_id = ?'}`,
-      args: isElevated ? [testId] : [testId, req.user.id]
-    });
-    if (authCheck.rows.length === 0) {
-      return res.status(403).json({ success: false, error: 'Unauthorized to modify this attempt.' });
+    const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+    if (!auth.test) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
 
     const attemptRes = await db.execute({
@@ -5452,7 +5694,7 @@ app.patch('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, re
   }
 });
 
-// 4. DELETE /api/online-tests/:testId/attempts/:attemptId - Delete attempt
+// 14. DELETE /api/online-tests/:testId/attempts/:attemptId - Delete attempt
 app.delete('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, requireApprovedUser, async (req, res) => {
   try {
     const testId = parseInt(req.params.testId, 10);
@@ -5461,13 +5703,17 @@ app.delete('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, r
       return res.status(400).json({ success: false, error: 'Invalid test or attempt ID.' });
     }
 
-    const isElevated = ['root', 'admin'].includes(req.user.role);
-    const authCheck = await db.execute({
-      sql: `SELECT id FROM online_tests WHERE id = ? ${isElevated ? '' : 'AND teacher_id = ?'}`,
-      args: isElevated ? [testId] : [testId, req.user.id]
+    const auth = await getAuthoritativeTestOrCheckAuth(testId, req.user);
+    if (!auth.test) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
+    }
+
+    const attemptRes = await db.execute({
+      sql: 'SELECT id FROM online_test_attempts WHERE id = ? AND test_id = ?',
+      args: [attemptId, testId]
     });
-    if (authCheck.rows.length === 0) {
-      return res.status(403).json({ success: false, error: 'Unauthorized to delete this attempt.' });
+    if (attemptRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Attempt not found.' });
     }
 
     await db.execute({
