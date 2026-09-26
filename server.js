@@ -6646,17 +6646,33 @@ Return valid JSON in this exact structure:
             mistakes_count: mistakes.length,
             overall_performance: `The candidate completed the exam with ${answers.length - mistakes.length}/${answers.length} correct responses.`
           },
-          diagnostics: mistakes.map((m) => ({
-            question_id: m.question_id,
-            section_type: m.section_type || 'general',
-            framework_skill: m.section_type === 'listening' ? 'Answer Accuracy' : 'Reading Comprehension',
-            sub_skill: 'Direct mark scheme contrast',
-            evidence_quote: 'Official Mark Scheme Key',
-            misconception: `Candidate answered "${m.student_answer || '(Blank)'}", which does not match the official key.`,
-            intervention_strategy: 'Review mark scheme acceptable variations and focus keywords.'
-          }))
+          diagnostics: mistakes.map((m) => {
+            const qIndex = answers.findIndex(a => Number(a.question_id) === Number(m.question_id));
+            return {
+              question_number: qIndex !== -1 ? (qIndex + 1) : undefined,
+              question_id: m.question_id,
+              section_type: m.section_type || 'general',
+              framework_skill: m.section_type === 'listening' ? 'Answer Accuracy' : 'Reading Comprehension',
+              sub_skill: 'Direct mark scheme contrast',
+              evidence_quote: 'Official Mark Scheme Key',
+              misconception: `Candidate answered "${m.student_answer || '(Blank)'}", which does not match the official key.`,
+              intervention_strategy: 'Review mark scheme acceptable variations and focus keywords.'
+            };
+          })
         };
       }
+    }
+
+    // Attach sequential exam question_number (1..N) to all diagnostics
+    if (diagnosticReport && Array.isArray(diagnosticReport.diagnostics)) {
+      diagnosticReport.diagnostics.forEach((d) => {
+        if (!d.question_number) {
+          const qIndex = answers.findIndex(a => Number(a.question_id) === Number(d.question_id));
+          if (qIndex !== -1) {
+            d.question_number = qIndex + 1;
+          }
+        }
+      });
     }
 
     // Recalculate total score

@@ -1784,9 +1784,11 @@ async function printOnlineTestReport(testId, attemptId, reportType) {
   // Build Diagnostic Error Log Table rows
   const errorLogRows = diagnostics.length > 0
     ? diagnostics.map((d, idx) => {
+        const qIndex = answers.findIndex(a => Number(a.question_id) === Number(d.question_id));
+        const qNum = d.question_number || (qIndex !== -1 ? (qIndex + 1) : (idx + 1));
         return `
           <tr style="border-bottom: 1px solid #E5E7EB;">
-            <td style="padding: 8px 10px; font-weight:600; font-family:'IBM Plex Mono',monospace; font-size:12px;">#${idx + 1} (Q${d.question_id || '–'})</td>
+            <td style="padding: 8px 10px; font-weight:600; font-family:'IBM Plex Mono',monospace; font-size:12px;">#${qNum}</td>
             <td style="padding: 8px 10px; font-size:12px;">
               <span style="font-weight:600; color:#1E3A8A;">${escapeHtml(d.framework_skill || d.section_type || 'Skill')}</span>
               ${d.sub_skill ? `<div style="font-size:11px; color:#4B5563;">${escapeHtml(d.sub_skill)}</div>` : ''}

@@ -784,16 +784,16 @@ function generateMcqPrintableReport(type = 'full') {
               </thead>
               <tbody>
                 ${diags.map((diag, dIdx) => {
-          let qNum = diag.question_number || diag.question_id || (dIdx + 1);
+          const qIdx = (mcqQuestionsData || []).findIndex((x, idx) =>
+            Number(x.id) === Number(diag.question_id) ||
+            Number(x.order_index) === Number(diag.question_id)
+          );
+          const q = qIdx !== -1 ? mcqQuestionsData[qIdx] : null;
+          const qNum = diag.question_number || (qIdx !== -1 ? (qIdx + 1) : (dIdx + 1));
           let studentAns = diag.student_answer;
           let correctAns = diag.correct_answer;
 
           if (!studentAns || studentAns.length <= 2 || !correctAns || correctAns.length <= 2) {
-            const q = (mcqQuestionsData || []).find((x, qIndex) =>
-              Number(x.id) === Number(diag.question_id) ||
-              Number(x.order_index) === Number(diag.question_id) ||
-              (qIndex + 1) === Number(qNum)
-            );
             if (q) {
               const res = resolveMcqQuestionAnswers(q, att.answers && att.answers[q.id]);
               if (!studentAns || studentAns.length <= 2) studentAns = res.studentDisplayText;
@@ -803,7 +803,7 @@ function generateMcqPrintableReport(type = 'full') {
 
           return `
                     <tr>
-                      <td style="padding: 6px 8px; border: 1px solid #777; font-family: 'IBM Plex Mono', monospace; font-weight: 600;">Q${escapeHtml(String(qNum))}</td>
+                      <td style="padding: 6px 8px; border: 1px solid #777; font-family: 'IBM Plex Mono', monospace; font-weight: 600;">#${escapeHtml(String(qNum))}</td>
                       <td style="padding: 6px 8px; border: 1px solid #777; color: #991B1B; font-weight: 500;">${escapeHtml(studentAns || '—')}</td>
                       <td style="padding: 6px 8px; border: 1px solid #777; color: #065F46; font-weight: 600;">${escapeHtml(correctAns || '—')}</td>
                       <td style="padding: 6px 8px; border: 1px solid #777; font-weight: 600;">${escapeHtml(diag.main_skill || 'Listening Strategy')}</td>
