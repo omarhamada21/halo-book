@@ -211,13 +211,27 @@
 
   function getOrCreateDeviceId() {
     let stored = localStorage.getItem('mimir_device_token');
-    if (stored) return stored;
+    // Guard against legacy truncated collision tokens (e.g. dev_NDE0eDg5...) that lacked true UUID randomness
+    const isLegacyTruncated = stored && (
+      stored.startsWith('dev_NDE0eDg5') ||
+      stored.startsWith('dev_NDQweDk1') ||
+      stored.startsWith('dev_NDI4eDky') ||
+      stored.startsWith('dev_MzYweDgw') ||
+      (stored.length <= 36 && !stored.includes('-'))
+    );
+    if (stored && !isLegacyTruncated) return stored;
 
-    const screenData = `${screen.width}x${screen.height}x${screen.colorDepth}`;
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
-    const raw = `${screenData}_${timezone}_${navigator.language}_${crypto.randomUUID()}`;
-    stored = 'dev_' + btoa(raw).replace(/[^a-zA-Z0-9]/g, '').slice(0, 32);
-    
+    let uuid = '';
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      try { uuid = crypto.randomUUID(); } catch (_) {}
+    }
+    if (!uuid) {
+      uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+    stored = 'dev_' + uuid;
     try { localStorage.setItem('mimir_device_token', stored); } catch (_) {}
     return stored;
   }
@@ -247,9 +261,36 @@
   let playCount = 0;
   let maxPlaysLimit = 0;
 
+  function showMcqClosedScreen(type, options = {}) {
+    const formCard = document.getElementById('mcq-form-card');
+    const audioBox = document.getElementById('mcq-audio-box');
+    const lockedCard = document.getElementById('mcq-locked-screen');
+    const successCard = document.getElementById('mcq-success-screen');
+    const dlBox = document.getElementById('deadline-box');
+
+    if (formCard) formCard.style.display = 'none';
+    if (audioBox) audioBox.style.display = 'none';
+    if (lockedCard) lockedCard.style.display = 'none';
+    if (successCard) successCard.style.display = 'none';
+
+    if (dlBox) {
+      dlBox.style.display = 'block';
+      dlBox.className = 'deadline-box deadline-expired';
+      if (type === 'deadline') {
+        const formattedDate = options.deadline ? formatCairoDateTime(new Date(options.deadline)) : 'the scheduled cutoff';
+        document.getElementById('test-title').textContent = 'Submissions Closed';
+        document.getElementById('test-teacher').textContent = '';
+        dlBox.innerHTML = `⛔ <b>Submissions Closed:</b> This test's submission window has closed. The deadline was ${formattedDate} (Cairo Time). Contact your teacher if you believe this is a mistake.`;
+      } else {
+        document.getElementById('test-title').textContent = 'Invalid Assessment Link';
+        document.getElementById('test-teacher').textContent = '';
+        dlBox.innerHTML = `This test link appears to be invalid or has been removed. Please check the link with your teacher.`;
+      }
+    }
+  }
+
   if (!testCode) {
-    document.getElementById('test-title').textContent = 'Invalid Assessment Link';
-    document.getElementById('test-teacher').textContent = 'No test code provided in URL.';
+    showMcqClosedScreen('invalid');
   } else {
     initMcqPage();
   }
@@ -258,11 +299,14 @@
     try {
       // 1. Fetch test details
       const res = await fetch(`/api/public/mcq/${encodeURIComponent(testCode)}`);
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
 
-      if (!d.success || !d.test) {
-        document.getElementById('test-title').textContent = d.error || 'Test Not Found';
-        document.getElementById('test-teacher').textContent = 'This exam link may be invalid or not yet published.';
+      if (!res.ok || !d.success || !d.test) {
+        if (res.status === 403 || d.error === 'deadline_passed') {
+          showMcqClosedScreen('deadline', { deadline: d.deadline });
+          return;
+        }
+        showMcqClosedScreen('invalid');
         return;
       }
 
@@ -277,15 +321,14 @@
       if (testData.deadline) {
         const dl = new Date(testData.deadline);
         const dlBox = document.getElementById('deadline-box');
-        dlBox.style.display = 'block';
-        const formattedCairo = formatCairoDateTime(dl);
 
         if (testData.isPastDeadline || Date.now() > dl.getTime()) {
-          dlBox.className = 'deadline-box deadline-expired';
-          dlBox.innerHTML = `⛔ <b>Submissions Closed:</b> The deadline passed on ${formattedCairo} (Cairo Time).`;
+          showMcqClosedScreen('deadline', { deadline: testData.deadline });
           return;
         } else {
-          dlBox.textContent = `⏳ Submission Deadline: ${formattedCairo} (Cairo Time)`;
+          dlBox.style.display = 'block';
+          dlBox.className = 'deadline-box';
+          dlBox.textContent = `⏳ Submission Deadline: ${formatCairoDateTime(dl)} (Cairo Time)`;
         }
       }
 

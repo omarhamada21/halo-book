@@ -473,7 +473,8 @@ setInterval(cleanExpiredAssignments, 60 * 60 * 1000);
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '30mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 
 const ai = new GoogleGenAI({
@@ -482,7 +483,7 @@ const ai = new GoogleGenAI({
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 }
+  limits: { fileSize: 50 * 1024 * 1024, fieldSize: 50 * 1024 * 1024 }
 });
 
 const mcqUpload = multer({
@@ -1419,7 +1420,20 @@ app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, asy
 app.get('/api/public/assignment/:code/status', async (req, res) => {
   try {
     const { code } = req.params;
-    const { deviceId } = req.query;
+    const deviceId = (req.query.deviceId || '').toString().trim();
+
+    if (!code) {
+      return res.status(400).json({ error: 'Assignment code is required.' });
+    }
+
+    // A blank, missing, or legacy-collided deviceId must never match a lock
+    if (!deviceId ||
+        deviceId.startsWith('dev_NDE0eDg5') ||
+        deviceId.startsWith('dev_NDQweDk1') ||
+        deviceId.startsWith('dev_NDI4eDky') ||
+        deviceId.startsWith('dev_MzYweDgw')) {
+      return res.json({ success: true, hasSubmitted: false });
+    }
 
     const assignResult = await db.execute({
       sql: 'SELECT id FROM assignments WHERE code = ?',
@@ -1433,7 +1447,7 @@ app.get('/api/public/assignment/:code/status', async (req, res) => {
     const assignmentId = assignResult.rows[0].id;
     const subCheck = await db.execute({
       sql: 'SELECT id FROM submissions WHERE assignment_id = ? AND device_id = ?',
-      args: [assignmentId, deviceId || '']
+      args: [assignmentId, deviceId]
     });
 
     return res.json({ success: true, hasSubmitted: subCheck.rows.length > 0 });
@@ -6040,6 +6054,7 @@ app.get('/api/public/online-tests/:code', async (req, res) => {
         return res.status(403).json({
           success: false,
           error: 'deadline_passed',
+          deadline: test.deadline,
           message: 'This exam has passed its deadline and is closed.'
         });
       }
@@ -6289,12 +6304,8 @@ app.post(
         return res.status(404).json({ success: false, error: 'not_found', message: 'Online test not found or not published.' });
       }
 
-      if (test.deadline) {
-        const ddl = new Date(test.deadline).getTime();
-        if (!isNaN(ddl) && Date.now() > ddl) {
-          return res.status(403).json({ success: false, error: 'deadline_passed', message: 'This exam has passed its deadline and is closed.' });
-        }
-      }
+      // Mid-test grace policy (Option b): A student who legitimately started before the deadline
+      // is permitted to complete and submit their in-progress attempt. Link closure applies to new test entries on GET.
 
       const clientIp = getClientIp(req);
       const cleanDeviceId = (device_id || '').trim();
@@ -6314,13 +6325,13 @@ app.post(
         }
       }
 
-      // Ingest all questions for deterministic objective grading
+      // Ingest all questions for deterministic objective grading in strict section hierarchy order
       const questionsRes = await db.execute({
-        sql: `SELECT q.id, q.section_id, q.question_type, q.question_text, q.options, q.correct_answer, q.min_words, q.max_words, q.points, q.stimulus_image_url, q.has_visual_options, q.group_title, q.group_instructions, q.shared_word_bank, s.section_type
+        sql: `SELECT q.id, q.section_id, q.question_type, q.question_text, q.options, q.correct_answer, q.min_words, q.max_words, q.points, q.stimulus_image_url, q.has_visual_options, q.group_title, q.group_instructions, q.shared_word_bank, s.section_type, s.section_title, s.part_number, s.order_index AS section_order_index
               FROM online_test_questions q
               JOIN online_test_sections s ON q.section_id = s.id
               WHERE s.test_id = ?
-              ORDER BY q.order_index ASC, q.id ASC`,
+              ORDER BY s.order_index ASC, s.part_number ASC, s.id ASC, q.order_index ASC, q.id ASC`,
         args: [test.id]
       });
 

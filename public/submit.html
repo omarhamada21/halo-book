@@ -105,7 +105,20 @@
     </form>
   </div>
 
-  <div class="card success-banner" id="success-screen">
+  <div class="card" id="locked-screen" style="display: none; text-align: center; padding: 32px 24px;">
+    <div style="font-size: 42px; margin-bottom: 12px;">🔒</div>
+    <h2 style="font-family: 'Source Serif 4', serif; margin: 0 0 10px; color: var(--ink);">Submission Already Recorded</h2>
+    <p style="color: var(--ink-soft); line-height: 1.6; font-size: 14px; max-width: 480px; margin: 0 auto 16px;">
+      It looks like this device already has a submission on file for this assignment. If this doesn't seem right, please contact your teacher — don't assume your work was received without confirming.
+    </p>
+    <div style="margin-top: 14px;">
+      <button type="button" onclick="recheckLocks()" id="btn-recheck-status" style="background: var(--pen); color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 13.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+        <span>🔄</span> This isn't right / I haven't submitted yet
+      </button>
+    </div>
+  </div>
+
+  <div class="card success-banner" id="success-screen" style="display: none;">
     <h2>✓ Work Submitted Successfully!</h2>
     <p style="color: var(--ink-soft); line-height: 1.5; font-size: 14px;">
       Thank you, <b id="submitted-name"></b>. Your work has been delivered to your teacher and evaluated.
@@ -119,13 +132,27 @@
   
   function getOrCreateDeviceId() {
     let stored = localStorage.getItem('mimir_device_token');
-    if (stored) return stored;
+    // Guard against legacy truncated collision tokens (e.g. dev_NDE0eDg5...) that lacked true UUID randomness
+    const isLegacyTruncated = stored && (
+      stored.startsWith('dev_NDE0eDg5') ||
+      stored.startsWith('dev_NDQweDk1') ||
+      stored.startsWith('dev_NDI4eDky') ||
+      stored.startsWith('dev_MzYweDgw') ||
+      (stored.length <= 36 && !stored.includes('-'))
+    );
+    if (stored && !isLegacyTruncated) return stored;
 
-    const screenData = `${screen.width}x${screen.height}x${screen.colorDepth}`;
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
-    const raw = `${screenData}_${timezone}_${navigator.language}_${crypto.randomUUID()}`;
-    stored = 'dev_' + btoa(raw).replace(/[^a-zA-Z0-9]/g, '').slice(0, 32);
-    
+    let uuid = '';
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      try { uuid = crypto.randomUUID(); } catch (_) {}
+    }
+    if (!uuid) {
+      uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+    stored = 'dev_' + uuid;
     try { localStorage.setItem('mimir_device_token', stored); } catch (_) {}
     return stored;
   }
@@ -134,6 +161,7 @@
   let bundleTasks = [];
   let taskFilesMap = {};
   let taskLockMap = {};
+  let activeCompressions = 0;
 
   function formatCairoDateTime(dateObj) {
     return dateObj.toLocaleString('en-US', {
@@ -153,9 +181,25 @@
       .replace(/'/g, '&#039;');
   }
 
+  function showAssignmentClosedState(type, deadlineDate) {
+    const form = document.getElementById('student-form');
+    if (form) form.style.display = 'none';
+    const dlBox = document.getElementById('assign-deadline');
+    dlBox.style.display = 'block';
+    dlBox.className = 'deadline-box deadline-expired';
+
+    if (type === 'deadline') {
+      const formattedCairo = formatCairoDateTime(deadlineDate);
+      document.getElementById('assign-title').textContent = 'Submissions Closed';
+      dlBox.innerHTML = `⛔ <b>Submissions Closed:</b> This assignment's submission window has closed. The deadline was ${formattedCairo} (Cairo Time). Contact your teacher if you believe this is a mistake.`;
+    } else {
+      document.getElementById('assign-title').textContent = 'Invalid Assignment Link';
+      dlBox.innerHTML = `This assignment link appears to be invalid or has been removed. Please check the link with your teacher.`;
+    }
+  }
+
   if (!bundleCode) {
-    document.getElementById('assign-title').textContent = 'Invalid Assignment Link';
-    document.getElementById('student-form').style.display = 'none';
+    showAssignmentClosedState('invalid');
   } else {
     loadAssignmentBundle();
   }
@@ -163,11 +207,10 @@
   async function loadAssignmentBundle() {
     try {
       const res = await fetch(`/api/public/bundle/${encodeURIComponent(bundleCode)}`);
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
 
-      if (!d.success) {
-        document.getElementById('assign-title').textContent = d.error || 'Assignment Expired';
-        document.getElementById('student-form').style.display = 'none';
+      if (!res.ok || !d.success) {
+        showAssignmentClosedState('invalid');
         return;
       }
 
@@ -184,9 +227,7 @@
         const formattedCairo = formatCairoDateTime(dl);
 
         if (d.isPastDeadline || Date.now() > dl.getTime()) {
-          dlBox.className = 'deadline-box deadline-expired';
-          dlBox.innerHTML = `⛔ <b>Submissions Closed:</b> The deadline passed on ${formattedCairo} (Cairo Time).`;
-          document.getElementById('student-form').style.display = 'none';
+          showAssignmentClosedState('deadline', dl);
           return;
         } else {
           dlBox.textContent = `⏳ Submission Deadline: ${formattedCairo} (Cairo Time)`;
@@ -202,7 +243,7 @@
 
   async function checkLocks() {
     for (const t of bundleTasks) {
-      taskFilesMap[t.code] = [];
+      if (!taskFilesMap[t.code]) taskFilesMap[t.code] = [];
       try {
         const r = await fetch(`/api/public/assignment/${encodeURIComponent(t.code)}/status?deviceId=${encodeURIComponent(clientDeviceId)}`);
         const st = await r.json();
@@ -213,14 +254,34 @@
     }
   }
 
+  async function recheckLocks() {
+    const btn = document.getElementById('btn-recheck-status');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span>🔄</span> Checking server status...';
+    }
+    await checkLocks();
+    const allDone = bundleTasks.every(t => taskLockMap[t.code]);
+    if (!allDone) {
+      document.getElementById('locked-screen').style.display = 'none';
+      document.getElementById('submission-form-card').style.display = 'block';
+      renderTasksUI();
+    } else {
+      alert("The server still confirms an existing submission for this assignment on this device. If you haven't submitted yet or need a re-submission, please ask your teacher to reset your attempt.");
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🔄</span> This isn\'t right / I haven\'t submitted yet';
+      }
+    }
+  }
+
   function renderTasksUI() {
     const container = document.getElementById('tasks-container');
     const allDone = bundleTasks.every(t => taskLockMap[t.code]);
 
     if (allDone && bundleTasks.length > 0) {
       document.getElementById('submission-form-card').style.display = 'none';
-      document.getElementById('submitted-name').textContent = 'Student';
-      document.getElementById('success-screen').style.display = 'block';
+      document.getElementById('locked-screen').style.display = 'block';
       return;
     }
 
@@ -251,31 +312,172 @@
     }).join('');
   }
 
-  function handleTaskFiles(taskCode, e) {
+  async function compressImageFile(file, maxDimension = 2048, quality = 0.82) {
+    if (!file || !file.type || !file.type.startsWith('image/')) {
+      return file;
+    }
+
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onerror = () => resolve(file);
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onerror = () => resolve(file);
+        img.onload = () => {
+          try {
+            let width = img.naturalWidth || img.width;
+            let height = img.naturalHeight || img.height;
+
+            if (!width || !height) {
+              return resolve(file);
+            }
+
+            // Guard against iOS Safari canvas memory limit (~16 million pixels)
+            const MAX_PIXELS = 16000000;
+            const currentPixels = width * height;
+            let safeMaxDim = maxDimension;
+            if (currentPixels > MAX_PIXELS) {
+              const downscaleRatio = Math.sqrt(MAX_PIXELS / currentPixels);
+              safeMaxDim = Math.min(safeMaxDim, Math.floor(Math.max(width, height) * downscaleRatio));
+            }
+
+            // Scale to fit safeMaxDim
+            const scale = Math.min(1, safeMaxDim / Math.max(width, height));
+            let targetWidth = Math.round(width * scale);
+            let targetHeight = Math.round(height * scale);
+
+            // Re-verify pixel area
+            if (targetWidth * targetHeight > MAX_PIXELS) {
+              const finalRatio = Math.sqrt(MAX_PIXELS / (targetWidth * targetHeight));
+              targetWidth = Math.floor(targetWidth * finalRatio);
+              targetHeight = Math.floor(targetHeight * finalRatio);
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return resolve(file);
+
+            ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+            canvas.toBlob(
+              (blob) => {
+                if (!blob) {
+                  console.warn('Canvas toBlob returned null. Using original file.');
+                  return resolve(file);
+                }
+
+                // Output validation: check if suspiciously small (< 5KB while original > 20KB)
+                if (blob.size < 5120 && file.size > 20480) {
+                  console.warn(`Compressed blob is suspiciously small (${blob.size} bytes vs ${file.size} bytes). Likely canvas corruption. Falling back to original file.`);
+                  return resolve(file);
+                }
+
+                // If compression did not reduce size, keep original
+                if (blob.size >= file.size) {
+                  return resolve(file);
+                }
+
+                const extMatch = file.name.match(/\.[^.]+$/);
+                const baseName = extMatch ? file.name.slice(0, extMatch.index) : file.name;
+                const compressedFile = new File([blob], `${baseName}.jpg`, {
+                  type: 'image/jpeg',
+                  lastModified: Date.now()
+                });
+                resolve(compressedFile);
+              },
+              'image/jpeg',
+              quality
+            );
+          } catch (err) {
+            console.warn('Error during image compression, using original:', err);
+            resolve(file);
+          }
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function updateSubmitButtonState() {
+    const btn = document.getElementById('submit-btn');
+    if (!btn) return;
+    if (activeCompressions > 0) {
+      btn.disabled = true;
+      btn.textContent = `⏳ Optimizing photos (${activeCompressions} compressing)...`;
+    } else {
+      btn.disabled = false;
+      btn.textContent = '🚀 Submit All Tasks to Teacher';
+    }
+  }
+
+  async function handleTaskFiles(taskCode, e) {
     if (!taskFilesMap[taskCode]) taskFilesMap[taskCode] = [];
-    for (const f of e.target.files) {
-      if (taskFilesMap[taskCode].length >= 20) break;
-      taskFilesMap[taskCode].push(f);
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+
+    const newEntries = [];
+    for (const f of files) {
+      if (taskFilesMap[taskCode].length + newEntries.length >= 20) break;
+      newEntries.push({
+        file: f,
+        name: f.name,
+        size: f.size,
+        isCompressing: f.type && f.type.startsWith('image/')
+      });
+    }
+
+    for (const entry of newEntries) {
+      taskFilesMap[taskCode].push(entry);
     }
     renderPreviews(taskCode);
-    e.target.value = '';
+    updateSubmitButtonState();
+
+    // Compress each newly added image file
+    for (const item of newEntries) {
+      if (item.isCompressing) {
+        activeCompressions++;
+        updateSubmitButtonState();
+        try {
+          const compressed = await compressImageFile(item.file);
+          item.file = compressed;
+          item.name = compressed.name;
+          item.size = compressed.size;
+        } catch (err) {
+          console.warn('Image compression fallback:', err);
+        } finally {
+          item.isCompressing = false;
+          activeCompressions--;
+          renderPreviews(taskCode);
+          updateSubmitButtonState();
+        }
+      }
+    }
   }
 
   function renderPreviews(taskCode) {
     const el = document.getElementById(`preview-${taskCode}`);
     if (!el) return;
-    const files = taskFilesMap[taskCode] || [];
-    el.innerHTML = files.map((f, i) => `
-      <div class="page-chip">
-        <span>📄 Page ${i + 1}: ${escapeHtml(f.name)} (${(f.size / 1024).toFixed(1)} KB)</span>
-        <button type="button" class="page-remove" onclick="removeTaskFile('${taskCode}', ${i})">&times;</button>
-      </div>
-    `).join('');
+    const items = taskFilesMap[taskCode] || [];
+    el.innerHTML = items.map((item, i) => {
+      const sizeStr = item.isCompressing
+        ? '<span style="color:#D97706; font-weight:600;">(Compressing...) ⏳</span>'
+        : `(${item.size < 1048576 ? (item.size / 1024).toFixed(1) + ' KB' : (item.size / 1048576).toFixed(2) + ' MB'})`;
+      return `
+        <div class="page-chip">
+          <span>📄 Page ${i + 1}: ${escapeHtml(item.name)} ${sizeStr}</span>
+          <button type="button" class="page-remove" onclick="removeTaskFile('${taskCode}', ${i})">&times;</button>
+        </div>
+      `;
+    }).join('');
   }
 
   function removeTaskFile(taskCode, i) {
     taskFilesMap[taskCode].splice(i, 1);
     renderPreviews(taskCode);
+    updateSubmitButtonState();
   }
 
   async function handleStudentSubmit(e) {
@@ -292,8 +494,13 @@
 
     const pending = bundleTasks.filter(t => !taskLockMap[t.code]);
     for (const t of pending) {
-      if (!taskFilesMap[t.code] || !taskFilesMap[t.code].length) {
+      const items = taskFilesMap[t.code] || [];
+      if (!items.length) {
         alert(`Please attach at least one page or photo for: "${t.title}".`);
+        return;
+      }
+      if (items.some(item => item.isCompressing)) {
+        alert('Please wait until all photos finish compressing before submitting.');
         return;
       }
     }
@@ -307,16 +514,23 @@
         const formData = new FormData();
         formData.append('studentName', name);
         formData.append('deviceId', clientDeviceId);
-        for (const f of taskFilesMap[t.code]) {
-          formData.append('pages', f);
+        for (const item of taskFilesMap[t.code]) {
+          formData.append('pages', item.file);
         }
 
         const res = await fetch(`/api/public/submit/${encodeURIComponent(t.code)}`, {
           method: 'POST',
           body: formData
         });
-        const d = await res.json();
-        if (!d.success) throw new Error(d.error || `Failed to evaluate ${t.title}`);
+
+        if (res.status === 413) {
+          throw new Error('The uploaded files exceed the server size limit. Please upload fewer or smaller pages.');
+        }
+
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.success) {
+          throw new Error(d.error || `Server responded with error status ${res.status} for ${t.title}`);
+        }
         taskLockMap[t.code] = true;
       }
 
@@ -324,7 +538,15 @@
       document.getElementById('submitted-name').textContent = name;
       document.getElementById('success-screen').style.display = 'block';
     } catch (err) {
-      alert(err.message || 'Submission error. Please check your connection and retry.');
+      let friendlyMsg = 'Submission error. Please check your connection and retry.';
+      if (err.name === 'AbortError' || (err.message && err.message.toLowerCase().includes('timeout'))) {
+        friendlyMsg = 'Request timed out while uploading your submission. Please check your internet connection and try again.';
+      } else if (err.message === 'Failed to fetch' || (err.message && err.message.includes('NetworkError'))) {
+        friendlyMsg = 'Unable to reach the examination server. Please check your internet connection and try submitting again.';
+      } else if (err.message) {
+        friendlyMsg = err.message;
+      }
+      alert(friendlyMsg);
       btn.disabled = false;
       btn.textContent = '🚀 Submit All Tasks to Teacher';
       document.querySelectorAll('.dropzone').forEach(d => d.classList.remove('disabled'));

@@ -1256,6 +1256,14 @@
 <div class="section-nav-strip section-tabs-wrap" id="exam-section-nav" style="display:none;"></div>
 
 <div class="wrap">
+  <!-- Closed / Invalid / Past-Deadline State Card -->
+  <div class="intro-card" id="exam-closed-screen" style="max-width: 640px; margin: 30px auto; padding: 32px 28px; text-align: center; border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); display: none;">
+    <div style="font-size: 44px; margin-bottom: 12px;" id="closed-screen-icon">⛔</div>
+    <h2 style="font-family:'Source Serif 4',serif; color:var(--ink); font-size:22px; margin:0 0 10px 0;" id="closed-screen-title">Test Closed</h2>
+    <div class="deadline-box deadline-expired" id="closed-screen-message" style="display:block; text-align:left; line-height:1.6; margin: 16px 0;"></div>
+    <p style="font-size:13px; color:var(--ink-soft); margin-top:14px;" id="closed-screen-subtext">If you believe this is a mistake, please contact your teacher.</p>
+  </div>
+
   <!-- Pre-Exam Lockdown & Fullscreen Gate Splash Screen -->
   <div class="intro-card" id="exam-splash-screen" style="max-width: 640px; margin: 30px auto; padding: 32px 28px; text-align: center; border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); display:none;">
     <div style="display:flex; justify-content:center; align-items:center; gap:10px; margin-bottom:12px;">
@@ -1454,13 +1462,27 @@ let countdownTimerId = null;
 
 function getOrCreateDeviceId() {
   let stored = localStorage.getItem('mimir_device_token');
-  if (stored) return stored;
+  // Guard against legacy truncated collision tokens (e.g. dev_NDE0eDg5...) that lacked true UUID randomness
+  const isLegacyTruncated = stored && (
+    stored.startsWith('dev_NDE0eDg5') ||
+    stored.startsWith('dev_NDQweDk1') ||
+    stored.startsWith('dev_NDI4eDky') ||
+    stored.startsWith('dev_MzYweDgw') ||
+    (stored.length <= 36 && !stored.includes('-'))
+  );
+  if (stored && !isLegacyTruncated) return stored;
 
-  const screenData = `${screen.width}x${screen.height}x${screen.colorDepth}`;
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
-  const raw = `${screenData}_${timezone}_${navigator.language}_${crypto.randomUUID()}`;
-  stored = 'dev_' + btoa(raw).replace(/[^a-zA-Z0-9]/g, '').slice(0, 32);
-
+  let uuid = '';
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try { uuid = crypto.randomUUID(); } catch (_) {}
+  }
+  if (!uuid) {
+    uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+  stored = 'dev_' + uuid;
   try { localStorage.setItem('mimir_device_token', stored); } catch (_) {}
   return stored;
 }
@@ -1495,6 +1517,51 @@ function showToast(msg) {
   toastTimer = setTimeout(() => { el.style.display = 'none'; }, 3000);
 }
 
+function showClosedScreen(type, options = {}) {
+  const splash = document.getElementById('exam-splash-screen');
+  if (splash) splash.style.display = 'none';
+  const mainContent = document.getElementById('exam-main-content');
+  if (mainContent) mainContent.style.display = 'none';
+  const intro = document.getElementById('exam-intro-card');
+  if (intro) intro.style.display = 'none';
+  const sec = document.getElementById('exam-sections-container');
+  if (sec) sec.style.display = 'none';
+  const bar = document.getElementById('exam-bottom-bar');
+  if (bar) bar.style.display = 'none';
+  const nav = document.getElementById('exam-section-nav') || document.querySelector('.section-tabs-wrap');
+  if (nav) nav.style.display = 'none';
+  const audio = document.getElementById('exam-audio-box');
+  if (audio) audio.style.display = 'none';
+  const lock = document.getElementById('exam-locked-screen');
+  if (lock) lock.style.display = 'none';
+
+  const closedCard = document.getElementById('exam-closed-screen');
+  const iconEl = document.getElementById('closed-screen-icon');
+  const titleEl = document.getElementById('closed-screen-title');
+  const msgEl = document.getElementById('closed-screen-message');
+  const subEl = document.getElementById('closed-screen-subtext');
+
+  if (type === 'deadline') {
+    if (iconEl) iconEl.textContent = '⛔';
+    if (titleEl) titleEl.textContent = 'Submissions Closed';
+    const formattedDate = options.deadline ? formatCairoDateTime(new Date(options.deadline)) : '';
+    if (msgEl) {
+      msgEl.innerHTML = `⛔ <b>Submissions Closed:</b> This test's submission window has closed. The deadline was ${formattedDate || 'the scheduled deadline'} (Cairo Time). Contact your teacher if you believe this is a mistake.`;
+    }
+    if (subEl) subEl.textContent = 'Submissions are no longer accepted for this exam session.';
+  } else {
+    // 'invalid' or 'draft' (unpublished) — treat draft identically to invalid link from student's perspective
+    if (iconEl) iconEl.textContent = '🔗';
+    if (titleEl) titleEl.textContent = 'Invalid Test Link';
+    if (msgEl) {
+      msgEl.innerHTML = `This test link appears to be invalid or has been removed. Please check the link with your teacher.`;
+    }
+    if (subEl) subEl.textContent = 'Please confirm the test link with your instructor.';
+  }
+
+  if (closedCard) closedCard.style.display = 'block';
+}
+
 function showLockedScreen() {
   const splash = document.getElementById('exam-splash-screen');
   if (splash) splash.style.display = 'none';
@@ -1510,6 +1577,8 @@ function showLockedScreen() {
   if (nav) nav.style.display = 'none';
   const audio = document.getElementById('exam-audio-box');
   if (audio) audio.style.display = 'none';
+  const closedCard = document.getElementById('exam-closed-screen');
+  if (closedCard) closedCard.style.display = 'none';
   const lock = document.getElementById('exam-locked-screen');
   if (lock) lock.style.display = 'block';
   const dev = document.getElementById('locked-device-id');
@@ -1520,8 +1589,7 @@ function showLockedScreen() {
 
 window.addEventListener('DOMContentLoaded', async () => {
   if (!testCode) {
-    document.getElementById('exam-title').innerText = 'Invalid Exam Link';
-    document.getElementById('exam-teacher').innerText = 'No test code provided in URL parameter.';
+    showClosedScreen('invalid');
     return;
   }
 
@@ -1608,23 +1676,28 @@ async function loadOnlineTest() {
 
     // 2. Fetch sanitized exam payload (answers & rubrics stripped)
     const res = await fetch(`/api/public/online-tests/${encodeURIComponent(testCode)}`);
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
 
     if (!res.ok || !data.success || !data.test) {
-      if (data.error === 'deadline_passed') {
-        document.getElementById('exam-title').innerText = 'Submissions Closed';
-        document.getElementById('exam-teacher').innerText = data.message || 'This exam has passed its submission deadline.';
-        document.getElementById('exam-intro-card').style.display = 'block';
+      if (res.status === 403 || data.error === 'deadline_passed') {
+        showClosedScreen('deadline', { deadline: data.deadline });
         return;
       }
-      document.getElementById('exam-title').innerText = 'Exam Not Found';
-      document.getElementById('exam-teacher').innerText = data.message || 'This exam link may be invalid or not yet published.';
-      document.getElementById('exam-intro-card').style.display = 'block';
+      showClosedScreen('invalid');
       return;
     }
 
     testData = data.test;
     window.examData = testData;
+
+    // Check if client-side time has passed deadline
+    if (testData.deadline) {
+      const dlDate = new Date(testData.deadline);
+      if (!isNaN(dlDate.getTime()) && Date.now() > dlDate.getTime()) {
+        showClosedScreen('deadline', { deadline: testData.deadline });
+        return;
+      }
+    }
 
     // Render splash screen info
     document.getElementById('splash-code-badge').innerText = `ACCESS CODE: ${escapeHtml(testCode)}`;
@@ -1649,9 +1722,7 @@ async function loadOnlineTest() {
     document.getElementById('exam-splash-screen').style.display = 'block';
   } catch (err) {
     console.error('Failed to load exam:', err);
-    document.getElementById('exam-title').innerText = 'Connection Error';
-    document.getElementById('exam-teacher').innerText = 'Failed to connect to the testing server. Please check your connection and refresh.';
-    document.getElementById('exam-intro-card').style.display = 'block';
+    showClosedScreen('invalid');
   }
 }
 
@@ -1951,12 +2022,14 @@ function startCountdownTimer(deadlineDate) {
   function updateClock() {
     const diffMs = deadlineDate.getTime() - Date.now();
     if (diffMs <= 0) {
-      timerText.innerText = '00:00:00 (Expired)';
+      timerText.innerText = '00:00:00 (Deadline Reached)';
       timerPill.className = 'timer-pill timer-urgent';
-      if (countdownTimerId) clearInterval(countdownTimerId);
+      if (countdownTimerId) {
+        clearInterval(countdownTimerId);
+        countdownTimerId = null;
+      }
       if (isExamActive && !isSubmitted) {
-        showToast('⏳ Examination deadline reached. Auto-submitting answers...');
-        executeSubmission('timeout');
+        showToast('⚠️ Examination deadline reached. Please complete your work and submit.');
       }
       return;
     }
