@@ -2728,20 +2728,9 @@ function renderQuestion(sec, q, displayNum) {
   let inputMarkup = '';
 
   if (qType === 'mcq') {
-    const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
-    const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : displayNum;
-    const isPart1 = qNum <= 5;
     let opts = Array.isArray(q.options) ? q.options : [];
-    if (!isPart1) {
-      opts = opts.slice(0, 3);
-    }
-    const hasImageUrls = opts.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
-    const allOptionsAreLongText = opts.length > 0 && opts.every(opt => {
-      const txt = (typeof opt === 'string' ? opt : (opt?.value || opt?.text || opt?.caption || opt?.statement || '')).trim();
-      return txt.length > 20 || txt.split(/\s+/).length >= 4;
-    });
-    const hasVisualType = opts.some(opt => typeof opt === 'object' && opt !== null && (opt.type === 'image' || opt.image_url || opt.object_key));
-    const isVisual = isPart1 && (Number(q.has_visual_options) === 1 || q.has_visual_options === true) && (hasVisualType || !allOptionsAreLongText);
+    const hasAnyImageUrl = opts.some(opt => typeof opt === 'object' && opt !== null && Boolean(opt.image_url || opt.imageUrl));
+    const isVisual = (Number(q.has_visual_options) === 1 || q.has_visual_options === true) && hasAnyImageUrl;
 
     if (isVisual) {
       inputMarkup = `
@@ -2749,17 +2738,19 @@ function renderQuestion(sec, q, displayNum) {
           ${opts.map((opt, oIdx) => {
             const rawL = (opt && opt.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
             const letter = rawL === 'S' ? 'C' : (['A', 'B', 'C', 'D'].includes(rawL) ? rawL : String.fromCharCode(65 + oIdx));
-            const imgUrl = (opt && opt.image_url) ? opt.image_url : '';
-            const caption = (opt && (opt.caption || opt.value || opt.text)) ? (opt.caption || opt.value || opt.text) : '';
+            const imgUrl = (opt && (opt.image_url || opt.imageUrl)) ? (opt.image_url || opt.imageUrl) : '';
+            const caption = (opt && (opt.caption || opt.value || opt.text)) ? (opt.caption || opt.value || opt.text) : (typeof opt === 'string' ? opt : '');
             return `
               <div class="mcq-visual-card" id="mcq-opt-${q.id}-${oIdx}" onclick="handleSelectMcq(${q.id}, '${oIdx}')">
-                <div class="mcq-visual-img-wrap">
-                  ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Picture ${letter}" class="mcq-visual-img" loading="lazy" onclick="event.stopPropagation(); openDiagramLightbox('${escapeHtml(imgUrl)}')" />` : `<div class="mcq-visual-placeholder">⚠️ Missing image for Picture ${letter}</div>`}
-                </div>
+                ${imgUrl ? `
+                  <div class="mcq-visual-img-wrap">
+                    <img src="${escapeHtml(imgUrl)}" alt="Picture ${letter}" class="mcq-visual-img" loading="lazy" onclick="event.stopPropagation(); openDiagramLightbox('${escapeHtml(imgUrl)}')" />
+                  </div>
+                ` : ''}
                 <div class="mcq-visual-footer">
                   <div class="mcq-visual-radio-indicator"></div>
                   <div class="mcq-visual-text-block">
-                    <span class="mcq-visual-letter">Picture ${letter}</span>
+                    <span class="mcq-visual-letter">${imgUrl ? `Picture ${letter}` : `${letter}.`}</span>
                     ${caption ? `<span class="mcq-visual-caption">${escapeHtml(caption)}</span>` : ''}
                   </div>
                 </div>

@@ -1076,74 +1076,48 @@ function renderMcqEditor() {
       `;
     } else {
       // 'mcq'
-      const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
-      const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (qIdx + 1);
-      const isPart1 = qNum <= 5;
       let displayOpts = Array.isArray(opts) ? opts : [];
-      if (!isPart1) {
-        displayOpts = displayOpts.slice(0, 3);
-      }
-      const isVisual = isPart1 && displayOpts.some(o => typeof o === 'object' && o !== null && (o.type === 'image' || o.image_url));
-      if (isVisual) {
-        bodyHtml = `
-          <div>
-            <label style="display:block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--ink-soft);">
-              Visual Picture Options (Select radio for correct answer, edit caption):
-            </label>
-            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 8px;">
-              ${displayOpts.map((opt, optIdx) => {
-                const isCorrect = Number(q.correct_index) === optIdx;
-                const rawL = (opt && opt.label) ? String(opt.label).trim().toUpperCase() : (optionLetters[optIdx] || String(optIdx + 1));
-                const letter = rawL === 'S' ? 'C' : rawL;
-                const imgUrl = (opt && opt.image_url) ? opt.image_url : '';
-                const caption = (opt && (opt.caption || opt.value || opt.text)) ? (opt.caption || opt.value || opt.text) : '';
-                return `
-                  <div class="mcq-visual-opt-card ${isCorrect ? 'is-correct' : ''}" style="border: 2px solid ${isCorrect ? '#10b981' : 'var(--border)'}; background: ${isCorrect ? '#f0fdf4' : '#fff'}; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
-                    <div style="min-height: 90px; display: flex; align-items: center; justify-content: center; background: #fafafa; border-radius: 4px; margin-bottom: 6px; border: 1px solid var(--border);">
-                      ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Picture ${letter}" style="max-height: 100px; max-width: 100%; object-fit: contain;" />` : `<div style="font-size: 11px; font-weight: 600; color: #b91c1c; padding: 6px; background: #fef2f2; border: 1px dashed #f87171; border-radius: 4px;">⚠️ Missing Image</div>`}
-                    </div>
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-                      <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 700; font-size: 12.5px; color: var(--pen); margin: 0;">
-                        <input type="radio" name="mcq-correct-${q.id}" class="mcq-radio" ${isCorrect ? 'checked' : ''} onchange="onRadioCorrectChanged(${q.id}, ${optIdx})" />
-                        Picture ${letter}
+      bodyHtml = `
+        <div>
+          <label style="display:block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--ink-soft);">
+            Options & Correct Answer (Select radio for correct answer, attach/replace images, or edit text):
+          </label>
+          <div class="mcq-options-grid">
+            ${displayOpts.map((optText, optIdx) => {
+              const isCorrect = Number(q.correct_index) === optIdx;
+              const letter = optionLetters[optIdx] || String(optIdx + 1);
+              const imgUrl = (typeof optText === 'object' && optText !== null && optText.image_url) ? optText.image_url : '';
+              const rawVal = typeof optText === 'object' && optText !== null ? (optText.caption !== undefined && optText.caption !== '' ? optText.caption : (optText.value || optText.text || optText.statement || '')) : String(optText || '');
+              const cleanVal = String(rawVal || '').replace(/^[A-E][.:]\s*/i, '').trim();
+              return `
+                <div class="mcq-option-row ${isCorrect ? 'correct' : ''}" id="mcq-opt-row-${q.id}-${optIdx}" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; padding: 6px 10px; border-radius: 6px;">
+                  <input type="radio" name="mcq-correct-${q.id}" class="mcq-radio"
+                    ${isCorrect ? 'checked' : ''} onchange="onRadioCorrectChanged(${q.id}, ${optIdx})" />
+                  <span class="mcq-opt-label" style="font-weight: 700; min-width: 20px;">${letter}.</span>
+                  ${imgUrl ? `
+                    <div style="display: inline-flex; align-items: center; gap: 6px;">
+                      <img src="${escapeHtml(imgUrl)}" alt="Option ${letter}" style="max-height: 48px; max-width: 70px; border-radius: 4px; object-fit: contain; border: 1px solid var(--border); background: #fff;" />
+                      <label class="ghost" style="cursor: pointer; font-size: 11px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: #fff;">
+                        🔄 Replace Image
+                        <input type="file" accept="image/*" style="display: none;" onchange="uploadMcqOptionImage(${q.id}, ${optIdx}, this)" />
                       </label>
+                      <button type="button" class="ghost" style="font-size: 11px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; color: #b91c1c; background: #fff;" onclick="removeMcqOptionImage(${q.id}, ${optIdx})">✕ Remove Image</button>
                     </div>
-                    <input type="text" class="mcq-opt-input" id="mcq-opt-input-${q.id}-${optIdx}"
-                      value="${escapeHtml(caption)}" placeholder="Caption (optional)"
-                      oninput="onQuestionFieldChanged(${q.id})" style="font-size: 12px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px;" />
-                  </div>
-                `;
-              }).join('')}
-            </div>
+                  ` : `
+                    <label class="ghost" style="cursor: pointer; font-size: 11px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: #fff;">
+                      📷 Add Image
+                      <input type="file" accept="image/*" style="display: none;" onchange="uploadMcqOptionImage(${q.id}, ${optIdx}, this)" />
+                    </label>
+                  `}
+                  <input type="text" class="mcq-opt-input" id="mcq-opt-input-${q.id}-${optIdx}"
+                    value="${escapeHtml(cleanVal)}" placeholder="Option ${letter} text / caption..."
+                    oninput="onQuestionFieldChanged(${q.id})" style="flex: 1; min-width: 140px;" />
+                </div>
+              `;
+            }).join('')}
           </div>
-        `;
-      } else {
-        bodyHtml = `
-          <div>
-            <label style="display:block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--ink-soft);">
-              Options & Correct Answer (Select the radio button for the correct option)
-            </label>
-            <div class="mcq-options-grid">
-              ${displayOpts.map((optText, optIdx) => {
-                const isCorrect = Number(q.correct_index) === optIdx;
-                const letter = optionLetters[optIdx] || String(optIdx + 1);
-                const rawVal = typeof optText === 'object' && optText !== null ? (optText.value || optText.caption || optText.text || optText.statement || '') : String(optText || '');
-                const cleanVal = String(rawVal || '').replace(/^[A-E][.:]\s*/i, '').trim();
-                return `
-                  <div class="mcq-option-row ${isCorrect ? 'correct' : ''}" id="mcq-opt-row-${q.id}-${optIdx}">
-                    <input type="radio" name="mcq-correct-${q.id}" class="mcq-radio"
-                      ${isCorrect ? 'checked' : ''} onchange="onRadioCorrectChanged(${q.id}, ${optIdx})" />
-                    <span class="mcq-opt-label">${letter}.</span>
-                    <input type="text" class="mcq-opt-input" id="mcq-opt-input-${q.id}-${optIdx}"
-                      value="${escapeHtml(cleanVal)}" placeholder="Option ${letter} text..."
-                      oninput="onQuestionFieldChanged(${q.id})" />
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          </div>
-        `;
-      }
+        </div>
+      `;
     }
 
     return `
@@ -1259,20 +1233,16 @@ async function executeQuestionSave(questionId) {
     correct_index = isNaN(selVal) ? 0 : selVal;
   } else {
     // 'mcq'
-    const qNumMatch = (q?.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
-    const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (currentMcqQuestions.findIndex(x => x.id === questionId) + 1);
-    const isPart1 = qNum <= 5;
-    const isVisual = isPart1 && Array.isArray(q?.options) && q.options.some(o => typeof o === 'object' && o !== null && (o.type === 'image' || o.image_url));
-    const optCount = isPart1 ? (Array.isArray(q?.options) ? q.options.length : 3) : 3;
+    const optCount = Array.isArray(q?.options) ? q.options.length : 3;
     for (let i = 0; i < optCount; i++) {
       const optEl = document.getElementById(`mcq-opt-input-${questionId}-${i}`);
       const val = optEl ? optEl.value.trim() : '';
-      if (isVisual) {
-        const orig = q.options[i] || {};
+      const orig = q?.options?.[i];
+      if (orig && typeof orig === 'object' && orig.image_url) {
         options.push({
           type: 'image',
           label: orig.label || optionLetters[i] || String.fromCharCode(65 + i),
-          image_url: orig.image_url || '',
+          image_url: orig.image_url,
           object_key: orig.object_key || null,
           caption: val
         });
@@ -1348,6 +1318,56 @@ function showAutoSaveIndicator(status) {
     indicator.textContent = '⚠️ Save error';
   }
 }
+
+window.uploadMcqOptionImage = async function(questionId, optIdx, fileInput) {
+  if (!fileInput.files || fileInput.files.length === 0) return;
+  const file = fileInput.files[0];
+  const formData = new FormData();
+  formData.append('image', file);
+
+  try {
+    showAutoSaveIndicator('saving');
+    const res = await fetch('/api/online-tests/upload-option-image', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to upload image.');
+    }
+    const q = currentMcqQuestions.find(item => item.id === questionId);
+    if (q) {
+      if (!Array.isArray(q.options)) q.options = [];
+      while (q.options.length <= optIdx) {
+        q.options.push('');
+      }
+      const optEl = document.getElementById(`mcq-opt-input-${questionId}-${optIdx}`);
+      const currentVal = optEl ? optEl.value.trim() : (typeof q.options[optIdx] === 'object' && q.options[optIdx] ? (q.options[optIdx].caption || q.options[optIdx].value || q.options[optIdx].text || '') : String(q.options[optIdx] || ''));
+      const letter = optionLetters[optIdx] || String.fromCharCode(65 + optIdx);
+      q.options[optIdx] = {
+        type: 'image',
+        label: letter,
+        image_url: data.url,
+        caption: currentVal
+      };
+      await executeQuestionSave(questionId);
+      renderMcqQuestions();
+    }
+  } catch (err) {
+    console.error('Upload MCQ option image error:', err);
+    alert(`Failed to upload option image: ${err.message}`);
+  }
+};
+
+window.removeMcqOptionImage = async function(questionId, optIdx) {
+  const q = currentMcqQuestions.find(item => item.id === questionId);
+  if (!q || !Array.isArray(q.options) || !q.options[optIdx]) return;
+  const optEl = document.getElementById(`mcq-opt-input-${questionId}-${optIdx}`);
+  const currentVal = optEl ? optEl.value.trim() : (typeof q.options[optIdx] === 'object' && q.options[optIdx] ? (q.options[optIdx].caption || q.options[optIdx].value || q.options[optIdx].text || '') : String(q.options[optIdx] || ''));
+  q.options[optIdx] = currentVal;
+  await executeQuestionSave(questionId);
+  renderMcqQuestions();
+};
 
 async function addBlankMcqQuestion() {
   if (!currentMcqTestId) return;

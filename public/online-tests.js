@@ -514,86 +514,49 @@ function renderQuestionCard(sectionId, q, displayNum) {
   }
 
   if (qType === 'mcq') {
-    const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
-    const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : null;
-    const isPart1 = qNum === null || qNum <= 5;
     let opts = Array.isArray(q.options) ? q.options : [];
-    if (!isPart1) {
-      opts = opts.slice(0, 3);
-    }
     const correctIdx = Number(q.correct_answer) || 0;
-    const hasImageUrls = opts.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
-    const allOptionsAreLongText = opts.length > 0 && opts.every(opt => {
-      const txt = (typeof opt === 'string' ? opt : (opt?.value || opt?.text || opt?.caption || opt?.statement || '')).trim();
-      return txt.length > 20 || txt.split(/\s+/).length >= 4;
-    });
-    const hasVisualType = opts.some(opt => typeof opt === 'object' && opt !== null && (opt.type === 'image' || opt.image_url || opt.object_key));
-    const isVisual = isPart1 && (Number(q.has_visual_options) === 1 || q.has_visual_options === true) && (hasVisualType || !allOptionsAreLongText);
 
-    if (isVisual) {
-      controlsHtml = `
-        <div style="margin-top:10px;">
-          <div class="fb-label">Visual Options (Click radio to set correct answer, upload/replace image, or edit caption):</div>
-          <div class="ot-visual-options-admin-grid">
-            ${opts.map((opt, oIdx) => {
-              const rawL = (opt && opt.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
-              const letter = rawL === 'S' ? 'C' : (['A', 'B', 'C', 'D'].includes(rawL) ? rawL : String.fromCharCode(65 + oIdx));
-              const imgUrl = (opt && opt.image_url) ? opt.image_url : '';
-              const caption = (opt && (opt.caption || opt.value || opt.text)) ? (opt.caption || opt.value || opt.text) : '';
-              const isCorrect = oIdx === correctIdx;
-              return `
-                <div class="ot-visual-opt-admin-card ${isCorrect ? 'is-correct' : ''}">
-                  <div class="ot-visual-opt-admin-img-wrap" style="min-height:90px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:4px; margin-bottom:6px; border:1px solid var(--paper-line);">
-                    ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Picture ${letter}" class="ot-visual-opt-admin-img" style="max-height:100px; max-width:100%; object-fit:contain;" />` : `<div style="font-size:11px; font-weight:600; color:#b91c1c; padding:6px; background:#fef2f2; border:1px dashed #f87171; border-radius:4px;">⚠️ Missing Image</div>`}
-                  </div>
-                  <div style="margin-bottom:6px; text-align:center;">
-                    <label class="ghost" style="display:inline-flex; align-items:center; gap:4px; font-size:11px; padding:2px 8px; cursor:pointer; border:1px solid var(--border); border-radius:4px; background:#fff;">
-                      📷 ${imgUrl ? 'Change Image' : 'Upload Image'}
-                      <input type="file" accept="image/*" style="display:none;" onchange="uploadOptionImageFile(${currentReviewTest.id}, ${q.id}, ${oIdx}, this)" />
-                    </label>
-                  </div>
-                  <div class="ot-visual-opt-admin-meta">
-                    <div style="display:flex; align-items:center; justify-content:space-between; width:100%; margin-bottom:4px;">
-                      <div style="display:flex; align-items:center; gap:6px;">
-                        <span class="ot-opt-radio" onclick="setMcqCorrectOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Click to set as correct answer" style="cursor:pointer; font-size:14px; color:${isCorrect ? '#059669' : 'var(--ink-soft)'};">
-                          ${isCorrect ? '●' : '○'}
-                        </span>
-                        <span style="font-weight:700; font-size:12px; color:var(--pen);">Picture ${letter}</span>
-                      </div>
-                      <button type="button" class="line-delete-btn" onclick="removeMcqOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Remove option">✕</button>
-                    </div>
-                    <div contenteditable="true" class="editable-field ot-editable-opt-text" data-q-id="${q.id}" data-opt-idx="${oIdx}" placeholder="Caption (optional)" style="font-size:12px; padding:4px 6px; border:1px solid var(--border); border-radius:4px; background:#fff; min-height:22px; width:100%; box-sizing:border-box;">${escapeHtml(caption)}</div>
-                  </div>
+    controlsHtml = `
+      <div style="margin-top:10px;">
+        <div class="fb-label">Options (Click dot to set correct answer, attach/replace images, or edit text):</div>
+        <div class="ot-options-vertical-list">
+          ${opts.map((opt, oIdx) => {
+            const letter = (typeof opt === 'object' && opt && opt.label) ? String(opt.label).toUpperCase() : String.fromCharCode(65 + oIdx);
+            const rawVal = (typeof opt === 'object' && opt !== null) ? (opt.caption !== undefined && opt.caption !== '' ? opt.caption : (opt.value !== undefined ? opt.value : (opt.text || opt.statement || ''))) : String(opt || '');
+            const optVal = String(rawVal || '').replace(/^[A-E][.:]\s*/i, '').trim();
+            const imgUrl = (typeof opt === 'object' && opt !== null && opt.image_url) ? opt.image_url : '';
+            const isCorrect = oIdx === correctIdx;
+            return `
+            <div class="ot-opt-row ${isCorrect ? 'is-correct' : ''}" style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; padding:6px 10px; border-radius:6px; border:1px solid ${isCorrect ? 'var(--pen)' : 'var(--border)'}; background:${isCorrect ? 'var(--paper-warm)' : '#fff'};">
+              <span class="ot-opt-radio" onclick="setMcqCorrectOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Click to set as correct answer" style="cursor:pointer; font-size:15px; color:${isCorrect ? '#059669' : 'var(--ink-soft)'};">
+                ${isCorrect ? '●' : '○'}
+              </span>
+              <span class="ot-opt-letter" style="font-weight:700; min-width:20px;">${letter}.</span>
+              ${imgUrl ? `
+                <div style="display:inline-flex; align-items:center; gap:6px;">
+                  <img src="${escapeHtml(imgUrl)}" alt="Option ${letter}" style="max-height:48px; max-width:70px; border-radius:4px; object-fit:contain; border:1px solid var(--paper-line); background:#fff;" />
+                  <label class="ghost" style="cursor:pointer; font-size:11px; padding:2px 8px; border:1px solid var(--border); border-radius:4px; background:#fff;">
+                    🔄 Replace Image
+                    <input type="file" accept="image/*" style="display:none;" onchange="uploadOptionImageFile(${currentReviewTest.id}, ${q.id}, ${oIdx}, this)" />
+                  </label>
+                  <button type="button" class="ghost" style="font-size:11px; padding:2px 8px; border:1px solid var(--border); border-radius:4px; color:#b91c1c; background:#fff;" onclick="removeOptionImage(${currentReviewTest.id}, ${q.id}, ${oIdx})">✕ Remove Image</button>
                 </div>
-              `;
-            }).join('')}
-          </div>
+              ` : `
+                <label class="ghost" style="cursor:pointer; font-size:11px; padding:2px 8px; border:1px solid var(--border); border-radius:4px; background:#fff;">
+                  📷 Add Image
+                  <input type="file" accept="image/*" style="display:none;" onchange="uploadOptionImageFile(${currentReviewTest.id}, ${q.id}, ${oIdx}, this)" />
+                </label>
+              `}
+              <span contenteditable="true" class="editable-field ot-editable-opt-text" data-q-id="${q.id}" data-opt-idx="${oIdx}" style="flex:1; min-width:140px; padding:3px 6px; border-radius:4px; border:1px solid transparent;" placeholder="Option text / caption...">${escapeHtml(optVal)}</span>
+              <button type="button" class="line-delete-btn" onclick="removeMcqOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Remove option">✕</button>
+            </div>
+          `;}).join('')}
+          <button type="button" class="ghost" style="font-size:11px; padding:3px 8px; margin-top:4px;"
+            onclick="addMcqOption(${currentReviewTest.id}, ${q.id})">+ Add Option</button>
         </div>
-      `;
-    } else {
-      controlsHtml = `
-        <div style="margin-top:10px;">
-          <div class="fb-label">Options (Click dot to set correct answer):</div>
-          <div class="ot-options-vertical-list">
-            ${opts.map((opt, oIdx) => {
-              const rawVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.text || opt.caption || opt.statement || '')) : String(opt || '');
-              const optVal = String(rawVal || '').replace(/^[A-E][.:]\s*/i, '').trim();
-              return `
-              <div class="ot-opt-row ${oIdx === correctIdx ? 'is-correct' : ''}">
-                <span class="ot-opt-radio" onclick="setMcqCorrectOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Click to set as correct answer">
-                  ${oIdx === correctIdx ? '●' : '○'}
-                </span>
-                <span class="ot-opt-letter">${String.fromCharCode(65 + oIdx)}.</span>
-                <span contenteditable="true" class="editable-field ot-editable-opt-text" data-q-id="${q.id}" data-opt-idx="${oIdx}">${escapeHtml(optVal)}</span>
-                <button type="button" class="line-delete-btn" onclick="removeMcqOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Remove option">✕</button>
-              </div>
-            `;}).join('')}
-            <button type="button" class="ghost" style="font-size:11px; padding:3px 8px; margin-top:4px;"
-              onclick="addMcqOption(${currentReviewTest.id}, ${q.id})">+ Add Option</button>
-          </div>
-        </div>
-      `;
-    }
+      </div>
+    `;
   } else if (qType === 'matching') {
     const opts = Array.isArray(q.options) ? q.options : [];
     const correctIdx = Number(q.correct_answer) || 0;
@@ -1035,7 +998,7 @@ async function uploadOptionImageFile(testId, questionId, optIdx, fileInput) {
 
   try {
     showToast('Uploading option image...', 'info');
-    const res = await fetch(`/api/online-tests/${testId}/questions/${questionId}/options/${optIdx}/image`, {
+    const res = await fetch('/api/online-tests/upload-option-image', {
       method: 'POST',
       body: formData
     });
@@ -1043,13 +1006,55 @@ async function uploadOptionImageFile(testId, questionId, optIdx, fileInput) {
     if (!res.ok || !data.success) {
       throw new Error(data.error || 'Failed to upload image.');
     }
-    showToast(`Image uploaded for option ${String.fromCharCode(65 + optIdx)}!`, 'success');
-    await openOnlineTestReview(testId);
+    const q = findQuestionInState(questionId);
+    if (q) {
+      if (!Array.isArray(q.options)) q.options = [];
+      while (q.options.length <= optIdx) {
+        q.options.push('');
+      }
+      const currentOpt = q.options[optIdx];
+      const caption = typeof currentOpt === 'object' && currentOpt !== null
+        ? (currentOpt.caption || currentOpt.value || currentOpt.text || '')
+        : String(currentOpt || '');
+      const letter = String.fromCharCode(65 + optIdx);
+      q.options[optIdx] = {
+        type: 'image',
+        label: letter,
+        image_url: data.url,
+        caption
+      };
+      q.has_visual_options = 1;
+      scheduleQuestionPatch(testId, questionId, 'options', q.options);
+      scheduleQuestionPatch(testId, questionId, 'has_visual_options', 1);
+      renderOnlineTestReviewCanvas();
+      showToast(`Image uploaded for Option ${letter}!`, 'success');
+    }
   } catch (err) {
     console.error('Upload option image error:', err);
     alert(`Failed to upload option image: ${err.message}`);
   }
 }
+
+async function removeOptionImage(testId, questionId, optIdx) {
+  const q = findQuestionInState(questionId);
+  if (!q || !Array.isArray(q.options) || !q.options[optIdx]) return;
+  const currentOpt = q.options[optIdx];
+  const textVal = typeof currentOpt === 'object' && currentOpt !== null
+    ? (currentOpt.caption || currentOpt.value || currentOpt.text || '')
+    : String(currentOpt || '');
+  q.options[optIdx] = textVal;
+
+  const hasRemainingImages = q.options.some(opt => opt && typeof opt === 'object' && (opt.image_url || opt.type === 'image'));
+  q.has_visual_options = hasRemainingImages ? 1 : 0;
+
+  scheduleQuestionPatch(testId, questionId, 'options', q.options);
+  scheduleQuestionPatch(testId, questionId, 'has_visual_options', q.has_visual_options);
+  renderOnlineTestReviewCanvas();
+  showToast(`Image removed from Option ${String.fromCharCode(65 + optIdx)}.`, 'info');
+}
+
+window.uploadOptionImageFile = uploadOptionImageFile;
+window.removeOptionImage = removeOptionImage;
 
 function findQuestionInState(questionId) {
   for (const s of currentReviewSections) {

@@ -1421,6 +1421,30 @@ app.delete('/api/assignments/:code', authenticateToken, requireApprovedUser, asy
     }
 
     for (const id of assignmentIdsToDelete) {
+      try {
+        const assignRow = await db.execute({
+          sql: 'SELECT scheme_files_json FROM assignments WHERE id = ?',
+          args: [id]
+        });
+        if (assignRow.rows.length > 0 && assignRow.rows[0].scheme_files_json) {
+          let sFiles = [];
+          try { sFiles = JSON.parse(assignRow.rows[0].scheme_files_json); } catch (_) {}
+          const filesToPrune = [];
+          for (const f of (Array.isArray(sFiles) ? sFiles : [])) {
+            if (typeof f === 'string') filesToPrune.push(f);
+            else if (f && typeof f === 'object') {
+              if (f.url) filesToPrune.push(f.url);
+              if (f.object_key) filesToPrune.push(f.object_key);
+              if (f.key) filesToPrune.push(f.key);
+            }
+          }
+          if (filesToPrune.length > 0) {
+            await deleteStorageFiles(filesToPrune);
+          }
+        }
+      } catch (fErr) {
+        console.warn('[Assignment Delete Files Warning]:', fErr.message);
+      }
       await db.execute({ sql: 'DELETE FROM submissions WHERE assignment_id = ?', args: [id] });
       await db.execute({ sql: 'DELETE FROM assignments WHERE id = ?', args: [id] });
     }
@@ -2224,33 +2248,7 @@ app.post(
         }
       }
 
-      // Visual Option Crop Engine for listening test papers (Part 1 picture options)
-      let visualCrops = [];
-      try {
-        console.log('[MCQ Ingestion] Running Visual Option Crop Engine for PDF listening options...');
-        const rawCrops = await extractVisualOptionCropsFromPdf(pdfFile.buffer);
-        let cropCounter = 0;
-        for (const c of rawCrops) {
-          try {
-            const uploadRes = await uploadExamImageToFilebaseOrLocal(c.buffer, `mcq_crop_q${c.questionNumber}_${c.letter}_${cropCounter++}`, null);
-            visualCrops.push({
-              object_key: uploadRes.objectKey,
-              url: uploadRes.url,
-              questionNumber: c.questionNumber,
-              letter: c.letter,
-              width: c.width,
-              height: c.height
-            });
-          } catch (cropUpErr) {
-            console.warn(`[MCQ Crop Upload Warning] Failed for Q${c.questionNumber} ${c.letter}:`, cropUpErr.message);
-          }
-        }
-        if (visualCrops.length > 0) {
-          console.log(`[MCQ Ingestion] Visual Option Crop Engine extracted & uploaded ${visualCrops.length} choice illustrations.`);
-        }
-      } catch (cropErr) {
-        console.warn('[MCQ Ingestion] Visual Option Crop Engine notice:', cropErr.message);
-      }
+      // Automatic visual option cropping decommissioned: picture choices are extracted as descriptive text captions.
 
       // Build Gemini Input Payload
       const inputPayload = [];
@@ -2300,16 +2298,18 @@ app.post(
         markingSchemePromptAddon += `\n\nVERBATIM AUDIO TRANSCRIPT (EXAM LISTENING PASSAGE):\n${audioTranscript}`;
       }
 
-      // 3. Prompt instructing Gemini to convert PDF questions into MCQ JSON array
-      // 3. Prompt instructing Gemini to convert PDF questions into native Cambridge, IELTS, GCSE exam formats
+      // 3. Prompt instructing Gemini to convert PDF questions into native exam formats
       const promptText = `You are an expert assessment converter for English exams (Cambridge, IELTS, GCSE).
 You are provided with an examination/test PDF document and its official marking scheme / answer key.
-Analyze the Test Paper and Marking Scheme. Extract all questions into one of three question_type formats:
+Analyze the Test Paper and Marking Scheme. You MUST extract ALL 25 questions across all 5 parts of the exam paper sequentially (Part 1: Questions 1 to 5, Part 2: Questions 6 to 10, Part 3: Questions 11 to 15, Part 4: Questions 16 to 20, Part 5: Questions 21 to 25).
+Output a single JSON array with exactly 25 question objects. Do NOT stop after Question 1. Do NOT omit any questions.
+
+Extract each question into one of three question_type formats:
 
 1. 'mcq': Standard multiple-choice questions with 3-5 options.
    - "question_type": "mcq"
    - "question": Clear question prompt text
-   - "options": Array of 3-5 plausible option strings. For picture/illustration choice questions (e.g. Cambridge Listening Part 1 showing pictures A, B, C), provide ["Picture A", "Picture B", "Picture C"] or short descriptive text like ["inside a bag", "under a table", "on a bed"].
+   - "options": Array of 3-5 plausible option strings. For picture/illustration choice questions (e.g. Cambridge Listening Part 1 showing pictures A, B, C), provide concise descriptive captions of each illustration as the option text (e.g. ["Inside a sports bag", "Under a table", "On a bed"]). Do NOT set has_visual_options to true or invent image URLs.
    - "correct_index": Zero-based integer (0 to options.length - 1) indicating the correct option
    - "acceptable_answers": []
    - "points": Marks/points awarded (default 1)
@@ -2331,8 +2331,8 @@ Analyze the Test Paper and Marking Scheme. Extract all questions into one of thr
    - "points": Marks/points awarded (default 1)
 
 CRITICAL INSTRUCTIONS:
-1. Maintain the natural sequence of questions as presented in the test PDF.
-2. Return ONLY a JSON array matching the schema:
+1. Maintain the natural sequence of all 25 questions as presented in the test PDF.
+2. Return ONLY a valid JSON array matching the schema:
    [
      {
        "question_type": "mcq" | "matching" | "fill_blank",
@@ -2347,9 +2347,10 @@ ${markingSchemePromptAddon}`;
 
       inputPayload.push(promptText);
 
-      // Define Gemini JSON Array Schema
+      // Define Gemini JSON Array Schema with maxOutputTokens 8192
       const mcqConfig = {
         responseMimeType: 'application/json',
+        maxOutputTokens: 8192,
         responseSchema: {
           type: 'ARRAY',
           items: {
@@ -2384,14 +2385,27 @@ ${markingSchemePromptAddon}`;
         return res.status(502).json({ success: false, error: `AI question generation failed: ${aiErr.message || 'Gemini service error.'}` });
       }
 
-      // Parse and Validate JSON
+      // Parse and Validate JSON with Resilient Repair
       let parsedQuestions = null;
       try {
         let cleanText = (rawOutput || '').trim();
         if (cleanText.startsWith('```')) {
           cleanText = cleanText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
         }
-        parsedQuestions = JSON.parse(cleanText);
+        try {
+          parsedQuestions = JSON.parse(cleanText);
+        } catch (initialParseErr) {
+          // Attempt resilient repair of truncated JSON array
+          let repairedText = cleanText;
+          const lastCurly = repairedText.lastIndexOf('}');
+          if (lastCurly > 0) {
+            repairedText = repairedText.slice(0, lastCurly + 1).trim() + '\n]';
+            parsedQuestions = JSON.parse(repairedText);
+            console.log('[MCQ Generation] Resilient JSON repair succeeded on truncated array.');
+          } else {
+            throw initialParseErr;
+          }
+        }
         if (parsedQuestions && !Array.isArray(parsedQuestions) && Array.isArray(parsedQuestions.questions)) {
           parsedQuestions = parsedQuestions.questions;
         }
@@ -2413,13 +2427,9 @@ ${markingSchemePromptAddon}`;
       const validatedQuestions = [];
       for (let i = 0; i < parsedQuestions.length; i++) {
         const item = parsedQuestions[i];
-        if (!item || typeof item.question !== 'string' || !item.question.trim()) {
-          if (uploadedAudioKey) {
-            try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) { }
-          }
-          return res.status(422).json({ success: false, error: `Question #${i + 1} has missing or empty question text.` });
-        }
+        if (!item || typeof item !== 'object') continue;
 
+        const qPrompt = typeof item.question === 'string' && item.question.trim() ? item.question.trim() : `Question ${i + 1}`;
         const qType = ['mcq', 'matching', 'fill_blank'].includes(item.question_type) ? item.question_type : 'mcq';
         let cleanOptions = [];
         let correctIdx = 0;
@@ -2434,64 +2444,39 @@ ${markingSchemePromptAddon}`;
             cleanAcceptable = [String(item.correct_answer).trim()];
           }
           correctIdx = 0;
+        } else if (qType === 'matching') {
+          const rawOpts = Array.isArray(item.options) ? item.options : [];
+          cleanOptions = rawOpts.map((opt, oIdx) => {
+            const label = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+            const textVal = typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || '');
+            return {
+              label,
+              text: String(textVal || '').trim()
+            };
+          }).filter(o => Boolean(o.text));
+          if (cleanOptions.length === 0) {
+            cleanOptions = [{ label: 'A', text: 'Statement A' }, { label: 'B', text: 'Statement B' }];
+          }
+          const rawIdx = Number(item.correct_index);
+          correctIdx = Number.isInteger(rawIdx) && rawIdx >= 0 && rawIdx < cleanOptions.length ? rawIdx : 0;
         } else {
-          // 'mcq' or 'matching'
-          if (!Array.isArray(item.options) || item.options.length < 2) {
-            if (uploadedAudioKey) {
-              try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) { }
+          // 'mcq'
+          const rawOpts = Array.isArray(item.options) ? item.options : [];
+          cleanOptions = rawOpts.map((opt) => {
+            if (typeof opt === 'object' && opt !== null) {
+              return String(opt.caption || opt.value || opt.text || '').trim();
             }
-            return res.status(422).json({ success: false, error: `Question #${i + 1} (${qType}) must have at least 2 options.` });
-          }
-          cleanOptions = item.options.map((opt) => (opt !== null && opt !== undefined ? (typeof opt === 'object' ? opt : String(opt).trim()) : '')).filter(Boolean);
+            return String(opt || '').trim();
+          }).filter(Boolean);
+
+          cleanOptions = cleanOptions.map(opt => opt.replace(/^[A-E][.:]\s*/i, '').trim());
+
           if (cleanOptions.length < 2) {
-            if (uploadedAudioKey) {
-              try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) { }
-            }
-            return res.status(422).json({ success: false, error: `Question #${i + 1} contains empty or invalid option strings.` });
-          }
-
-          // Check if this question has matching visual crops from PDF (strictly Questions 1 to 5)
-          const qNumMatch = (item.question || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
-          const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (i + 1);
-
-          if (qNum <= 5) {
-            // Questions 1 to 5: Cambridge Part 1 picture choices A, B, C
-            cleanOptions = ['A', 'B', 'C'].map((letter, oIdx) => {
-              const matchedCrop = visualCrops.find(c => c.questionNumber === qNum && c.letter === letter);
-              const origText = typeof cleanOptions[oIdx] === 'object' ? (cleanOptions[oIdx].caption || cleanOptions[oIdx].value || cleanOptions[oIdx].text || '') : (cleanOptions[oIdx] || '');
-              const caption = String(origText).replace(/\[?picture\s*[a-z]\]?/gi, '').replace(/^[A-D]:\s*/i, '').trim();
-              return {
-                type: 'image',
-                label: letter,
-                object_key: matchedCrop ? matchedCrop.object_key : null,
-                image_url: matchedCrop ? matchedCrop.url : '',
-                caption: caption || `Picture ${letter}`
-              };
-            });
-          } else {
-            // Questions 6+: strictly text choices
-            if (qType === 'matching') {
-              cleanOptions = cleanOptions.map((opt, oIdx) => {
-                const label = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
-                const textVal = typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || '');
-                return {
-                  label,
-                  text: String(textVal || '').trim()
-                };
-              }).filter(o => Boolean(o.text));
-            } else {
-              // MCQ for Part 2 (Q6-10) and Part 4 (Q16-20): strictly 3 text options A, B, C
-              cleanOptions = cleanOptions.slice(0, 3).map((opt, oIdx) => {
-                const val = typeof opt === 'object' && opt !== null ? (opt.value || opt.text || opt.caption || '') : String(opt || '');
-                const cleanVal = String(val || '').replace(/^[A-C][.:]\s*/i, '').trim();
-                return cleanVal;
-              });
-            }
+            cleanOptions = ['Option A', 'Option B', 'Option C'];
           }
 
           const rawIdx = Number(item.correct_index);
           correctIdx = Number.isInteger(rawIdx) && rawIdx >= 0 && rawIdx < cleanOptions.length ? rawIdx : 0;
-          cleanAcceptable = [];
         }
 
         const rawPoints = Number(item.points);
@@ -2499,7 +2484,7 @@ ${markingSchemePromptAddon}`;
 
         validatedQuestions.push({
           question_type: qType,
-          question: item.question.trim(),
+          question: qPrompt,
           options: cleanOptions,
           correct_index: correctIdx,
           acceptable_answers: cleanAcceptable,
@@ -3106,17 +3091,7 @@ app.get('/api/mcq/:testId', authenticateToken, requireApprovedUser, async (req, 
         }
       }
 
-      const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
-      const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (idx + 1);
-      const isPart1 = qNum <= 5;
-
-      if (!isPart1) {
-        if (q.question_type === 'matching') {
-          opts = (Array.isArray(opts) ? opts : []).map(opt => typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || ''));
-        } else if (q.question_type === 'mcq') {
-          opts = (Array.isArray(opts) ? opts : []).slice(0, 3).map(opt => typeof opt === 'object' && opt !== null ? (opt.value || opt.text || opt.caption || '') : String(opt || ''));
-        }
-      } else if (Array.isArray(opts)) {
+      if (Array.isArray(opts)) {
         for (const opt of opts) {
           if (opt && typeof opt === 'object' && opt.object_key) {
             try {
@@ -3604,17 +3579,7 @@ app.get('/api/public/mcq/:code', async (req, res) => {
         }
       }
 
-      const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
-      const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (idx + 1);
-      const isPart1 = qNum <= 5;
-
-      if (!isPart1) {
-        if (q.question_type === 'matching') {
-          opts = (Array.isArray(opts) ? opts : []).map(opt => typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || ''));
-        } else if (q.question_type === 'mcq') {
-          opts = (Array.isArray(opts) ? opts : []).slice(0, 3).map(opt => typeof opt === 'object' && opt !== null ? (opt.value || opt.text || opt.caption || '') : String(opt || ''));
-        }
-      } else if (Array.isArray(opts)) {
+      if (Array.isArray(opts)) {
         for (const opt of opts) {
           if (opt && typeof opt === 'object' && opt.object_key) {
             try {
@@ -4823,36 +4788,7 @@ app.post(
           }
         }
 
-        // Always run high-DPI visual crop engine for Cambridge vector/form illustrations & visual choice options
-        try {
-          console.log('[Online Tests Ingestion] Running Visual Option Crop Engine for PDF exam options...');
-          const rawCrops = await extractVisualOptionCropsFromPdf(examPdfBuffer);
-          let cropCounter = 0;
-          for (const c of rawCrops) {
-            try {
-              const uploadRes = await uploadExamImageToFilebaseOrLocal(c.buffer, `crop_q${c.questionNumber}_${c.letter}_${cropCounter++}`, null);
-              const cropObj = {
-                index: extractedImages.length,
-                object_key: uploadRes.objectKey,
-                url: uploadRes.url,
-                questionNumber: c.questionNumber,
-                letter: c.letter,
-                width: c.width,
-                height: c.height
-              };
-              extractedImages.push(cropObj);
-              visualCrops.push(cropObj);
-            } catch (cropUpErr) {
-              console.warn(`[Online Tests Crop Upload Warning] Failed for Q${c.questionNumber} ${c.letter}:`, cropUpErr.message);
-            }
-          }
-          if (visualCrops.length > 0) {
-            console.log(`[Online Tests Ingestion] Visual Option Crop Engine extracted & uploaded ${visualCrops.length} choice illustrations.`);
-          }
-        } catch (cropErr) {
-          console.warn('[Online Tests Ingestion] Visual Option Crop Engine error:', cropErr.message);
-        }
-
+        // Automatic visual option cropping decommissioned: picture choices are extracted as descriptive text captions.
         console.log(`[Online Tests Ingestion] Extracted & uploaded ${extractedImages.length} images from exam paper.`);
       } catch (imgExtractErr) {
         console.warn('[Online Tests Image Extraction Warning]:', imgExtractErr.message);
@@ -4911,15 +4847,12 @@ CRITICAL RULES:
     - All sub-questions that belong to the same exercise group MUST have the exact same "shared_word_bank" array.
     - Word banks belong to the group stimulus/instructions and must NOT be repeated inside each sub-question text.
   * For standalone questions without group headings, set "group_title": null, "group_instructions": null, "shared_word_bank": null.
-- VISUAL & PICTURE QUESTIONS (Cambridge Listening / Reading Paper style with Picture A, B, C or stimulus diagrams):
-  * If a question relies on pictures/diagrams for its options (e.g. Question 1 shows Picture A, Picture B, Picture C):
-    - Set "has_visual_options": true
-    - Populate "options" as an array of objects:
-      [ { "label": "A", "image_index": 0, "caption": "Sandwiches" }, { "label": "B", "image_index": 1, "caption": "Soup" }, { "label": "C", "image_index": 2, "caption": "Pizza" } ]
-    - "correct_answer": integer index (0 for A, 1 for B, 2 for C) matching the mark scheme.
+- PICTURE & ILLUSTRATION QUESTIONS (Cambridge Listening Part 1 or questions featuring Picture A, B, C):
+  * For picture-choice questions (such as Part 1), provide a concise descriptive caption of each illustration as the option text (e.g. ["Inside a sports bag", "Under a table", "On a bed"]).
+  * Do NOT set "has_visual_options" to true or invent image URLs. Always set "has_visual_options": false.
   * If a question has a central stimulus diagram, map, chart, or figure shared by questions:
     - Set "stimulus_image_index": <integer index of the extracted image> (e.g. 0, 1, 2)
-  * For standard text-only MCQ questions, "has_visual_options" is false and "options" is a standard array of strings ["Option A", "Option B", "Option C"].
+  * For all multiple-choice questions, "has_visual_options" is false and "options" is a standard array of strings ["Option A", "Option B", "Option C"].
 - For question_type 'mcq': options array must contain 2 to 5 items; correct_answer is the integer index (0-based).
 - For question_type 'matching': options array contains the shared statement pool (A-H); correct_answer is the integer index.
 - For question_type 'fill_blank', 'rewrite', 'short_answer': options is null; correct_answer is an array of acceptable string variations extracted directly from the mark scheme.
@@ -5029,91 +4962,31 @@ OUTPUT SCHEMA (Strict JSON):
                   q.stimulus_image_url = matchedStim ? matchedStim.url : null;
                 }
 
-                let qNum = null;
-                const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
-                if (qNumMatch) {
-                  qNum = parseInt(qNumMatch[1], 10);
-                }
-
-                const secPart = Number(sec.part_number) || 1;
-                const isPart1 = (secPart === 1 || /part\s*1/i.test(sec.section_title || '')) && (qNum === null || qNum <= 5);
-
-                const hasImageUrls = Array.isArray(q.options) && q.options.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
-                const allOptionsAreLongText = Array.isArray(q.options) && q.options.length > 0 && q.options.every(opt => {
-                  const txt = (typeof opt === 'string' ? opt : (opt.value || opt.text || opt.caption || opt.statement || '')).trim();
-                  return txt.length > 20 || txt.split(/\s+/).length >= 4;
-                });
-
-                const hasMatchingCrops = isPart1 && qNum !== null && visualCrops.some(c => c.questionNumber === qNum);
-                const hasVisualChoicePattern = isPart1 && Array.isArray(q.options) && q.options.some(opt => {
-                  if (typeof opt === 'object' && opt !== null) {
-                    if (opt.type === 'image' || opt.image_index !== undefined || opt.image_url || opt.object_key) return true;
-                    const val = String(opt.value || opt.text || opt.caption || '').trim().toLowerCase();
-                    return /\[?picture\s*[a-z]\]?/i.test(val) || val.startsWith('picture ');
-                  }
-                  const s = String(opt || '').trim().toLowerCase();
-                  return /\[?picture\s*[a-z]\]?/i.test(s) || s.startsWith('picture ');
-                });
-
-                // A question should ONLY have visual options if strictly in Part 1 (Questions 1-5):
-                const isExplicitlyVisual = isPart1 && (hasMatchingCrops || hasImageUrls || (q.has_visual_options === true && hasVisualChoicePattern)) && !allOptionsAreLongText;
-
-                if (isExplicitlyVisual) {
-                  q.has_visual_options = true;
-                  q.options = ['A', 'B', 'C'].map((letter, idx) => {
-                    const matchedCrop = visualCrops.find(c => c.questionNumber === qNum && c.letter === letter);
-                    const origOpt = Array.isArray(q.options) ? q.options[idx] : null;
-                    let caption = '';
-                    let existingUrl = '';
-                    let existingKey = null;
-
-                    if (typeof origOpt === 'object' && origOpt !== null) {
-                      caption = origOpt.caption || origOpt.value || origOpt.text || '';
-                      existingUrl = origOpt.image_url || '';
-                      existingKey = origOpt.object_key || null;
-                    } else if (origOpt) {
-                      const str = String(origOpt).trim();
-                      caption = str.replace(/\[?picture\s*[a-z]\]?/gi, '').replace(/^[A-D]:\s*/i, '').trim();
-                    }
-
+                q.has_visual_options = false;
+                if (q.question_type === 'matching') {
+                  q.options = (Array.isArray(q.options) ? q.options : []).map((opt, oIdx) => {
+                    const rawLabel = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+                    const textVal = typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || '');
                     return {
-                      type: 'image',
-                      label: letter,
-                      object_key: matchedCrop ? matchedCrop.object_key : (existingKey || null),
-                      image_url: matchedCrop ? matchedCrop.url : (existingUrl || ''),
-                      caption: caption || `Picture ${letter}`
+                      type: 'text',
+                      label: rawLabel,
+                      value: String(textVal || '').trim()
+                    };
+                  }).filter(o => Boolean(o.value));
+                } else if (Array.isArray(q.options)) {
+                  q.options = q.options.map((opt, oIdx) => {
+                    const label = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : (['A', 'B', 'C', 'D', 'E'][oIdx] || String.fromCharCode(65 + oIdx));
+                    const rawVal = typeof opt === 'string' ? opt : (opt?.value !== undefined ? String(opt.value) : (opt?.text !== undefined ? String(opt.text) : (opt?.caption || '')));
+                    const cleanVal = String(rawVal || '').replace(/^[A-E][.:]\s*/i, '').trim();
+                    return {
+                      type: 'text',
+                      label,
+                      value: cleanVal
                     };
                   });
-                  globalChoiceImgCounter += q.options.length;
-                } else {
-                  q.has_visual_options = false;
-                  if (q.question_type === 'matching') {
-                    q.options = (Array.isArray(q.options) ? q.options : []).map((opt, oIdx) => {
-                      const rawLabel = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
-                      const textVal = typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || '');
-                      return {
-                        type: 'text',
-                        label: rawLabel,
-                        value: String(textVal || '').trim()
-                      };
-                    }).filter(o => Boolean(o.value));
-                  } else if (Array.isArray(q.options)) {
-                    // For Part 2 (Q6-10) and Part 4 (Q16-20), slice strictly to 3 options (A, B, C)
-                    const rawOpts = !isPart1 && q.options.length > 3 ? q.options.slice(0, 3) : q.options;
-                    q.options = rawOpts.map((opt, oIdx) => {
-                      const label = ['A', 'B', 'C', 'D', 'E'][oIdx] || String.fromCharCode(65 + oIdx);
-                      const rawVal = typeof opt === 'string' ? opt : (opt?.value !== undefined ? String(opt.value) : (opt?.text !== undefined ? String(opt.text) : (opt?.caption || '')));
-                      const cleanVal = String(rawVal || '').replace(/^[A-E][.:]\s*/i, '').trim();
-                      return {
-                        type: 'text',
-                        label,
-                        value: cleanVal
-                      };
-                    });
-                    const cAns = Number(q.correct_answer);
-                    if (!Number.isInteger(cAns) || cAns < 0 || cAns >= q.options.length) {
-                      q.correct_answer = 0;
-                    }
+                  const cAns = Number(q.correct_answer);
+                  if (!Number.isInteger(cAns) || cAns < 0 || cAns >= q.options.length) {
+                    q.correct_answer = 0;
                   }
                 }
               }
@@ -5424,45 +5297,18 @@ app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, asy
         const pts = Number(q.points) || 1;
         totalMarks += pts;
 
-        const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
-        const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : null;
-        const isPart1 = (Number(sec.part_number) === 1 || /part\s*1/i.test(sec.section_title || '')) && (qNum === null || qNum <= 5);
-
-        // Safety heuristic: If options are long sentences and have no image URLs, force has_visual_options = false
-        const hasImageUrls = Array.isArray(parsedOptions) && parsedOptions.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
-        const allOptionsAreLongText = Array.isArray(parsedOptions) && parsedOptions.length > 0 && parsedOptions.every(opt => {
-          const txt = (typeof opt === 'string' ? opt : (opt.value || opt.text || opt.caption || opt.statement || '')).trim();
-          return txt.length > 20 || txt.split(/\s+/).length >= 4;
-        });
-
-        let isVisualQ = isPart1 && (Number(q.has_visual_options) === 1 || q.has_visual_options === true) && !(allOptionsAreLongText && !hasImageUrls);
-
-        if (!isPart1) {
-          isVisualQ = false;
-          if (q.question_type === 'matching') {
-            parsedOptions = (Array.isArray(parsedOptions) ? parsedOptions : []).map((opt, oIdx) => {
-              const rawLabel = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
-              const textVal = typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || '');
-              return { type: 'text', label: rawLabel, value: String(textVal || '').trim() };
-            }).filter(o => Boolean(o.value));
-          } else if (Array.isArray(parsedOptions)) {
-            // Strictly 3 text options for Part 2 & Part 4
-            parsedOptions = parsedOptions.slice(0, 3).map((opt, oIdx) => {
-              const label = ['A', 'B', 'C'][oIdx] || String.fromCharCode(65 + oIdx);
-              const val = typeof opt === 'string' ? opt : (opt?.value !== undefined ? String(opt.value) : (opt?.text !== undefined ? String(opt.text) : (opt?.caption || '')));
-              const cleanVal = String(val || '').replace(/^[A-C][.:]\s*/i, '').trim();
-              return { type: 'text', label, value: cleanVal };
-            });
+        if (Array.isArray(parsedOptions)) {
+          for (const opt of parsedOptions) {
+            if (opt && typeof opt === 'object' && opt.object_key) {
+              try {
+                opt.image_url = (await generateSignedImageUrl(opt.object_key)) || opt.image_url || '';
+              } catch (_) {}
+            }
           }
-        } else if (allOptionsAreLongText && !hasImageUrls) {
-          isVisualQ = false;
-          parsedOptions = (Array.isArray(parsedOptions) ? parsedOptions : []).map((opt, oIdx) => {
-            const rawLabel = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
-            const label = ['A', 'B', 'C', 'D'].includes(rawLabel) ? (rawLabel === 'S' ? 'C' : rawLabel) : String.fromCharCode(65 + oIdx);
-            const val = typeof opt === 'string' ? opt : (opt?.value !== undefined ? String(opt.value) : (opt?.text !== undefined ? String(opt.text) : (opt?.caption || '')));
-            return { type: 'text', label, value: String(val || '').trim() };
-          });
         }
+
+        const hasActiveImages = Array.isArray(parsedOptions) && parsedOptions.some(opt => opt && typeof opt === 'object' && (opt.image_url || opt.imageUrl || opt.object_key));
+        const isVisualQ = (Number(q.has_visual_options) === 1 || q.has_visual_options === true) && hasActiveImages;
 
         parsedQuestions.push({
           ...q,
@@ -5967,6 +5813,44 @@ app.delete('/api/online-tests/:testId/questions/:questionId', authenticateToken,
   } catch (err) {
     console.error('Error deleting question:', err);
     return res.status(500).json({ success: false, error: 'Failed to delete question.' });
+  }
+});
+
+// Dedicated Manual Option Image Upload Routes (reusable by Online Tests and MCQ builder)
+const optionImgUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(process.cwd(), 'public', 'uploads', 'option-images');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.jpg';
+      cb(null, `opt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}${ext}`);
+    }
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 }
+});
+
+app.post('/api/online-tests/upload-option-image', authenticateToken, requireApprovedUser, optionImgUpload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: 'No image file uploaded' });
+    const publicUrl = `/uploads/option-images/${req.file.filename}`;
+    res.json({ success: true, url: publicUrl });
+  } catch (err) {
+    console.error('[Upload Option Image Error]:', err);
+    res.status(500).json({ success: false, error: 'Failed to upload option image' });
+  }
+});
+
+app.post('/api/mcq/upload-option-image', authenticateToken, requireApprovedUser, optionImgUpload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: 'No image file uploaded' });
+    const publicUrl = `/uploads/option-images/${req.file.filename}`;
+    res.json({ success: true, url: publicUrl });
+  } catch (err) {
+    console.error('[Upload MCQ Option Image Error]:', err);
+    res.status(500).json({ success: false, error: 'Failed to upload option image' });
   }
 });
 
@@ -6591,30 +6475,19 @@ app.get('/api/public/online-tests/:code', async (req, res) => {
 
         totalQuestionsCount++;
 
-        const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
-        const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : null;
-        const isPart1 = (Number(sec.part_number) === 1 || /part\s*1/i.test(sec.section_title || '')) && (qNum === null || qNum <= 5);
-
-        let isVisualQ = isPart1 && (Number(q.has_visual_options) === 1 || q.has_visual_options === true);
         let finalOpts = Array.isArray(opts) ? opts : [];
-
-        if (!isPart1) {
-          isVisualQ = false;
-          if (q.question_type === 'matching') {
-            finalOpts = finalOpts.map((opt, oIdx) => {
-              const rawLabel = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
-              const textVal = typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || '');
-              return { type: 'text', label: rawLabel, value: String(textVal || '').trim() };
-            }).filter(o => Boolean(o.value));
-          } else if (q.question_type === 'mcq') {
-            finalOpts = finalOpts.slice(0, 3).map((opt, oIdx) => {
-              const rawLabel = ['A', 'B', 'C'][oIdx] || String.fromCharCode(65 + oIdx);
-              const val = typeof opt === 'string' ? opt : (opt?.value !== undefined ? String(opt.value) : (opt?.text !== undefined ? String(opt.text) : (opt?.caption || '')));
-              const cleanVal = String(val || '').replace(/^[A-C][.:]\s*/i, '').trim();
-              return { type: 'text', label: rawLabel, value: cleanVal };
-            });
+        if (Array.isArray(finalOpts)) {
+          for (const opt of finalOpts) {
+            if (opt && typeof opt === 'object' && opt.object_key) {
+              try {
+                opt.image_url = (await generateSignedImageUrl(opt.object_key)) || opt.image_url || '';
+              } catch (_) {}
+            }
           }
         }
+
+        const hasActiveImages = Array.isArray(finalOpts) && finalOpts.some(opt => opt && typeof opt === 'object' && (opt.image_url || opt.imageUrl || opt.object_key));
+        const isVisualQ = (Number(q.has_visual_options) === 1 || q.has_visual_options === true) && hasActiveImages;
 
         sanitizedQuestions.push({
           id: Number(q.id),
