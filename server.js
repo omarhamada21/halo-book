@@ -2450,23 +2450,16 @@ ${markingSchemePromptAddon}`;
             return res.status(422).json({ success: false, error: `Question #${i + 1} contains empty or invalid option strings.` });
           }
 
-          // Check if this question has matching visual crops from PDF
+          // Check if this question has matching visual crops from PDF (strictly Questions 1 to 5)
           const qNumMatch = (item.question || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
           const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (i + 1);
 
-          const matchingCrops = visualCrops.filter(c => c.questionNumber === qNum);
-          const hasVisualPattern = cleanOptions.some(opt => {
-            const s = (typeof opt === 'object' ? (opt.caption || opt.value || '') : String(opt || '')).toLowerCase();
-            return /\[?picture\s*[a-z]\]?/i.test(s) || s.startsWith('picture ');
-          });
-
-          if (matchingCrops.length > 0 || (hasVisualPattern && visualCrops.length > 0)) {
-            const optLetters = ['A', 'B', 'C', 'D'];
-            const targetCount = matchingCrops.length >= 3 ? matchingCrops.length : Math.max(3, cleanOptions.length);
-            cleanOptions = optLetters.slice(0, targetCount).map((letter, oIdx) => {
+          if (qNum <= 5) {
+            // Questions 1 to 5: Cambridge Part 1 picture choices A, B, C
+            cleanOptions = ['A', 'B', 'C'].map((letter, oIdx) => {
               const matchedCrop = visualCrops.find(c => c.questionNumber === qNum && c.letter === letter);
-              const origText = typeof cleanOptions[oIdx] === 'object' ? (cleanOptions[oIdx].caption || cleanOptions[oIdx].value || '') : (cleanOptions[oIdx] || '');
-              const caption = origText.replace(/\[?picture\s*[a-z]\]?/gi, '').replace(/^[A-D]:\s*/i, '').trim();
+              const origText = typeof cleanOptions[oIdx] === 'object' ? (cleanOptions[oIdx].caption || cleanOptions[oIdx].value || cleanOptions[oIdx].text || '') : (cleanOptions[oIdx] || '');
+              const caption = String(origText).replace(/\[?picture\s*[a-z]\]?/gi, '').replace(/^[A-D]:\s*/i, '').trim();
               return {
                 type: 'image',
                 label: letter,
@@ -2475,6 +2468,25 @@ ${markingSchemePromptAddon}`;
                 caption: caption || `Picture ${letter}`
               };
             });
+          } else {
+            // Questions 6+: strictly text choices
+            if (qType === 'matching') {
+              cleanOptions = cleanOptions.map((opt, oIdx) => {
+                const label = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+                const textVal = typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || '');
+                return {
+                  label,
+                  text: String(textVal || '').trim()
+                };
+              }).filter(o => Boolean(o.text));
+            } else {
+              // MCQ for Part 2 (Q6-10) and Part 4 (Q16-20): strictly 3 text options A, B, C
+              cleanOptions = cleanOptions.slice(0, 3).map((opt, oIdx) => {
+                const val = typeof opt === 'object' && opt !== null ? (opt.value || opt.text || opt.caption || '') : String(opt || '');
+                const cleanVal = String(val || '').replace(/^[A-C][.:]\s*/i, '').trim();
+                return cleanVal;
+              });
+            }
           }
 
           const rawIdx = Number(item.correct_index);
@@ -3074,7 +3086,9 @@ app.get('/api/mcq/:testId', authenticateToken, requireApprovedUser, async (req, 
       args: [testId]
     });
 
-    const questions = qRes.rows.map((q) => {
+    const questions = [];
+    for (let idx = 0; idx < qRes.rows.length; idx++) {
+      const q = qRes.rows[idx];
       let opts = q.options;
       if (typeof opts === 'string') {
         try {
@@ -3091,7 +3105,28 @@ app.get('/api/mcq/:testId', authenticateToken, requireApprovedUser, async (req, 
           acceptable = [];
         }
       }
-      return {
+
+      const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+      const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (idx + 1);
+      const isPart1 = qNum <= 5;
+
+      if (!isPart1) {
+        if (q.question_type === 'matching') {
+          opts = (Array.isArray(opts) ? opts : []).map(opt => typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || ''));
+        } else if (q.question_type === 'mcq') {
+          opts = (Array.isArray(opts) ? opts : []).slice(0, 3).map(opt => typeof opt === 'object' && opt !== null ? (opt.value || opt.text || opt.caption || '') : String(opt || ''));
+        }
+      } else if (Array.isArray(opts)) {
+        for (const opt of opts) {
+          if (opt && typeof opt === 'object' && opt.object_key) {
+            try {
+              opt.image_url = (await generateSignedImageUrl(opt.object_key)) || opt.image_url || '';
+            } catch (_) {}
+          }
+        }
+      }
+
+      questions.push({
         id: q.id,
         test_id: q.test_id,
         question_type: q.question_type || 'mcq',
@@ -3101,8 +3136,8 @@ app.get('/api/mcq/:testId', authenticateToken, requireApprovedUser, async (req, 
         acceptable_answers: Array.isArray(acceptable) ? acceptable : [],
         points: q.points,
         order_index: q.order_index
-      };
-    });
+      });
+    }
 
     let audioUrl = null;
     if (test.audio_path) {
@@ -3557,7 +3592,9 @@ app.get('/api/public/mcq/:code', async (req, res) => {
     });
 
     // CRITICAL: Anti-cheat stripping of correct_index, points, and acceptable_answers
-    const questions = qRes.rows.map((q) => {
+    const questions = [];
+    for (let idx = 0; idx < qRes.rows.length; idx++) {
+      const q = qRes.rows[idx];
       let opts = q.options;
       if (typeof opts === 'string') {
         try {
@@ -3566,13 +3603,34 @@ app.get('/api/public/mcq/:code', async (req, res) => {
           opts = [];
         }
       }
-      return {
+
+      const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+      const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (idx + 1);
+      const isPart1 = qNum <= 5;
+
+      if (!isPart1) {
+        if (q.question_type === 'matching') {
+          opts = (Array.isArray(opts) ? opts : []).map(opt => typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || ''));
+        } else if (q.question_type === 'mcq') {
+          opts = (Array.isArray(opts) ? opts : []).slice(0, 3).map(opt => typeof opt === 'object' && opt !== null ? (opt.value || opt.text || opt.caption || '') : String(opt || ''));
+        }
+      } else if (Array.isArray(opts)) {
+        for (const opt of opts) {
+          if (opt && typeof opt === 'object' && opt.object_key) {
+            try {
+              opt.image_url = (await generateSignedImageUrl(opt.object_key)) || opt.image_url || '';
+            } catch (_) {}
+          }
+        }
+      }
+
+      questions.push({
         id: q.id,
         question_type: q.question_type || 'mcq',
         question_text: q.question_text,
         options: Array.isArray(opts) ? opts : []
-      };
-    });
+      });
+    }
 
     let audioUrl = null;
     if (test.audio_path) {
@@ -4101,11 +4159,24 @@ async function extractVisualOptionCropsFromPdf(pdfBuffer) {
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
     const doc = await pdfjs.getDocument({ data: new Uint8Array(pdfBuffer) }).promise;
     const scale = 2.0;
+    let currentQNum = 1;
 
     for (let pNum = 1; pNum <= doc.numPages; pNum++) {
       const page = await doc.getPage(pNum);
       const viewport = page.getViewport({ scale: 1.0 });
       const textContent = await page.getTextContent();
+
+      const pageStrings = textContent.items.map(it => it.str).filter(s => s && s.trim());
+      const pageFullText = pageStrings.join(' ');
+
+      // Hard stop as soon as Part 2 or beyond is reached
+      if (/part\s*[2-5]/i.test(pageFullText) || /questions?\s*(?:6|1[16]|21)\b/i.test(pageFullText)) {
+        console.log(`[Visual Crop Engine] Reached Part 2/after on page ${pNum}. Stopping extraction.`);
+        break;
+      }
+
+      const isPart1Page = /part\s*1/i.test(pageFullText) || /questions?\s*1\s*[-–]\s*5/i.test(pageFullText) || pNum === 2 || pNum === 3;
+      if (!isPart1Page) continue;
 
       const items = [];
       for (const item of textContent.items) {
@@ -4115,8 +4186,7 @@ async function extractVisualOptionCropsFromPdf(pdfBuffer) {
         items.push({ str, x: tx[4], y: tx[5], w: item.width, h: item.height });
       }
 
-      // Sanitize extracted letters: only allow ['A', 'B', 'C', 'D'].
-      // Fix common OCR / CID font substitutions like 'S' -> 'C'.
+      // Filter letters A, B, C, D (normalizing S -> C)
       const letterItems = [];
       for (const it of items) {
         let clean = it.str.replace(/[()[\]:.]/g, '').trim().toUpperCase();
@@ -4126,7 +4196,7 @@ async function extractVisualOptionCropsFromPdf(pdfBuffer) {
         }
       }
 
-      // Group letters into horizontal rows (Y +- 15px)
+      // Group into horizontal rows (Y +- 15px)
       const rowGroups = [];
       for (const lit of letterItems) {
         let grp = rowGroups.find(g => Math.abs(g.y - lit.y) <= 15);
@@ -4137,68 +4207,67 @@ async function extractVisualOptionCropsFromPdf(pdfBuffer) {
         grp.letters.push(lit);
       }
 
-      let pageBuf = null;
-      let renderViewport = null;
-
+      // Filter to genuine picture rows (span > 120) and sort top-to-bottom
+      const pictureRows = [];
       for (const grp of rowGroups) {
         grp.letters.sort((a, b) => a.x - b.x);
-        // Deduplicate letters that fall on almost the same X coordinate
         const deduped = [];
         for (const l of grp.letters) {
-          if (!deduped.some(d => Math.abs(d.x - l.x) < 25)) {
-            deduped.push(l);
-          }
+          if (!deduped.some(d => Math.abs(d.x - l.x) < 25)) deduped.push(l);
         }
         grp.letters = deduped;
 
-        // Skip rows with no letters
-        if (grp.letters.length === 0) continue;
-
-        const precedingItems = items.filter(it => it.y < grp.y && it.y > grp.y - 180);
-        const precedingText = precedingItems.map(it => it.str).join(' ');
-        if (/example/i.test(precedingText)) continue;
-
-        const cleanPrec = precedingText.replace(/\[\d+\]/g, '').trim();
-        const qNumMatch = cleanPrec.match(/(?:^|\s|\b)([1-9]\d?)\b/);
-        const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : crops.length + 1;
-
-        // Cambridge Part 1 uses a 3-picture layout: Option A, B, C horizontally
-        let finalLetters = [];
-        if (grp.letters.length >= 3) {
+        if (grp.letters.length >= 2) {
           const span = grp.letters[grp.letters.length - 1].x - grp.letters[0].x;
           if (span > 120) {
+            pictureRows.push(grp);
+          }
+        }
+      }
+
+      pictureRows.sort((a, b) => a.y - b.y);
+
+      let pageBuf = null;
+      let renderViewport = null;
+
+      for (const grp of pictureRows) {
+        const precedingItems = items.filter(it => it.y < grp.y && it.y > grp.y - 180);
+        const precedingText = precedingItems.map(it => it.str).join(' ');
+
+        // Check if this is the Example row
+        if (/example/i.test(precedingText) || (pNum === 2 && grp === pictureRows[0] && /lunch/i.test(precedingText))) {
+          continue;
+        }
+
+        // Determine Question Number (strictly 1 to 5)
+        const cleanPrec = precedingText.replace(/\[\d+\]/g, '').trim();
+        const qNumMatch = cleanPrec.match(/(?:^|\s|\b)([1-5])\b/);
+        let qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : currentQNum;
+        if (qNum > 5) continue; // Never exceed Question 5
+
+        currentQNum = Math.max(currentQNum, qNum + 1);
+
+        // Cambridge Part 1 uses 3 pictures: A, B, C horizontally
+        let finalLetters = [];
+        if (grp.letters.length >= 3) {
+          finalLetters = [
+            { ...grp.letters[0], letter: 'A' },
+            { ...grp.letters[1], letter: 'B' },
+            { ...grp.letters[2], letter: 'C' }
+          ];
+        } else if (grp.letters.length === 2) {
+          const dx = grp.letters[1].x - grp.letters[0].x;
+          if (grp.letters[0].x < 190) {
             finalLetters = [
               { ...grp.letters[0], letter: 'A' },
               { ...grp.letters[1], letter: 'B' },
-              { ...grp.letters[2], letter: 'C' }
+              { x: grp.letters[1].x + dx, y: grp.y, w: 10, h: 10, letter: 'C' }
             ];
-          }
-        } else if (grp.letters.length === 2) {
-          const dx = grp.letters[1].x - grp.letters[0].x;
-          if (dx >= 90 && dx <= 250) {
-            if (grp.letters[0].x < 190) {
-              // Detected A and B -> extrapolate C
-              finalLetters = [
-                { ...grp.letters[0], letter: 'A' },
-                { ...grp.letters[1], letter: 'B' },
-                { x: grp.letters[1].x + dx, y: grp.y, w: 10, h: 10, letter: 'C' }
-              ];
-            } else {
-              // Detected B and C -> extrapolate A
-              finalLetters = [
-                { x: Math.max(30, grp.letters[0].x - dx), y: grp.y, w: 10, h: 10, letter: 'A' },
-                { ...grp.letters[0], letter: 'B' },
-                { ...grp.letters[1], letter: 'C' }
-              ];
-            }
-          }
-        } else if (grp.letters.length === 1 && qNumMatch) {
-          // If only 1 letter detected (e.g. A on the left)
-          if (grp.letters[0].x < 180) {
+          } else {
             finalLetters = [
-              { ...grp.letters[0], letter: 'A' },
-              { x: grp.letters[0].x + 165, y: grp.y, w: 10, h: 10, letter: 'B' },
-              { x: grp.letters[0].x + 330, y: grp.y, w: 10, h: 10, letter: 'C' }
+              { x: Math.max(30, grp.letters[0].x - dx), y: grp.y, w: 10, h: 10, letter: 'A' },
+              { ...grp.letters[0], letter: 'B' },
+              { ...grp.letters[1], letter: 'C' }
             ];
           }
         }
@@ -4215,9 +4284,9 @@ async function extractVisualOptionCropsFromPdf(pdfBuffer) {
           for (const l of finalLetters) {
             const centerX = l.x + (l.w ? l.w / 2 : 5);
             const labelY = l.y;
-            const left = Math.max(0, Math.round((centerX - 70) * scale));
+            const left = Math.max(0, Math.round((centerX - 75) * scale));
             const top = Math.max(0, Math.round((labelY - 130) * scale));
-            const width = Math.min(renderViewport.width - left, Math.round(140 * scale));
+            const width = Math.min(renderViewport.width - left, Math.round(150 * scale));
             const height = Math.min(renderViewport.height - top, Math.round(120 * scale));
 
             if (width >= 40 && height >= 40) {
@@ -4378,13 +4447,17 @@ function validateOnlineTestStructure(data) {
       let cleanCorrectAnswer = null;
       let minWords = Number.isInteger(q.min_words) && q.min_words > 0 ? q.min_words : null;
       let maxWords = Number.isInteger(q.max_words) && q.max_words > 0 ? q.max_words : null;
+      const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+      const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (qIdx + 1);
+      const isPart1 = (partNumber === 1 || /part\s*1/i.test(sectionTitle)) && qNum <= 5;
+
       const hasImageUrls = Array.isArray(q.options) && q.options.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
       const allOptionsAreLongText = Array.isArray(q.options) && q.options.length > 0 && q.options.every(opt => {
-        const txt = (typeof opt === 'string' ? opt : (opt.value || opt.text || opt.caption || '')).trim();
+        const txt = (typeof opt === 'string' ? opt : (opt.value || opt.text || opt.caption || opt.statement || '')).trim();
         return txt.length > 20 || txt.split(/\s+/).length >= 4;
       });
 
-      const isVisualOptions = !allOptionsAreLongText && !!(
+      const isVisualOptions = isPart1 && !allOptionsAreLongText && !!(
         hasImageUrls ||
         (q.has_visual_options === true && (Array.isArray(q.options) && q.options.some(opt => {
           if (typeof opt === 'object' && opt !== null) {
@@ -4397,8 +4470,8 @@ function validateOnlineTestStructure(data) {
       const stimulusImageUrl = q.stimulus_image_url ? String(q.stimulus_image_url).trim() : null;
 
       if (qType === 'mcq') {
-        if (!Array.isArray(q.options) || q.options.length < 2 || q.options.length > 5) {
-          return { valid: false, error: `MCQ Question #${qIdx + 1} in section "${sectionTitle}" must contain between 2 and 5 options.` };
+        if (!Array.isArray(q.options) || q.options.length < 2) {
+          return { valid: false, error: `MCQ Question #${qIdx + 1} in section "${sectionTitle}" must contain at least 2 options.` };
         }
         if (isVisualOptions) {
           cleanOptions = q.options.map((opt, oIdx) => {
@@ -4421,37 +4494,42 @@ function validateOnlineTestStructure(data) {
               image_index: oIdx
             };
           });
+          const rawAns = Number(q.correct_answer);
+          if (!Number.isInteger(rawAns) || rawAns < 0 || rawAns >= cleanOptions.length) {
+            return { valid: false, error: `MCQ Question #${qIdx + 1} in section "${sectionTitle}" correct_answer must be an integer index between 0 and ${cleanOptions.length - 1} (received: ${q.correct_answer}).` };
+          }
+          cleanCorrectAnswer = rawAns;
         } else {
-          cleanOptions = q.options.map((opt, oIdx) => {
-            if (typeof opt === 'object' && opt !== null) {
-              const label = typeof opt.label === 'string' && opt.label.trim() ? opt.label.trim().toUpperCase() : String.fromCharCode(65 + oIdx);
-              const value = opt.value !== undefined ? String(opt.value).trim() : (opt.text ? String(opt.text).trim() : '');
-              return { type: 'text', label, value };
-            }
-            return { type: 'text', label: String.fromCharCode(65 + oIdx), value: String(opt || '').trim() };
+          // Strictly text options: for Part 2 & Part 4, force exactly 3 options (A, B, C)
+          let rawOpts = q.options;
+          if (!isPart1 && rawOpts.length > 3) {
+            rawOpts = rawOpts.slice(0, 3);
+          }
+          cleanOptions = rawOpts.map((opt, oIdx) => {
+            const label = ['A', 'B', 'C', 'D', 'E'][oIdx] || String.fromCharCode(65 + oIdx);
+            const val = typeof opt === 'object' && opt !== null 
+              ? (opt.value !== undefined ? String(opt.value).trim() : (opt.text ? String(opt.text).trim() : (opt.caption ? String(opt.caption).trim() : '')))
+              : String(opt || '').trim();
+            const cleanVal = val.replace(/^[A-E][.:]\s*/i, '').trim();
+            return { type: 'text', label, value: cleanVal };
           }).filter(o => Boolean(o.value));
           if (cleanOptions.length < 2) {
             return { valid: false, error: `MCQ Question #${qIdx + 1} in section "${sectionTitle}" has invalid or empty options.` };
           }
+          const rawAns = Number(q.correct_answer);
+          cleanCorrectAnswer = (!Number.isInteger(rawAns) || rawAns < 0 || rawAns >= cleanOptions.length) ? 0 : rawAns;
         }
-
-        const rawAns = Number(q.correct_answer);
-        if (!Number.isInteger(rawAns) || rawAns < 0 || rawAns >= cleanOptions.length) {
-          return { valid: false, error: `MCQ Question #${qIdx + 1} in section "${sectionTitle}" correct_answer must be an integer index between 0 and ${cleanOptions.length - 1} (received: ${q.correct_answer}).` };
-        }
-        cleanCorrectAnswer = rawAns;
 
       } else if (qType === 'matching') {
         if (!Array.isArray(q.options) || q.options.length < 2) {
           return { valid: false, error: `Matching Question #${qIdx + 1} in section "${sectionTitle}" must contain at least 2 options.` };
         }
         cleanOptions = q.options.map((opt, oIdx) => {
-          if (typeof opt === 'object' && opt !== null) {
-            const label = typeof opt.label === 'string' && opt.label.trim() ? opt.label.trim().toUpperCase() : String.fromCharCode(65 + oIdx);
-            const value = opt.value !== undefined ? String(opt.value).trim() : (opt.text ? String(opt.text).trim() : '');
-            return { type: 'text', label, value };
-          }
-          return { type: 'text', label: String.fromCharCode(65 + oIdx), value: String(opt || '').trim() };
+          const label = (typeof opt === 'object' && opt && opt.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+          const val = typeof opt === 'object' && opt !== null 
+            ? (opt.value !== undefined ? String(opt.value).trim() : (opt.text ? String(opt.text).trim() : (opt.statement ? String(opt.statement).trim() : (opt.caption ? String(opt.caption).trim() : '')))) 
+            : String(opt || '').trim();
+          return { type: 'text', label, value: val };
         }).filter(o => Boolean(o.value));
         if (cleanOptions.length < 2) {
           return { valid: false, error: `Matching Question #${qIdx + 1} in section "${sectionTitle}" has invalid or empty options.` };
@@ -4957,14 +5035,17 @@ OUTPUT SCHEMA (Strict JSON):
                   qNum = parseInt(qNumMatch[1], 10);
                 }
 
+                const secPart = Number(sec.part_number) || 1;
+                const isPart1 = (secPart === 1 || /part\s*1/i.test(sec.section_title || '')) && (qNum === null || qNum <= 5);
+
                 const hasImageUrls = Array.isArray(q.options) && q.options.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
                 const allOptionsAreLongText = Array.isArray(q.options) && q.options.length > 0 && q.options.every(opt => {
-                  const txt = (typeof opt === 'string' ? opt : (opt.value || opt.text || opt.caption || '')).trim();
+                  const txt = (typeof opt === 'string' ? opt : (opt.value || opt.text || opt.caption || opt.statement || '')).trim();
                   return txt.length > 20 || txt.split(/\s+/).length >= 4;
                 });
 
-                const hasMatchingCrops = qNum !== null && visualCrops.some(c => c.questionNumber === qNum);
-                const hasVisualChoicePattern = Array.isArray(q.options) && q.options.some(opt => {
+                const hasMatchingCrops = isPart1 && qNum !== null && visualCrops.some(c => c.questionNumber === qNum);
+                const hasVisualChoicePattern = isPart1 && Array.isArray(q.options) && q.options.some(opt => {
                   if (typeof opt === 'object' && opt !== null) {
                     if (opt.type === 'image' || opt.image_index !== undefined || opt.image_url || opt.object_key) return true;
                     const val = String(opt.value || opt.text || opt.caption || '').trim().toLowerCase();
@@ -4974,62 +5055,66 @@ OUTPUT SCHEMA (Strict JSON):
                   return /\[?picture\s*[a-z]\]?/i.test(s) || s.startsWith('picture ');
                 });
 
-                // A question should ONLY have visual options if:
-                // 1. It explicitly matches visual question crop coordinates OR has valid image_url in options.
-                // 2. Options are NOT long prose sentences (e.g. "The gallery is open every day").
-                const isExplicitlyVisual = (hasMatchingCrops || hasImageUrls || (q.has_visual_options === true && hasVisualChoicePattern)) && !allOptionsAreLongText;
+                // A question should ONLY have visual options if strictly in Part 1 (Questions 1-5):
+                const isExplicitlyVisual = isPart1 && (hasMatchingCrops || hasImageUrls || (q.has_visual_options === true && hasVisualChoicePattern)) && !allOptionsAreLongText;
 
                 if (isExplicitlyVisual) {
                   q.has_visual_options = true;
-                  q.options = (Array.isArray(q.options) ? q.options : []).map((opt, oIdx) => {
-                    let rawLabel = String.fromCharCode(65 + oIdx);
+                  q.options = ['A', 'B', 'C'].map((letter, idx) => {
+                    const matchedCrop = visualCrops.find(c => c.questionNumber === qNum && c.letter === letter);
+                    const origOpt = Array.isArray(q.options) ? q.options[idx] : null;
                     let caption = '';
                     let existingUrl = '';
                     let existingKey = null;
 
-                    if (typeof opt === 'object' && opt !== null) {
-                      if (opt.label) rawLabel = String(opt.label).trim().toUpperCase();
-                      caption = opt.caption || opt.value || opt.text || '';
-                      existingUrl = opt.image_url || '';
-                      existingKey = opt.object_key || null;
-                    } else {
-                      const str = String(opt || '').trim();
-                      const match = str.match(/picture\s*([a-z])/i);
-                      if (match) rawLabel = match[1].toUpperCase();
+                    if (typeof origOpt === 'object' && origOpt !== null) {
+                      caption = origOpt.caption || origOpt.value || origOpt.text || '';
+                      existingUrl = origOpt.image_url || '';
+                      existingKey = origOpt.object_key || null;
+                    } else if (origOpt) {
+                      const str = String(origOpt).trim();
                       caption = str.replace(/\[?picture\s*[a-z]\]?/gi, '').replace(/^[A-D]:\s*/i, '').trim();
-                    }
-
-                    // Sanitize letter: only allow A, B, C, D and fix 'S' -> 'C'
-                    if (rawLabel === 'S') rawLabel = 'C';
-                    const label = ['A', 'B', 'C', 'D'].includes(rawLabel) ? rawLabel : String.fromCharCode(65 + oIdx);
-
-                    // Strictly align crops by Question Number and Option Letter
-                    let matchedCrop = null;
-                    if (visualCrops.length > 0 && qNum) {
-                      matchedCrop = visualCrops.find(c => c.questionNumber === qNum && c.letter === label);
                     }
 
                     return {
                       type: 'image',
-                      label,
+                      label: letter,
                       object_key: matchedCrop ? matchedCrop.object_key : (existingKey || null),
                       image_url: matchedCrop ? matchedCrop.url : (existingUrl || ''),
-                      caption
+                      caption: caption || `Picture ${letter}`
                     };
                   });
                   globalChoiceImgCounter += q.options.length;
-                } else if (Array.isArray(q.options)) {
+                } else {
                   q.has_visual_options = false;
-                  q.options = q.options.map((opt, oIdx) => {
-                    const rawLabel = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
-                    const label = ['A', 'B', 'C', 'D'].includes(rawLabel) ? (rawLabel === 'S' ? 'C' : rawLabel) : String.fromCharCode(65 + oIdx);
-                    const val = typeof opt === 'string' ? opt : (opt?.value !== undefined ? String(opt.value) : (opt?.text !== undefined ? String(opt.text) : (opt?.caption || '')));
-                    return {
-                      type: 'text',
-                      label,
-                      value: String(val || '').trim()
-                    };
-                  });
+                  if (q.question_type === 'matching') {
+                    q.options = (Array.isArray(q.options) ? q.options : []).map((opt, oIdx) => {
+                      const rawLabel = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+                      const textVal = typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || '');
+                      return {
+                        type: 'text',
+                        label: rawLabel,
+                        value: String(textVal || '').trim()
+                      };
+                    }).filter(o => Boolean(o.value));
+                  } else if (Array.isArray(q.options)) {
+                    // For Part 2 (Q6-10) and Part 4 (Q16-20), slice strictly to 3 options (A, B, C)
+                    const rawOpts = !isPart1 && q.options.length > 3 ? q.options.slice(0, 3) : q.options;
+                    q.options = rawOpts.map((opt, oIdx) => {
+                      const label = ['A', 'B', 'C', 'D', 'E'][oIdx] || String.fromCharCode(65 + oIdx);
+                      const rawVal = typeof opt === 'string' ? opt : (opt?.value !== undefined ? String(opt.value) : (opt?.text !== undefined ? String(opt.text) : (opt?.caption || '')));
+                      const cleanVal = String(rawVal || '').replace(/^[A-E][.:]\s*/i, '').trim();
+                      return {
+                        type: 'text',
+                        label,
+                        value: cleanVal
+                      };
+                    });
+                    const cAns = Number(q.correct_answer);
+                    if (!Number.isInteger(cAns) || cAns < 0 || cAns >= q.options.length) {
+                      q.correct_answer = 0;
+                    }
+                  }
                 }
               }
             }
@@ -5339,17 +5424,39 @@ app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, asy
         const pts = Number(q.points) || 1;
         totalMarks += pts;
 
+        const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+        const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : null;
+        const isPart1 = (Number(sec.part_number) === 1 || /part\s*1/i.test(sec.section_title || '')) && (qNum === null || qNum <= 5);
+
         // Safety heuristic: If options are long sentences and have no image URLs, force has_visual_options = false
         const hasImageUrls = Array.isArray(parsedOptions) && parsedOptions.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
         const allOptionsAreLongText = Array.isArray(parsedOptions) && parsedOptions.length > 0 && parsedOptions.every(opt => {
-          const txt = (typeof opt === 'string' ? opt : (opt.value || opt.text || opt.caption || '')).trim();
+          const txt = (typeof opt === 'string' ? opt : (opt.value || opt.text || opt.caption || opt.statement || '')).trim();
           return txt.length > 20 || txt.split(/\s+/).length >= 4;
         });
 
-        let isVisualQ = Number(q.has_visual_options) === 1 || q.has_visual_options === true;
-        if (allOptionsAreLongText && !hasImageUrls) {
+        let isVisualQ = isPart1 && (Number(q.has_visual_options) === 1 || q.has_visual_options === true) && !(allOptionsAreLongText && !hasImageUrls);
+
+        if (!isPart1) {
           isVisualQ = false;
-          parsedOptions = parsedOptions.map((opt, oIdx) => {
+          if (q.question_type === 'matching') {
+            parsedOptions = (Array.isArray(parsedOptions) ? parsedOptions : []).map((opt, oIdx) => {
+              const rawLabel = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+              const textVal = typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || '');
+              return { type: 'text', label: rawLabel, value: String(textVal || '').trim() };
+            }).filter(o => Boolean(o.value));
+          } else if (Array.isArray(parsedOptions)) {
+            // Strictly 3 text options for Part 2 & Part 4
+            parsedOptions = parsedOptions.slice(0, 3).map((opt, oIdx) => {
+              const label = ['A', 'B', 'C'][oIdx] || String.fromCharCode(65 + oIdx);
+              const val = typeof opt === 'string' ? opt : (opt?.value !== undefined ? String(opt.value) : (opt?.text !== undefined ? String(opt.text) : (opt?.caption || '')));
+              const cleanVal = String(val || '').replace(/^[A-C][.:]\s*/i, '').trim();
+              return { type: 'text', label, value: cleanVal };
+            });
+          }
+        } else if (allOptionsAreLongText && !hasImageUrls) {
+          isVisualQ = false;
+          parsedOptions = (Array.isArray(parsedOptions) ? parsedOptions : []).map((opt, oIdx) => {
             const rawLabel = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
             const label = ['A', 'B', 'C', 'D'].includes(rawLabel) ? (rawLabel === 'S' ? 'C' : rawLabel) : String.fromCharCode(65 + oIdx);
             const val = typeof opt === 'string' ? opt : (opt?.value !== undefined ? String(opt.value) : (opt?.text !== undefined ? String(opt.text) : (opt?.caption || '')));
@@ -5929,7 +6036,11 @@ app.post('/api/online-tests/:testId/publish', authenticateToken, requireApproved
         return txt.length > 20 || txt.split(/\s+/).length >= 4;
       });
 
-      const isVisualQ = (Number(q.has_visual_options) === 1 || (q.options && q.options.includes('"type":"image"'))) && !(allOptionsAreLongText && !hasImageUrls);
+      const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+      const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : null;
+      const isPart1 = (qNum === null || qNum <= 5) && !/part\s*[2-5]/i.test(q.section_title || '');
+
+      const isVisualQ = isPart1 && (Number(q.has_visual_options) === 1 || (q.options && q.options.includes('"type":"image"'))) && !(allOptionsAreLongText && !hasImageUrls);
 
       if (isVisualQ) {
         if (Array.isArray(opts)) {
@@ -6480,14 +6591,39 @@ app.get('/api/public/online-tests/:code', async (req, res) => {
 
         totalQuestionsCount++;
 
+        const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+        const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : null;
+        const isPart1 = (Number(sec.part_number) === 1 || /part\s*1/i.test(sec.section_title || '')) && (qNum === null || qNum <= 5);
+
+        let isVisualQ = isPart1 && (Number(q.has_visual_options) === 1 || q.has_visual_options === true);
+        let finalOpts = Array.isArray(opts) ? opts : [];
+
+        if (!isPart1) {
+          isVisualQ = false;
+          if (q.question_type === 'matching') {
+            finalOpts = finalOpts.map((opt, oIdx) => {
+              const rawLabel = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+              const textVal = typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || '');
+              return { type: 'text', label: rawLabel, value: String(textVal || '').trim() };
+            }).filter(o => Boolean(o.value));
+          } else if (q.question_type === 'mcq') {
+            finalOpts = finalOpts.slice(0, 3).map((opt, oIdx) => {
+              const rawLabel = ['A', 'B', 'C'][oIdx] || String.fromCharCode(65 + oIdx);
+              const val = typeof opt === 'string' ? opt : (opt?.value !== undefined ? String(opt.value) : (opt?.text !== undefined ? String(opt.text) : (opt?.caption || '')));
+              const cleanVal = String(val || '').replace(/^[A-C][.:]\s*/i, '').trim();
+              return { type: 'text', label: rawLabel, value: cleanVal };
+            });
+          }
+        }
+
         sanitizedQuestions.push({
           id: Number(q.id),
           section_id: Number(q.section_id),
           question_type: q.question_type || 'mcq',
           question_text: q.question_text || '',
-          options: Array.isArray(opts) ? opts : [],
+          options: finalOpts,
           stimulus_image_url: q.stimulus_image_url || null,
-          has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true,
+          has_visual_options: isVisualQ,
           group_title: q.group_title || null,
           group_instructions: q.group_instructions || null,
           word_bank: cleanWordBank || null,

@@ -1051,7 +1051,9 @@ function renderMcqEditor() {
               style="padding: 5px 8px; border-radius: 4px; border: 1px solid var(--border); font-size: 12.5px;">
               ${opts.map((optText, optIdx) => {
                 const letter = optionLetters[optIdx] || String(optIdx + 1);
-                return `<option value="${optIdx}" ${Number(q.correct_index) === optIdx ? 'selected' : ''}>Statement ${letter}</option>`;
+                const textVal = typeof optText === 'string' ? optText : (optText?.text || optText?.statement || optText?.value || optText?.caption || '');
+                const preview = textVal ? ': ' + textVal.slice(0, 35) + (textVal.length > 35 ? '...' : '') : '';
+                return `<option value="${optIdx}" ${Number(q.correct_index) === optIdx ? 'selected' : ''}>Statement ${letter}${escapeHtml(preview)}</option>`;
               }).join('')}
             </select>
           </div>
@@ -1059,11 +1061,12 @@ function renderMcqEditor() {
             ${opts.map((optText, optIdx) => {
               const letter = optionLetters[optIdx] || String(optIdx + 1);
               const isCorrect = Number(q.correct_index) === optIdx;
+              const textVal = typeof optText === 'string' ? optText : (optText?.text || optText?.statement || optText?.value || optText?.caption || '');
               return `
                 <div class="mcq-option-row ${isCorrect ? 'correct' : ''}" id="mcq-opt-row-${q.id}-${optIdx}">
                   <span class="mcq-opt-label">${letter}.</span>
                   <input type="text" class="mcq-opt-input" id="mcq-opt-input-${q.id}-${optIdx}"
-                    value="${escapeHtml(optText || '')}" placeholder="Statement ${letter} text..."
+                    value="${escapeHtml(textVal)}" placeholder="Statement ${letter} text..."
                     oninput="onQuestionFieldChanged(${q.id})" />
                 </div>
               `;
@@ -1073,7 +1076,14 @@ function renderMcqEditor() {
       `;
     } else {
       // 'mcq'
-      const isVisual = Array.isArray(opts) && opts.some(o => typeof o === 'object' && o !== null && (o.type === 'image' || o.image_url));
+      const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+      const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (qIdx + 1);
+      const isPart1 = qNum <= 5;
+      let displayOpts = Array.isArray(opts) ? opts : [];
+      if (!isPart1) {
+        displayOpts = displayOpts.slice(0, 3);
+      }
+      const isVisual = isPart1 && displayOpts.some(o => typeof o === 'object' && o !== null && (o.type === 'image' || o.image_url));
       if (isVisual) {
         bodyHtml = `
           <div>
@@ -1081,7 +1091,7 @@ function renderMcqEditor() {
               Visual Picture Options (Select radio for correct answer, edit caption):
             </label>
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 8px;">
-              ${opts.map((opt, optIdx) => {
+              ${displayOpts.map((opt, optIdx) => {
                 const isCorrect = Number(q.correct_index) === optIdx;
                 const rawL = (opt && opt.label) ? String(opt.label).trim().toUpperCase() : (optionLetters[optIdx] || String(optIdx + 1));
                 const letter = rawL === 'S' ? 'C' : rawL;
@@ -1114,17 +1124,18 @@ function renderMcqEditor() {
               Options & Correct Answer (Select the radio button for the correct option)
             </label>
             <div class="mcq-options-grid">
-              ${opts.map((optText, optIdx) => {
+              ${displayOpts.map((optText, optIdx) => {
                 const isCorrect = Number(q.correct_index) === optIdx;
                 const letter = optionLetters[optIdx] || String(optIdx + 1);
-                const val = typeof optText === 'object' && optText !== null ? (optText.value || optText.caption || optText.text || '') : String(optText || '');
+                const rawVal = typeof optText === 'object' && optText !== null ? (optText.value || optText.caption || optText.text || optText.statement || '') : String(optText || '');
+                const cleanVal = String(rawVal || '').replace(/^[A-E][.:]\s*/i, '').trim();
                 return `
                   <div class="mcq-option-row ${isCorrect ? 'correct' : ''}" id="mcq-opt-row-${q.id}-${optIdx}">
                     <input type="radio" name="mcq-correct-${q.id}" class="mcq-radio"
                       ${isCorrect ? 'checked' : ''} onchange="onRadioCorrectChanged(${q.id}, ${optIdx})" />
                     <span class="mcq-opt-label">${letter}.</span>
                     <input type="text" class="mcq-opt-input" id="mcq-opt-input-${q.id}-${optIdx}"
-                      value="${escapeHtml(val)}" placeholder="Option ${letter} text..."
+                      value="${escapeHtml(cleanVal)}" placeholder="Option ${letter} text..."
                       oninput="onQuestionFieldChanged(${q.id})" />
                   </div>
                 `;
@@ -1248,8 +1259,11 @@ async function executeQuestionSave(questionId) {
     correct_index = isNaN(selVal) ? 0 : selVal;
   } else {
     // 'mcq'
-    const isVisual = Array.isArray(q?.options) && q.options.some(o => typeof o === 'object' && o !== null && (o.type === 'image' || o.image_url));
-    const optCount = Array.isArray(q?.options) ? q.options.length : 4;
+    const qNumMatch = (q?.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+    const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (currentMcqQuestions.findIndex(x => x.id === questionId) + 1);
+    const isPart1 = qNum <= 5;
+    const isVisual = isPart1 && Array.isArray(q?.options) && q.options.some(o => typeof o === 'object' && o !== null && (o.type === 'image' || o.image_url));
+    const optCount = isPart1 ? (Array.isArray(q?.options) ? q.options.length : 3) : 3;
     for (let i = 0; i < optCount; i++) {
       const optEl = document.getElementById(`mcq-opt-input-${questionId}-${i}`);
       const val = optEl ? optEl.value.trim() : '';

@@ -2728,14 +2728,20 @@ function renderQuestion(sec, q, displayNum) {
   let inputMarkup = '';
 
   if (qType === 'mcq') {
-    const opts = Array.isArray(q.options) ? q.options : [];
+    const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+    const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : displayNum;
+    const isPart1 = qNum <= 5;
+    let opts = Array.isArray(q.options) ? q.options : [];
+    if (!isPart1) {
+      opts = opts.slice(0, 3);
+    }
     const hasImageUrls = opts.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
     const allOptionsAreLongText = opts.length > 0 && opts.every(opt => {
-      const txt = (typeof opt === 'string' ? opt : (opt?.value || opt?.text || opt?.caption || '')).trim();
+      const txt = (typeof opt === 'string' ? opt : (opt?.value || opt?.text || opt?.caption || opt?.statement || '')).trim();
       return txt.length > 20 || txt.split(/\s+/).length >= 4;
     });
     const hasVisualType = opts.some(opt => typeof opt === 'object' && opt !== null && (opt.type === 'image' || opt.image_url || opt.object_key));
-    const isVisual = (Number(q.has_visual_options) === 1 || q.has_visual_options === true) && (hasVisualType || !allOptionsAreLongText);
+    const isVisual = isPart1 && (Number(q.has_visual_options) === 1 || q.has_visual_options === true) && (hasVisualType || !allOptionsAreLongText);
 
     if (isVisual) {
       inputMarkup = `
@@ -2768,7 +2774,8 @@ function renderQuestion(sec, q, displayNum) {
           ${opts.map((opt, oIdx) => {
             const rawL = (typeof opt === 'object' && opt && opt.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
             const letter = rawL === 'S' ? 'C' : (['A', 'B', 'C', 'D'].includes(rawL) ? rawL : String.fromCharCode(65 + oIdx));
-            const textVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.text || opt.caption || '')) : String(opt || '');
+            const rawVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.text || opt.caption || opt.statement || '')) : String(opt || '');
+            const textVal = String(rawVal || '').replace(/^[A-E][.:]\s*/i, '').trim();
             return `
               <div class="mcq-choice-row" id="mcq-opt-${q.id}-${oIdx}" onclick="handleSelectMcq(${q.id}, '${oIdx}')">
                 <span class="mcq-letter">${letter}</span>
@@ -2786,7 +2793,7 @@ function renderQuestion(sec, q, displayNum) {
         <option value="">-- Select matching option --</option>
         ${opts.map((opt, oIdx) => {
           const letter = (typeof opt === 'object' && opt && opt.label) ? opt.label : String.fromCharCode(65 + oIdx);
-          const textVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.caption || '')) : String(opt || '');
+          const textVal = (typeof opt === 'object' && opt !== null) ? (opt.text !== undefined ? opt.text : (opt.statement !== undefined ? opt.statement : (opt.value !== undefined ? opt.value : (opt.caption || '')))) : String(opt || '');
           return `
             <option value="${oIdx}">Option ${letter}: ${escapeHtml(textVal)}</option>
           `;

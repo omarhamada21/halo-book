@@ -604,18 +604,26 @@
               <option value="">-- Choose matching statement --</option>
               ${opts.map((opt, i) => {
                 const letter = optionLetters[i] || String(i + 1);
-                return `<option value="${i}">${letter}. ${escapeHtml(opt)}</option>`;
+                const textVal = typeof opt === 'string' ? opt : (opt?.text || opt?.statement || opt?.value || opt?.caption || '');
+                return `<option value="${i}">${letter}. ${escapeHtml(textVal)}</option>`;
               }).join('')}
             </select>
           </div>
         `;
       } else {
         // 'mcq'
-        const isVisual = Array.isArray(opts) && opts.some(o => typeof o === 'object' && o !== null && (o.type === 'image' || o.image_url));
+        const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+        const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (idx + 1);
+        const isPart1 = qNum <= 5;
+        let displayOpts = Array.isArray(opts) ? opts : [];
+        if (!isPart1) {
+          displayOpts = displayOpts.slice(0, 3);
+        }
+        const isVisual = isPart1 && displayOpts.some(o => typeof o === 'object' && o !== null && (o.type === 'image' || o.image_url));
         if (isVisual) {
           contentHtml = `
             <div class="mcq-visual-options-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-top: 12px;">
-              ${opts.map((opt, optIdx) => {
+              ${displayOpts.map((opt, optIdx) => {
                 const rawL = (opt && opt.label) ? String(opt.label).trim().toUpperCase() : (optionLetters[optIdx] || String(optIdx + 1));
                 const letter = rawL === 'S' ? 'C' : rawL;
                 const imgUrl = (opt && opt.image_url) ? opt.image_url : '';
@@ -640,15 +648,16 @@
         } else {
           contentHtml = `
             <div class="options-list">
-              ${opts.map((optText, optIdx) => {
+              ${displayOpts.map((optText, optIdx) => {
                 const letter = optionLetters[optIdx] || String(optIdx + 1);
-                const val = typeof optText === 'object' && optText !== null ? (optText.value || optText.caption || optText.text || '') : String(optText || '');
+                const rawVal = typeof optText === 'object' && optText !== null ? (optText.value || optText.caption || optText.text || optText.statement || '') : String(optText || '');
+                const cleanVal = String(rawVal || '').replace(/^[A-E][.:]\s*/i, '').trim();
                 return `
                   <div class="opt-choice" id="opt-choice-${q.id}-${optIdx}" onclick="selectStudentOption(${q.id}, ${optIdx})">
                     <input type="radio" name="question_${q.id}" id="opt-radio-${q.id}-${optIdx}" value="${optIdx}" class="opt-radio"
                       onclick="event.stopPropagation(); selectStudentOption(${q.id}, ${optIdx});" />
                     <span class="opt-letter">${letter}.</span>
-                    <span class="opt-text">${escapeHtml(val)}</span>
+                    <span class="opt-text">${escapeHtml(cleanVal)}</span>
                   </div>
                 `;
               }).join('')}

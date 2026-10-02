@@ -514,15 +514,21 @@ function renderQuestionCard(sectionId, q, displayNum) {
   }
 
   if (qType === 'mcq') {
-    const opts = Array.isArray(q.options) ? q.options : [];
+    const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+    const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : null;
+    const isPart1 = qNum === null || qNum <= 5;
+    let opts = Array.isArray(q.options) ? q.options : [];
+    if (!isPart1) {
+      opts = opts.slice(0, 3);
+    }
     const correctIdx = Number(q.correct_answer) || 0;
     const hasImageUrls = opts.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
     const allOptionsAreLongText = opts.length > 0 && opts.every(opt => {
-      const txt = (typeof opt === 'string' ? opt : (opt?.value || opt?.text || opt?.caption || '')).trim();
+      const txt = (typeof opt === 'string' ? opt : (opt?.value || opt?.text || opt?.caption || opt?.statement || '')).trim();
       return txt.length > 20 || txt.split(/\s+/).length >= 4;
     });
     const hasVisualType = opts.some(opt => typeof opt === 'object' && opt !== null && (opt.type === 'image' || opt.image_url || opt.object_key));
-    const isVisual = (Number(q.has_visual_options) === 1 || q.has_visual_options === true) && (hasVisualType || !allOptionsAreLongText);
+    const isVisual = isPart1 && (Number(q.has_visual_options) === 1 || q.has_visual_options === true) && (hasVisualType || !allOptionsAreLongText);
 
     if (isVisual) {
       controlsHtml = `
@@ -570,7 +576,8 @@ function renderQuestionCard(sectionId, q, displayNum) {
           <div class="fb-label">Options (Click dot to set correct answer):</div>
           <div class="ot-options-vertical-list">
             ${opts.map((opt, oIdx) => {
-              const optVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.text || opt.caption || '')) : String(opt || '');
+              const rawVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.text || opt.caption || opt.statement || '')) : String(opt || '');
+              const optVal = String(rawVal || '').replace(/^[A-E][.:]\s*/i, '').trim();
               return `
               <div class="ot-opt-row ${oIdx === correctIdx ? 'is-correct' : ''}">
                 <span class="ot-opt-radio" onclick="setMcqCorrectOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Click to set as correct answer">
@@ -596,7 +603,7 @@ function renderQuestionCard(sectionId, q, displayNum) {
         <div class="fb-label">Correct Statement Match:</div>
         <select class="ot-select" onchange="handleMatchingCorrectChange(${currentReviewTest.id}, ${q.id}, this.value)" style="margin-top:4px;">
           ${opts.map((opt, oIdx) => {
-            const optVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.caption || '')) : String(opt || '');
+            const optVal = (typeof opt === 'object' && opt !== null) ? (opt.text !== undefined ? opt.text : (opt.statement !== undefined ? opt.statement : (opt.value !== undefined ? opt.value : (opt.caption || '')))) : String(opt || '');
             return `
             <option value="${oIdx}" ${oIdx === correctIdx ? 'selected' : ''}>Option ${String.fromCharCode(65 + oIdx)}: ${escapeHtml(optVal.slice(0, 45))}</option>
           `;}).join('')}
@@ -1499,14 +1506,14 @@ function renderAttemptQuestionsBreakdown(testId, attempt) {
 
       const sIdx = parseInt(ans.student_answer, 10);
       if (!isNaN(sIdx) && options[sIdx]) {
-        studentText = typeof options[sIdx] === 'string' ? options[sIdx] : (options[sIdx].text || options[sIdx].label || options[sIdx]);
+        studentText = typeof options[sIdx] === 'string' ? options[sIdx] : (options[sIdx].text || options[sIdx].statement || options[sIdx].value || options[sIdx].caption || options[sIdx].label || '');
       } else if (ans.student_answer) {
         studentText = String(ans.student_answer);
       }
 
       const cIdx = parseInt(ans.correct_answer, 10);
       if (!isNaN(cIdx) && options[cIdx]) {
-        correctText = typeof options[cIdx] === 'string' ? options[cIdx] : (options[cIdx].text || options[cIdx].label || options[cIdx]);
+        correctText = typeof options[cIdx] === 'string' ? options[cIdx] : (options[cIdx].text || options[cIdx].statement || options[cIdx].value || options[cIdx].caption || options[cIdx].label || '');
       } else if (ans.correct_answer) {
         correctText = String(ans.correct_answer);
       }
