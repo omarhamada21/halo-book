@@ -1074,6 +1074,12 @@
         border: 1px solid #6EE7B7;
       }
 
+      .ot-badge-closed {
+        background: #FEE2E2;
+        color: #991B1B;
+        border: 1px solid #FCA5A5;
+      }
+
       .ot-code-badge {
         font-family: 'IBM Plex Mono', monospace;
         font-size: 12px;
@@ -1944,6 +1950,21 @@
         background: #D1FAE5;
         color: #065F46;
         border: 1px solid #A7F3D0;
+      }
+
+      .ot-badge-closed {
+        background: #FEE2E2;
+        color: #991B1B;
+        border: 1px solid #FCA5A5;
+      }
+
+      .ot-review-sec-card .result-body.open {
+        max-height: none !important;
+        overflow: visible !important;
+      }
+
+      .ot-dropdown-item:hover {
+        background: #F1F5F9 !important;
       }
 
       .ot-code-badge {
@@ -2827,10 +2848,27 @@
             <span id="ot-autosave-indicator"
               style="font-size: 12px; font-family: 'IBM Plex Mono', monospace; color: #059669; opacity: 0.8; transition: opacity 0.3s;">Autosaved
               ✓</span>
-            <button type="button" class="primary" id="btn-publish-online-test" onclick="publishOnlineTest()"
-              style="padding: 8px 18px; font-size: 13.5px; font-weight: 600;">
-              🚀 Publish Test
-            </button>
+            <div id="ot-publish-btn-wrapper" style="position: relative; display: inline-block;">
+              <button type="button" class="primary" id="btn-publish-online-test" onclick="handleOnlineTestPublishBtnClick(event)"
+                style="padding: 8px 18px; font-size: 13.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                🚀 Publish Test
+              </button>
+              <div id="ot-publish-menu-dropdown" style="display: none; position: absolute; right: 0; top: calc(100% + 6px); background: #ffffff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); min-width: 220px; z-index: 1000; overflow: hidden; padding: 6px 0;">
+                <button type="button" class="ot-dropdown-item" onclick="openOnlineTestDeadlineModalFromReview()" style="width: 100%; text-align: left; padding: 10px 16px; background: none; border: none; font-size: 13px; color: var(--ink); cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                  ✏️ Edit Deadline
+                </button>
+                <button type="button" class="ot-dropdown-item" id="ot-menu-close-now-btn" onclick="closeOnlineTestImmediatelyFromReview()" style="width: 100%; text-align: left; padding: 10px 16px; background: none; border: none; font-size: 13px; color: #DC2626; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                  ⏹️ Close Test Now
+                </button>
+                <div style="height: 1px; background: var(--paper-line); margin: 4px 0;"></div>
+                <button type="button" class="ot-dropdown-item" onclick="copyReviewOnlineTestStudentLink()" style="width: 100%; text-align: left; padding: 10px 16px; background: none; border: none; font-size: 13px; color: var(--ink); cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                  📋 Copy Student Link
+                </button>
+                <button type="button" class="ot-dropdown-item" onclick="viewOnlineTestSubmissionsFromReview()" style="width: 100%; text-align: left; padding: 10px 16px; background: none; border: none; font-size: 13px; color: var(--ink); cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                  👥 View Submissions
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -3089,6 +3127,62 @@
         <button id="save-deadline-btn" onclick="saveAssignmentDeadline()"
           style="background:var(--pen); color:#fff; border:none; padding:8px 16px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Save
           Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Online Test Deadline Edit Modal -->
+  <div id="ot-deadline-edit-modal"
+    style="display:none; position:fixed; inset:0; background:rgba(22,35,63,0.55); backdrop-filter:blur(4px); z-index:10002; align-items:center; justify-content:center; padding:16px;">
+    <div
+      style="background:#FBFCFE; border:1px solid #C2CEE7; border-radius:12px; max-width:420px; width:100%; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,0.18);">
+      <div
+        style="font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; color:var(--pen); letter-spacing:0.08em; margin-bottom:4px;">
+        Online Test Settings</div>
+      <h3 style="margin:0 0 10px; font-size:18px; font-family:'Source Serif 4',serif; color:#16233F;">Edit Online Test Deadline</h3>
+      <p style="margin:0 0 16px; font-size:13px; color:var(--ink-soft); line-height: 1.4;">Select a new date and 12-hour AM/PM time (Cairo Time).</p>
+
+      <div style="margin-bottom:18px;">
+        <label style="display:block; font-size:12.5px; font-weight:600; margin-bottom:6px;">New Deadline Date & Time</label>
+        <div class="picker-12h-wrap">
+          <input type="date" id="ot-edit-date" style="flex: 2; min-width: 140px;" />
+          <select id="ot-edit-hour" style="flex: 1;">
+            <option value="12">12</option>
+            <option value="01">01</option>
+            <option value="02">02</option>
+            <option value="03">03</option>
+            <option value="04">04</option>
+            <option value="05">05</option>
+            <option value="06">06</option>
+            <option value="07">07</option>
+            <option value="08">08</option>
+            <option value="09">09</option>
+            <option value="10">10</option>
+            <option value="11" selected>11</option>
+          </select>
+          <select id="ot-edit-minute" style="flex: 1;">
+            <option value="00">00</option>
+            <option value="15">15</option>
+            <option value="30">30</option>
+            <option value="45">45</option>
+            <option value="59" selected>59</option>
+          </select>
+          <select id="ot-edit-ampm" style="flex: 1;">
+            <option value="AM">AM</option>
+            <option value="PM" selected>PM</option>
+          </select>
+        </div>
+        <div style="margin-top:6px;">
+          <button type="button" onclick="clearOtEditDeadlineInputs()"
+            style="background:none; border:none; color:#DC2626; font-size:11.5px; font-weight:500; cursor:pointer;">Remove deadline (Open indefinitely)</button>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button type="button" onclick="closeOnlineTestDeadlineModal()"
+          style="background:#E3E9F6; color:#16233F; border:1px solid #C2CEE7; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Cancel</button>
+        <button type="button" id="ot-save-deadline-btn" onclick="saveOnlineTestDeadline()"
+          style="background:var(--pen); color:#fff; border:none; padding:8px 16px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">Save Changes</button>
       </div>
     </div>
   </div>

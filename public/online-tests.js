@@ -49,13 +49,25 @@ function renderOnlineTestsGrid() {
 
   container.innerHTML = onlineTestsList.map(test => {
     const isDraft = test.status === 'draft';
-    const statusBadge = isDraft
-      ? `<span class="ot-badge ot-badge-draft">Draft</span>`
-      : `<span class="ot-badge ot-badge-published">Published</span>`;
+    let isClosed = false;
+    if (!isDraft && test.deadline) {
+      const ddl = new Date(test.deadline).getTime();
+      if (!isNaN(ddl) && Date.now() > ddl) isClosed = true;
+    }
+    let statusBadge = `<span class="ot-badge ot-badge-draft">Draft</span>`;
+    if (!isDraft) {
+      statusBadge = isClosed
+        ? `<span class="ot-badge ot-badge-closed">Closed</span>`
+        : `<span class="ot-badge ot-badge-published">Published</span>`;
+    }
 
     const deadlineText = test.deadline
       ? new Date(test.deadline).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
       : 'No deadline';
+
+    const deadlineDisplay = isClosed
+      ? `<span style="color:#DC2626; font-weight:600;">📅 Closed (${deadlineText})</span>`
+      : `<span>📅 ${deadlineText}</span>`;
 
     const attemptsCount = Number(test.attempt_count || 0);
     const sectionsCount = Number(test.section_count || 0);
@@ -75,7 +87,7 @@ function renderOnlineTestsGrid() {
         </div>
 
         <div class="ot-card-meta">
-          <span>📅 ${deadlineText}</span>
+          ${deadlineDisplay}
           <span>📑 ${sectionsCount} Section${sectionsCount === 1 ? '' : 's'}</span>
           <span>🎯 ${totalMarks} Total Marks</span>
           <span>👥 ${attemptsCount} Submission${attemptsCount === 1 ? '' : 's'}</span>
@@ -92,6 +104,19 @@ function renderOnlineTestsGrid() {
           <button class="ghost" style="padding:8px 12px; font-size:13px;" onclick="copyOnlineTestStudentLink('${escapeHtml(test.code)}')">
             📋 Copy Link
           </button>
+          <button class="ghost" style="padding:8px 12px; font-size:13px;" onclick="openOnlineTestDeadlineModal(${test.id})" title="Edit deadline">
+            ✏️ Deadline
+          </button>
+          ${!isDraft && !isClosed ? `
+            <button class="ghost ghost-danger" style="padding:8px 12px; font-size:13px;" onclick="closeOnlineTestImmediately(${test.id})" title="Close test now">
+              ⏹️ Close
+            </button>
+          ` : ''}
+          ${!isDraft && isClosed ? `
+            <button class="ghost" style="padding:8px 12px; font-size:13px; color:#059669;" onclick="openOnlineTestDeadlineModal(${test.id})" title="Reopen test by extending deadline">
+              ▶️ Reopen
+            </button>
+          ` : ''}
         </div>
       </div>
     `;
@@ -353,10 +378,12 @@ function renderOnlineTestReviewCanvas() {
   document.getElementById('ot-review-code').innerText = test.code;
 
   const statusBadge = document.getElementById('ot-review-status-badge');
+  const pState = getOnlineTestPublishState(test);
   if (statusBadge) {
-    statusBadge.className = test.status === 'draft' ? 'ot-badge ot-badge-draft' : 'ot-badge ot-badge-published';
-    statusBadge.innerText = test.status === 'draft' ? 'Draft' : 'Published';
+    statusBadge.className = `ot-badge ${pState.badgeClass}`;
+    statusBadge.innerText = pState.badgeText;
   }
+  updatePublishButtonState();
 
   updateReviewTotalMarks();
 
@@ -571,8 +598,11 @@ function renderQuestionCard(sectionId, q, displayNum) {
     `;
   } else if (['fill_blank', 'rewrite', 'short_answer'].includes(qType)) {
     let accepted = [];
-    if (Array.isArray(q.correct_answer)) accepted = q.correct_answer;
-    else if (typeof q.correct_answer === 'string') accepted = [q.correct_answer];
+    if (Array.isArray(q.correct_answer)) {
+      accepted = q.correct_answer.map(x => String(x !== null && x !== undefined ? x : '').trim()).filter(Boolean);
+    } else if (q.correct_answer !== null && q.correct_answer !== undefined && String(q.correct_answer).trim() !== '') {
+      accepted = [String(q.correct_answer).trim()];
+    }
 
     controlsHtml = `
       <div style="margin-top:10px;">
@@ -1106,10 +1136,12 @@ async function publishOnlineTest(testId) {
     }
 
     if (currentReviewTest) currentReviewTest.status = 'published';
+    updatePublishButtonState();
     const statusBadge = document.getElementById('ot-review-status-badge');
     if (statusBadge) {
-      statusBadge.className = 'ot-badge ot-badge-published';
-      statusBadge.innerText = 'Published';
+      const pState = getOnlineTestPublishState(currentReviewTest);
+      statusBadge.className = `ot-badge ${pState.badgeClass}`;
+      statusBadge.innerText = pState.badgeText;
     }
 
     showToast(`Test Published! Public link ready.`);
@@ -1141,9 +1173,9 @@ const pendingAttemptOverrides = new Map();
 
 function formatAcceptableKeys(correctAnswer) {
   if (Array.isArray(correctAnswer)) {
-    return correctAnswer.map(k => String(k).trim()).filter(Boolean).join(' | ');
+    return correctAnswer.map(k => String(k !== null && k !== undefined ? k : '').trim()).filter(Boolean).join(' | ');
   }
-  if (correctAnswer !== null && correctAnswer !== undefined) {
+  if (correctAnswer !== null && correctAnswer !== undefined && String(correctAnswer).trim() !== '') {
     return String(correctAnswer);
   }
   return '(None specified)';
@@ -2022,7 +2054,289 @@ async function deleteOnlineTestAttempt(testId, attemptId, studentName) {
   }
 }
 
+// --- 6. Post-Publish Dropdown & Online Test Deadline Management ---
+let currentEditingDeadlineTestId = null;
+
+function getOnlineTestPublishState(test) {
+  if (!test) return { state: 'draft', label: '🚀 Publish Test', badgeClass: 'ot-badge-draft', badgeText: 'Draft', isClosed: false };
+  if (test.status === 'draft') {
+    return { state: 'draft', label: '🚀 Publish Test', badgeClass: 'ot-badge-draft', badgeText: 'Draft', isClosed: false };
+  }
+  let isClosed = false;
+  if (test.deadline) {
+    const ddl = new Date(test.deadline).getTime();
+    if (!isNaN(ddl) && Date.now() > ddl) isClosed = true;
+  }
+  if (isClosed) {
+    return { state: 'closed', label: '⏹️ Test Closed ▾', badgeClass: 'ot-badge-closed', badgeText: 'Closed', isClosed: true };
+  }
+  return { state: 'published', label: '✓ Test Published ▾', badgeClass: 'ot-badge-published', badgeText: 'Published', isClosed: false };
+}
+
+function updatePublishButtonState() {
+  const btn = document.getElementById('btn-publish-online-test');
+  const dropdown = document.getElementById('ot-publish-menu-dropdown');
+  const closeNowBtn = document.getElementById('ot-menu-close-now-btn');
+  if (!btn || !currentReviewTest) return;
+
+  const pState = getOnlineTestPublishState(currentReviewTest);
+  btn.innerHTML = pState.label;
+
+  if (pState.state === 'draft') {
+    btn.className = 'primary';
+    btn.style.background = '';
+    btn.style.color = '';
+    btn.style.border = '';
+    btn.style.cursor = 'pointer';
+    if (dropdown) dropdown.style.display = 'none';
+  } else if (pState.state === 'published') {
+    btn.className = '';
+    btn.style.background = '#ECFDF5';
+    btn.style.color = '#047857';
+    btn.style.border = '1px solid #A7F3D0';
+    btn.style.borderRadius = '6px';
+    btn.style.padding = '8px 18px';
+    btn.style.fontSize = '13.5px';
+    btn.style.fontWeight = '600';
+    btn.style.cursor = 'pointer';
+    if (closeNowBtn) {
+      closeNowBtn.style.display = 'flex';
+      closeNowBtn.innerHTML = '⏹️ Close Test Now';
+      closeNowBtn.style.color = '#DC2626';
+    }
+  } else if (pState.state === 'closed') {
+    btn.className = '';
+    btn.style.background = '#FEF2F2';
+    btn.style.color = '#B91C1C';
+    btn.style.border = '1px solid #FCA5A5';
+    btn.style.borderRadius = '6px';
+    btn.style.padding = '8px 18px';
+    btn.style.fontSize = '13.5px';
+    btn.style.fontWeight = '600';
+    btn.style.cursor = 'pointer';
+    if (closeNowBtn) {
+      closeNowBtn.style.display = 'flex';
+      closeNowBtn.innerHTML = '▶️ Reopen Test';
+      closeNowBtn.style.color = '#059669';
+    }
+  }
+}
+
+function handleOnlineTestPublishBtnClick(event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  if (!currentReviewTest) return;
+
+  const pState = getOnlineTestPublishState(currentReviewTest);
+  if (pState.state === 'draft') {
+    publishOnlineTest();
+    return;
+  }
+
+  const dropdown = document.getElementById('ot-publish-menu-dropdown');
+  if (dropdown) {
+    dropdown.style.display = dropdown.style.display === 'none' || !dropdown.style.display ? 'block' : 'none';
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const wrapper = document.getElementById('ot-publish-btn-wrapper');
+  const dropdown = document.getElementById('ot-publish-menu-dropdown');
+  if (dropdown && dropdown.style.display === 'block') {
+    if (!wrapper || !wrapper.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  }
+});
+
+function copyReviewOnlineTestStudentLink() {
+  const dropdown = document.getElementById('ot-publish-menu-dropdown');
+  if (dropdown) dropdown.style.display = 'none';
+  if (currentReviewTest && currentReviewTest.code) {
+    copyOnlineTestStudentLink(currentReviewTest.code);
+  }
+}
+
+function viewOnlineTestSubmissionsFromReview() {
+  const dropdown = document.getElementById('ot-publish-menu-dropdown');
+  if (dropdown) dropdown.style.display = 'none';
+  if (currentReviewTest && currentReviewTest.id) {
+    viewOnlineTestSubmissions(currentReviewTest.id);
+  }
+}
+
+function openOnlineTestDeadlineModalFromReview() {
+  const dropdown = document.getElementById('ot-publish-menu-dropdown');
+  if (dropdown) dropdown.style.display = 'none';
+  if (currentReviewTest && currentReviewTest.id) {
+    openOnlineTestDeadlineModal(currentReviewTest.id);
+  }
+}
+
+function closeOnlineTestImmediatelyFromReview() {
+  const dropdown = document.getElementById('ot-publish-menu-dropdown');
+  if (dropdown) dropdown.style.display = 'none';
+  if (currentReviewTest && currentReviewTest.id) {
+    const pState = getOnlineTestPublishState(currentReviewTest);
+    if (pState.state === 'closed') {
+      openOnlineTestDeadlineModal(currentReviewTest.id);
+    } else {
+      closeOnlineTestImmediately(currentReviewTest.id);
+    }
+  }
+}
+
+function openOnlineTestDeadlineModal(testId) {
+  currentEditingDeadlineTestId = testId;
+  let test = null;
+  if (currentReviewTest && currentReviewTest.id === testId) {
+    test = currentReviewTest;
+  } else if (Array.isArray(onlineTestsList)) {
+    test = onlineTestsList.find(t => t.id === testId);
+  }
+
+  const dateInput = document.getElementById('ot-edit-date');
+  const hourInput = document.getElementById('ot-edit-hour');
+  const minInput = document.getElementById('ot-edit-minute');
+  const ampmInput = document.getElementById('ot-edit-ampm');
+
+  if (test && test.deadline) {
+    try {
+      const d = new Date(test.deadline);
+      const cairoStr = d.toLocaleString('en-US', {
+        timeZone: 'Africa/Cairo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+      const [datePart, timePart] = cairoStr.split(', ');
+      const [m, day, y] = datePart.split('/');
+      if (dateInput) dateInput.value = `${y}-${m}-${day}`;
+
+      if (timePart) {
+        const [hMin, ampm] = timePart.split(' ');
+        const [h, min] = hMin.split(':');
+        if (hourInput) hourInput.value = h.padStart(2, '0');
+        if (minInput) minInput.value = min.padStart(2, '0');
+        if (ampmInput) ampmInput.value = ampm.toUpperCase();
+      }
+    } catch (e) {
+      clearOtEditDeadlineInputs();
+    }
+  } else {
+    clearOtEditDeadlineInputs();
+  }
+
+  const modal = document.getElementById('ot-deadline-edit-modal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function clearOtEditDeadlineInputs() {
+  const dateInput = document.getElementById('ot-edit-date');
+  const hourInput = document.getElementById('ot-edit-hour');
+  const minInput = document.getElementById('ot-edit-minute');
+  const ampmInput = document.getElementById('ot-edit-ampm');
+  if (dateInput) dateInput.value = '';
+  if (hourInput) hourInput.value = '11';
+  if (minInput) minInput.value = '59';
+  if (ampmInput) ampmInput.value = 'PM';
+}
+
+function closeOnlineTestDeadlineModal() {
+  const modal = document.getElementById('ot-deadline-edit-modal');
+  if (modal) modal.style.display = 'none';
+  currentEditingDeadlineTestId = null;
+}
+
+async function saveOnlineTestDeadline() {
+  if (!currentEditingDeadlineTestId) return;
+  const testId = currentEditingDeadlineTestId;
+  const newDeadlineIso = getIsoFrom12h('ot-edit-date', 'ot-edit-hour', 'ot-edit-minute', 'ot-edit-ampm');
+  const btn = document.getElementById('ot-save-deadline-btn');
+
+  if (newDeadlineIso) {
+    const ddlTime = new Date(newDeadlineIso).getTime();
+    if (!isNaN(ddlTime) && ddlTime < Date.now()) {
+      alert('The deadline cannot be set to a past date or time. Please choose a future date/time.');
+      return;
+    }
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+  }
+
+  try {
+    const res = await fetch(`/api/online-tests/${testId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deadline: newDeadlineIso })
+    });
+    const d = await res.json();
+    if (!res.ok || !d.success) throw new Error(d.error || 'Failed to update deadline.');
+
+    if (currentReviewTest && currentReviewTest.id === testId) {
+      currentReviewTest.deadline = newDeadlineIso;
+      renderOnlineTestReviewCanvas();
+    }
+    closeOnlineTestDeadlineModal();
+    await loadOnlineTestsList();
+    showToast('Deadline updated successfully!');
+  } catch (err) {
+    alert('Error updating deadline: ' + err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Save Changes';
+    }
+  }
+}
+
+async function closeOnlineTestImmediately(testId) {
+  const confirmed = await showConfirmModal(
+    'Are you sure you want to close this online test immediately? Students who have not yet started will no longer be able to access it.',
+    'Close Online Test Now'
+  );
+  if (!confirmed) return;
+
+  try {
+    const nowIso = new Date().toISOString();
+    const res = await fetch(`/api/online-tests/${testId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deadline: nowIso })
+    });
+    const d = await res.json();
+    if (!res.ok || !d.success) throw new Error(d.error || 'Failed to close test.');
+
+    showToast('Test closed immediately.');
+    if (currentReviewTest && currentReviewTest.id === testId) {
+      currentReviewTest.deadline = nowIso;
+      renderOnlineTestReviewCanvas();
+    }
+    await loadOnlineTestsList();
+  } catch (err) {
+    alert('Error closing test: ' + err.message);
+  }
+}
+
 // Window bindings
+window.handleOnlineTestPublishBtnClick = handleOnlineTestPublishBtnClick;
+window.openOnlineTestDeadlineModal = openOnlineTestDeadlineModal;
+window.openOnlineTestDeadlineModalFromReview = openOnlineTestDeadlineModalFromReview;
+window.closeOnlineTestDeadlineModal = closeOnlineTestDeadlineModal;
+window.clearOtEditDeadlineInputs = clearOtEditDeadlineInputs;
+window.saveOnlineTestDeadline = saveOnlineTestDeadline;
+window.closeOnlineTestImmediately = closeOnlineTestImmediately;
+window.closeOnlineTestImmediatelyFromReview = closeOnlineTestImmediatelyFromReview;
+window.copyReviewOnlineTestStudentLink = copyReviewOnlineTestStudentLink;
+window.viewOnlineTestSubmissionsFromReview = viewOnlineTestSubmissionsFromReview;
 window.loadOnlineTestsList = loadOnlineTestsList;
 window.openOnlineTestCreateModal = openOnlineTestCreateModal;
 window.closeOnlineTestCreateModal = closeOnlineTestCreateModal;

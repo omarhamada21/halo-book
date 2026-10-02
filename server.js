@@ -121,6 +121,20 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
+// Device ID validity and collision guard: reject empty, short (< 35 chars), un-hyphenated, or known legacy collision tokens
+function isInvalidOrCollidedDeviceId(deviceId) {
+  if (!deviceId || typeof deviceId !== 'string') return true;
+  const clean = deviceId.trim();
+  if (clean.length < 35 || !clean.includes('-')) return true;
+  if (clean.startsWith('dev_NDE0eDg5') ||
+      clean.startsWith('dev_NDQweDk1') ||
+      clean.startsWith('dev_NDI4eDky') ||
+      clean.startsWith('dev_MzYweDgw')) {
+    return true;
+  }
+  return false;
+}
+
 // Database Initialization
 const tursoUrl = process.env.TURSO_DATABASE_URL || 'file:mimirmarking.db';
 const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || '';
@@ -1426,12 +1440,8 @@ app.get('/api/public/assignment/:code/status', async (req, res) => {
       return res.status(400).json({ error: 'Assignment code is required.' });
     }
 
-    // A blank, missing, or legacy-collided deviceId must never match a lock
-    if (!deviceId ||
-        deviceId.startsWith('dev_NDE0eDg5') ||
-        deviceId.startsWith('dev_NDQweDk1') ||
-        deviceId.startsWith('dev_NDI4eDky') ||
-        deviceId.startsWith('dev_MzYweDgw')) {
+    // A blank, missing, short (< 35 chars), un-hyphenated, or legacy-collided deviceId must never match a lock
+    if (isInvalidOrCollidedDeviceId(deviceId)) {
       return res.json({ success: true, hasSubmitted: false });
     }
 
@@ -1490,7 +1500,7 @@ app.post(
         }
       }
 
-      if (deviceIdInput) {
+      if (deviceIdInput && !isInvalidOrCollidedDeviceId(deviceIdInput)) {
         const deviceCheck = await db.execute({
           sql: 'SELECT id FROM submissions WHERE assignment_id = ? AND device_id = ?',
           args: [assignment.id, deviceIdInput]
@@ -3495,7 +3505,8 @@ app.get('/api/public/mcq/:code/status', async (req, res) => {
       return res.status(404).json({ error: 'Test not found.' });
     }
 
-    if (!deviceId) {
+    // A blank, missing, short (< 35 chars), un-hyphenated, or legacy-collided deviceId must never match a lock
+    if (isInvalidOrCollidedDeviceId(deviceId)) {
       return res.json({ success: true, hasSubmitted: false });
     }
 
@@ -3544,7 +3555,7 @@ app.post(
       }
 
       const cleanDeviceId = (deviceId || '').toString().trim();
-      if (cleanDeviceId) {
+      if (cleanDeviceId && !isInvalidOrCollidedDeviceId(cleanDeviceId)) {
         const existingDevice = await db.execute({
           sql: 'SELECT id FROM mcq_attempts WHERE test_id = ? AND device_id = ? LIMIT 1',
           args: [test.id, cleanDeviceId]
@@ -4252,6 +4263,8 @@ function validateOnlineTestStructure(data) {
           accepted = q.correct_answer.map((a) => (a !== null && a !== undefined ? String(a).trim() : '')).filter(Boolean);
         } else if (typeof q.correct_answer === 'string' && q.correct_answer.trim()) {
           accepted = [q.correct_answer.trim()];
+        } else if (typeof q.correct_answer === 'number' && !isNaN(q.correct_answer)) {
+          accepted = [String(q.correct_answer).trim()];
         } else if (Array.isArray(q.acceptable_answers)) {
           accepted = q.acceptable_answers.map((a) => (a !== null && a !== undefined ? String(a).trim() : '')).filter(Boolean);
         }
@@ -4525,9 +4538,9 @@ app.post(
           }
         }
 
-        // If standard raster extraction yielded 0 images, run high-DPI visual crop engine for Cambridge vector/form illustrations
-        if (extractedImages.length === 0) {
-          console.log('[Online Tests Ingestion] Running Visual Option Crop Engine for vector/form-based PDF exam...');
+        // Always run high-DPI visual crop engine for Cambridge vector/form illustrations & visual choice options
+        try {
+          console.log('[Online Tests Ingestion] Running Visual Option Crop Engine for PDF exam options...');
           const rawCrops = await extractVisualOptionCropsFromPdf(examPdfBuffer);
           let cropCounter = 0;
           for (const c of rawCrops) {
@@ -4551,6 +4564,8 @@ app.post(
           if (visualCrops.length > 0) {
             console.log(`[Online Tests Ingestion] Visual Option Crop Engine extracted & uploaded ${visualCrops.length} choice illustrations.`);
           }
+        } catch (cropErr) {
+          console.warn('[Online Tests Ingestion] Visual Option Crop Engine error:', cropErr.message);
         }
 
         console.log(`[Online Tests Ingestion] Extracted & uploaded ${extractedImages.length} images from exam paper.`);
@@ -5086,6 +5101,15 @@ app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, asy
         let parsedCorrect = q.correct_answer;
         if (typeof parsedCorrect === 'string') {
           try { parsedCorrect = JSON.parse(parsedCorrect); } catch (_) { }
+        }
+        if (['fill_blank', 'rewrite', 'short_answer'].includes(q.question_type)) {
+          if (Array.isArray(parsedCorrect)) {
+            parsedCorrect = parsedCorrect.map(x => String(x !== null && x !== undefined ? x : '').trim()).filter(Boolean);
+          } else if (parsedCorrect !== null && parsedCorrect !== undefined && String(parsedCorrect).trim() !== '') {
+            parsedCorrect = [String(parsedCorrect).trim()];
+          } else {
+            parsedCorrect = [];
+          }
         }
 
         let cleanWordBank = null;
@@ -6204,7 +6228,8 @@ app.get('/api/public/online-tests/:code/status', async (req, res) => {
       return res.status(404).json({ success: false, error: 'not_found', message: 'Online test not found.' });
     }
 
-    if (!deviceId) {
+    // A blank, missing, short (< 35 chars), un-hyphenated, or legacy-collided deviceId must never match a lock
+    if (isInvalidOrCollidedDeviceId(deviceId)) {
       return res.json({ success: true, already_submitted: false, hasSubmitted: false });
     }
 
@@ -6311,7 +6336,7 @@ app.post(
       const cleanDeviceId = (device_id || '').trim();
 
       // Check device duplicate
-      if (cleanDeviceId) {
+      if (cleanDeviceId && !isInvalidOrCollidedDeviceId(cleanDeviceId)) {
         const existingAttempt = await db.execute({
           sql: 'SELECT id FROM online_test_attempts WHERE test_id = ? AND device_id = ? LIMIT 1',
           args: [test.id, cleanDeviceId]
