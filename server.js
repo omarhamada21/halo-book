@@ -13,7 +13,7 @@ import cookieParser from 'cookie-parser';
 import { createClient } from '@libsql/client';
 import crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import fs from 'fs';
 import os from 'os';
@@ -1999,32 +1999,90 @@ async function generateSignedImageUrl(objectKey) {
   return null;
 }
 
-async function deleteAudioFromFilebase(objectKey) {
-  try {
-    const missing = getMissingFilebaseEnvVars();
-    if (missing.length > 0 || !objectKey) return;
+async function deleteStorageFiles(fileUrls) {
+  if (!Array.isArray(fileUrls) || fileUrls.length === 0) return;
+  const s3Keys = [];
 
-    const endpoint = getFilebaseEndpoint();
-    const s3Client = new S3Client({
-      endpoint,
-      region: 'us-east-1',
-      credentials: {
-        accessKeyId: process.env.FILEBASE_ACCESS_KEY.trim(),
-        secretAccessKey: process.env.FILEBASE_SECRET_KEY.trim()
-      },
-      forcePathStyle: true
-    });
+  for (const rawUrl of fileUrls) {
+    if (!rawUrl || typeof rawUrl !== 'string') continue;
 
-    await s3Client.send(
-      new DeleteObjectCommand({
-        Bucket: process.env.FILEBASE_BUCKET_NAME.trim(),
-        Key: objectKey
-      })
-    );
-    console.log(`[Filebase Cleanup] Successfully deleted orphaned audio: ${objectKey}`);
-  } catch (delErr) {
-    console.warn(`[Filebase Cleanup Notice] Failed to delete orphaned audio ${objectKey}:`, delErr.message);
+    // Handle S3 / Cloud URLs
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+      try {
+        const parsed = new URL(rawUrl);
+        let key = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+        const bucket = (process.env.FILEBASE_BUCKET_NAME || process.env.S3_BUCKET_NAME || '').trim();
+        if (bucket && key.startsWith(bucket + '/')) {
+          key = key.slice(bucket.length + 1);
+        }
+        if (key) s3Keys.push({ Key: key });
+      } catch (e) {
+        console.warn('[Storage Cleanup] Invalid URL:', rawUrl);
+      }
+    }
+    // Handle local disk uploads (/uploads/...)
+    else if (rawUrl.startsWith('/uploads/') || rawUrl.includes('uploads/')) {
+      try {
+        const idx = rawUrl.indexOf('uploads/');
+        const rel = rawUrl.slice(idx);
+        const localPath = path.join(__dirname, 'public', rel);
+        if (fs.existsSync(localPath)) {
+          fs.unlinkSync(localPath);
+          console.log('[Storage Cleanup] Removed local file:', localPath);
+        }
+      } catch (e) {
+        console.warn('[Storage Cleanup] Local delete error:', e.message);
+      }
+    }
+    // Handle direct object keys (e.g. online-tests/..., audio/...)
+    else if (!rawUrl.startsWith('.') && !rawUrl.startsWith('/')) {
+      s3Keys.push({ Key: rawUrl });
+    }
   }
+
+  // Deduplicate S3 keys
+  const uniqueKeys = [];
+  const seenKeys = new Set();
+  for (const item of s3Keys) {
+    if (item.Key && !seenKeys.has(item.Key)) {
+      seenKeys.add(item.Key);
+      uniqueKeys.push(item);
+    }
+  }
+
+  const missing = getMissingFilebaseEnvVars();
+  const bucketName = (process.env.FILEBASE_BUCKET_NAME || process.env.S3_BUCKET_NAME || '').trim();
+  if (uniqueKeys.length > 0 && missing.length === 0 && bucketName) {
+    try {
+      const endpoint = getFilebaseEndpoint();
+      const s3Client = new S3Client({
+        endpoint,
+        region: 'us-east-1',
+        credentials: {
+          accessKeyId: process.env.FILEBASE_ACCESS_KEY.trim(),
+          secretAccessKey: process.env.FILEBASE_SECRET_KEY.trim()
+        },
+        forcePathStyle: true
+      });
+
+      for (let i = 0; i < uniqueKeys.length; i += 1000) {
+        const chunk = uniqueKeys.slice(i, i + 1000);
+        const deleteCmd = new DeleteObjectsCommand({
+          Bucket: bucketName,
+          Delete: { Objects: chunk, Quiet: true }
+        });
+        await s3Client.send(deleteCmd);
+      }
+      console.log(`[Storage Cleanup] Successfully purged ${uniqueKeys.length} objects from S3/Filebase.`);
+    } catch (err) {
+      console.error('[Storage Cleanup] S3 deletion error:', err.message);
+    }
+  }
+}
+
+async function deleteAudioFromFilebase(objectKey) {
+  if (!objectKey) return;
+  await deleteStorageFiles([objectKey]);
 }
 
 // ----------------- UNIVERSAL AUDIO TRANSCRIBER -----------------
@@ -2166,6 +2224,34 @@ app.post(
         }
       }
 
+      // Visual Option Crop Engine for listening test papers (Part 1 picture options)
+      let visualCrops = [];
+      try {
+        console.log('[MCQ Ingestion] Running Visual Option Crop Engine for PDF listening options...');
+        const rawCrops = await extractVisualOptionCropsFromPdf(pdfFile.buffer);
+        let cropCounter = 0;
+        for (const c of rawCrops) {
+          try {
+            const uploadRes = await uploadExamImageToFilebaseOrLocal(c.buffer, `mcq_crop_q${c.questionNumber}_${c.letter}_${cropCounter++}`, null);
+            visualCrops.push({
+              object_key: uploadRes.objectKey,
+              url: uploadRes.url,
+              questionNumber: c.questionNumber,
+              letter: c.letter,
+              width: c.width,
+              height: c.height
+            });
+          } catch (cropUpErr) {
+            console.warn(`[MCQ Crop Upload Warning] Failed for Q${c.questionNumber} ${c.letter}:`, cropUpErr.message);
+          }
+        }
+        if (visualCrops.length > 0) {
+          console.log(`[MCQ Ingestion] Visual Option Crop Engine extracted & uploaded ${visualCrops.length} choice illustrations.`);
+        }
+      } catch (cropErr) {
+        console.warn('[MCQ Ingestion] Visual Option Crop Engine notice:', cropErr.message);
+      }
+
       // Build Gemini Input Payload
       const inputPayload = [];
 
@@ -2223,7 +2309,7 @@ Analyze the Test Paper and Marking Scheme. Extract all questions into one of thr
 1. 'mcq': Standard multiple-choice questions with 3-5 options.
    - "question_type": "mcq"
    - "question": Clear question prompt text
-   - "options": Array of 3-5 plausible option strings. One must be the correct answer according to the marking scheme.
+   - "options": Array of 3-5 plausible option strings. For picture/illustration choice questions (e.g. Cambridge Listening Part 1 showing pictures A, B, C), provide ["Picture A", "Picture B", "Picture C"] or short descriptive text like ["inside a bag", "under a table", "on a bed"].
    - "correct_index": Zero-based integer (0 to options.length - 1) indicating the correct option
    - "acceptable_answers": []
    - "points": Marks/points awarded (default 1)
@@ -2356,12 +2442,39 @@ ${markingSchemePromptAddon}`;
             }
             return res.status(422).json({ success: false, error: `Question #${i + 1} (${qType}) must have at least 2 options.` });
           }
-          cleanOptions = item.options.map((opt) => (opt !== null && opt !== undefined ? String(opt).trim() : '')).filter(Boolean);
+          cleanOptions = item.options.map((opt) => (opt !== null && opt !== undefined ? (typeof opt === 'object' ? opt : String(opt).trim()) : '')).filter(Boolean);
           if (cleanOptions.length < 2) {
             if (uploadedAudioKey) {
               try { await deleteAudioFromFilebase(uploadedAudioKey); } catch (_) { }
             }
             return res.status(422).json({ success: false, error: `Question #${i + 1} contains empty or invalid option strings.` });
+          }
+
+          // Check if this question has matching visual crops from PDF
+          const qNumMatch = (item.question || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+          const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (i + 1);
+
+          const matchingCrops = visualCrops.filter(c => c.questionNumber === qNum);
+          const hasVisualPattern = cleanOptions.some(opt => {
+            const s = (typeof opt === 'object' ? (opt.caption || opt.value || '') : String(opt || '')).toLowerCase();
+            return /\[?picture\s*[a-z]\]?/i.test(s) || s.startsWith('picture ');
+          });
+
+          if (matchingCrops.length > 0 || (hasVisualPattern && visualCrops.length > 0)) {
+            const optLetters = ['A', 'B', 'C', 'D'];
+            const targetCount = matchingCrops.length >= 3 ? matchingCrops.length : Math.max(3, cleanOptions.length);
+            cleanOptions = optLetters.slice(0, targetCount).map((letter, oIdx) => {
+              const matchedCrop = visualCrops.find(c => c.questionNumber === qNum && c.letter === letter);
+              const origText = typeof cleanOptions[oIdx] === 'object' ? (cleanOptions[oIdx].caption || cleanOptions[oIdx].value || '') : (cleanOptions[oIdx] || '');
+              const caption = origText.replace(/\[?picture\s*[a-z]\]?/gi, '').replace(/^[A-D]:\s*/i, '').trim();
+              return {
+                type: 'image',
+                label: letter,
+                object_key: matchedCrop ? matchedCrop.object_key : null,
+                image_url: matchedCrop ? matchedCrop.url : '',
+                caption: caption || `Picture ${letter}`
+              };
+            });
           }
 
           const rawIdx = Number(item.correct_index);
@@ -3093,9 +3206,12 @@ app.patch('/api/mcq/:testId/questions/:questionId', authenticateToken, requireAp
         if (!Array.isArray(options) || options.length < 2) {
           return res.status(400).json({ error: 'Options must be an array with at least 2 options.' });
         }
-        const cleanOptions = options.map((opt) => (opt !== null && opt !== undefined ? String(opt).trim() : ''));
-        if (cleanOptions.some((opt) => !opt)) {
-          return res.status(400).json({ error: 'All options must be non-empty strings.' });
+        const cleanOptions = options.map((opt) => {
+          if (typeof opt === 'object' && opt !== null) return opt;
+          return opt !== null && opt !== undefined ? String(opt).trim() : '';
+        });
+        if (cleanOptions.some((opt) => opt === '')) {
+          return res.status(400).json({ error: 'All options must be non-empty strings or objects.' });
         }
         updatedOptions = cleanOptions;
       }
@@ -3350,13 +3466,35 @@ app.delete('/api/mcq/:testId', authenticateToken, requireApprovedUser, async (re
       return res.status(403).json({ error: 'Unauthorized to delete this MCQ test.' });
     }
 
-    // S3 Storage cleanup
-    if (test.audio_path) {
-      try {
-        await deleteAudioFromFilebase(test.audio_path);
-      } catch (s3Err) {
-        console.warn(`[MCQ Delete] S3 audio cleanup error for ${test.audio_path}:`, s3Err.message);
+    // S3/Filebase Storage cleanup: audio + question image crops
+    const filesToDelete = [];
+    if (test.audio_path) filesToDelete.push(test.audio_path);
+
+    try {
+      const qRows = await db.execute({
+        sql: 'SELECT options FROM mcq_questions WHERE test_id = ?',
+        args: [testId]
+      });
+      for (const row of qRows.rows) {
+        let opts = row.options;
+        if (typeof opts === 'string') {
+          try { opts = JSON.parse(opts); } catch (_) { opts = []; }
+        }
+        if (Array.isArray(opts)) {
+          for (const opt of opts) {
+            if (opt && typeof opt === 'object') {
+              if (opt.image_url) filesToDelete.push(opt.image_url);
+              if (opt.object_key) filesToDelete.push(opt.object_key);
+            }
+          }
+        }
       }
+    } catch (qErr) {
+      console.warn('[MCQ Delete Questions Media Warning]:', qErr.message);
+    }
+
+    if (filesToDelete.length > 0) {
+      await deleteStorageFiles(filesToDelete);
     }
 
     // Manual cascade deletion because foreign_keys pragma is OFF
@@ -3977,10 +4115,21 @@ async function extractVisualOptionCropsFromPdf(pdfBuffer) {
         items.push({ str, x: tx[4], y: tx[5], w: item.width, h: item.height });
       }
 
-      const letterItems = items.filter(it => /^[A-D]$/.test(it.str));
+      // Sanitize extracted letters: only allow ['A', 'B', 'C', 'D'].
+      // Fix common OCR / CID font substitutions like 'S' -> 'C'.
+      const letterItems = [];
+      for (const it of items) {
+        let clean = it.str.replace(/[()[\]:.]/g, '').trim().toUpperCase();
+        if (clean === 'S') clean = 'C';
+        if (['A', 'B', 'C', 'D'].includes(clean)) {
+          letterItems.push({ ...it, letter: clean });
+        }
+      }
+
+      // Group letters into horizontal rows (Y +- 15px)
       const rowGroups = [];
       for (const lit of letterItems) {
-        let grp = rowGroups.find(g => Math.abs(g.y - lit.y) < 12);
+        let grp = rowGroups.find(g => Math.abs(g.y - lit.y) <= 15);
         if (!grp) {
           grp = { y: lit.y, letters: [] };
           rowGroups.push(grp);
@@ -3993,48 +4142,98 @@ async function extractVisualOptionCropsFromPdf(pdfBuffer) {
 
       for (const grp of rowGroups) {
         grp.letters.sort((a, b) => a.x - b.x);
+        // Deduplicate letters that fall on almost the same X coordinate
+        const deduped = [];
+        for (const l of grp.letters) {
+          if (!deduped.some(d => Math.abs(d.x - l.x) < 25)) {
+            deduped.push(l);
+          }
+        }
+        grp.letters = deduped;
+
+        // Skip rows with no letters
+        if (grp.letters.length === 0) continue;
+
+        const precedingItems = items.filter(it => it.y < grp.y && it.y > grp.y - 180);
+        const precedingText = precedingItems.map(it => it.str).join(' ');
+        if (/example/i.test(precedingText)) continue;
+
+        const cleanPrec = precedingText.replace(/\[\d+\]/g, '').trim();
+        const qNumMatch = cleanPrec.match(/(?:^|\s|\b)([1-9]\d?)\b/);
+        const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : crops.length + 1;
+
+        // Cambridge Part 1 uses a 3-picture layout: Option A, B, C horizontally
+        let finalLetters = [];
         if (grp.letters.length >= 3) {
           const span = grp.letters[grp.letters.length - 1].x - grp.letters[0].x;
-          if (span > 150) { // genuine spaced picture options
-            const precedingItems = items.filter(it => it.y < grp.y && it.y > grp.y - 180);
-            const precedingText = precedingItems.map(it => it.str).join(' ');
-            if (/example/i.test(precedingText)) continue;
-
-            const cleanPrec = precedingText.replace(/\[\d+\]/g, '').trim();
-            const qNumMatch = cleanPrec.match(/(?:^|\s|\b)([1-9]\d?)\b/);
-            const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : crops.length + 1;
-
-            if (!pageBuf) {
-              renderViewport = page.getViewport({ scale });
-              const canvas = createCanvas(renderViewport.width, renderViewport.height);
-              const ctx = canvas.getContext('2d');
-              await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
-              pageBuf = canvas.toBuffer('image/png');
+          if (span > 120) {
+            finalLetters = [
+              { ...grp.letters[0], letter: 'A' },
+              { ...grp.letters[1], letter: 'B' },
+              { ...grp.letters[2], letter: 'C' }
+            ];
+          }
+        } else if (grp.letters.length === 2) {
+          const dx = grp.letters[1].x - grp.letters[0].x;
+          if (dx >= 90 && dx <= 250) {
+            if (grp.letters[0].x < 190) {
+              // Detected A and B -> extrapolate C
+              finalLetters = [
+                { ...grp.letters[0], letter: 'A' },
+                { ...grp.letters[1], letter: 'B' },
+                { x: grp.letters[1].x + dx, y: grp.y, w: 10, h: 10, letter: 'C' }
+              ];
+            } else {
+              // Detected B and C -> extrapolate A
+              finalLetters = [
+                { x: Math.max(30, grp.letters[0].x - dx), y: grp.y, w: 10, h: 10, letter: 'A' },
+                { ...grp.letters[0], letter: 'B' },
+                { ...grp.letters[1], letter: 'C' }
+              ];
             }
+          }
+        } else if (grp.letters.length === 1 && qNumMatch) {
+          // If only 1 letter detected (e.g. A on the left)
+          if (grp.letters[0].x < 180) {
+            finalLetters = [
+              { ...grp.letters[0], letter: 'A' },
+              { x: grp.letters[0].x + 165, y: grp.y, w: 10, h: 10, letter: 'B' },
+              { x: grp.letters[0].x + 330, y: grp.y, w: 10, h: 10, letter: 'C' }
+            ];
+          }
+        }
 
-            for (const l of grp.letters) {
-              const centerX = l.x + (l.w ? l.w / 2 : 5);
-              const labelY = l.y;
-              const left = Math.max(0, Math.round((centerX - 70) * scale));
-              const top = Math.max(0, Math.round((labelY - 130) * scale));
-              const width = Math.min(renderViewport.width - left, Math.round(140 * scale));
-              const height = Math.min(renderViewport.height - top, Math.round(120 * scale));
+        if (finalLetters.length > 0) {
+          if (!pageBuf) {
+            renderViewport = page.getViewport({ scale });
+            const canvas = createCanvas(renderViewport.width, renderViewport.height);
+            const ctx = canvas.getContext('2d');
+            await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
+            pageBuf = canvas.toBuffer('image/png');
+          }
 
-              if (width >= 40 && height >= 40) {
-                const cropped = await sharp(pageBuf)
-                  .extract({ left, top, width, height })
-                  .png()
-                  .toBuffer();
+          for (const l of finalLetters) {
+            const centerX = l.x + (l.w ? l.w / 2 : 5);
+            const labelY = l.y;
+            const left = Math.max(0, Math.round((centerX - 70) * scale));
+            const top = Math.max(0, Math.round((labelY - 130) * scale));
+            const width = Math.min(renderViewport.width - left, Math.round(140 * scale));
+            const height = Math.min(renderViewport.height - top, Math.round(120 * scale));
 
-                crops.push({
-                  page: pNum,
-                  questionNumber: qNum,
-                  letter: l.str,
-                  buffer: cropped,
-                  width,
-                  height
-                });
-              }
+            if (width >= 40 && height >= 40) {
+              const cropped = await sharp(pageBuf)
+                .extract({ left, top, width, height })
+                .png()
+                .toBuffer();
+
+              crops.push({
+                page: pNum,
+                questionNumber: qNum,
+                letter: l.letter,
+                buffer: cropped,
+                width,
+                height
+              });
             }
           }
         }
@@ -4179,15 +4378,21 @@ function validateOnlineTestStructure(data) {
       let cleanCorrectAnswer = null;
       let minWords = Number.isInteger(q.min_words) && q.min_words > 0 ? q.min_words : null;
       let maxWords = Number.isInteger(q.max_words) && q.max_words > 0 ? q.max_words : null;
-      const isVisualOptions = !!(
-        q.has_visual_options === true ||
-        (Array.isArray(q.options) && q.options.some(opt => {
+      const hasImageUrls = Array.isArray(q.options) && q.options.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
+      const allOptionsAreLongText = Array.isArray(q.options) && q.options.length > 0 && q.options.every(opt => {
+        const txt = (typeof opt === 'string' ? opt : (opt.value || opt.text || opt.caption || '')).trim();
+        return txt.length > 20 || txt.split(/\s+/).length >= 4;
+      });
+
+      const isVisualOptions = !allOptionsAreLongText && !!(
+        hasImageUrls ||
+        (q.has_visual_options === true && (Array.isArray(q.options) && q.options.some(opt => {
           if (typeof opt === 'object' && opt !== null) {
             return opt.type === 'image' || Boolean(opt.object_key) || Boolean(opt.image_url) || (typeof opt.caption === 'string' && /\[?picture\s*[a-z]\]?/i.test(opt.caption));
           }
           const s = String(opt || '').trim().toLowerCase();
           return /\[?picture\s*[a-z]\]?/i.test(s) || s.startsWith('picture ');
-        }))
+        })))
       );
       const stimulusImageUrl = q.stimulus_image_url ? String(q.stimulus_image_url).trim() : null;
 
@@ -4198,7 +4403,9 @@ function validateOnlineTestStructure(data) {
         if (isVisualOptions) {
           cleanOptions = q.options.map((opt, oIdx) => {
             if (typeof opt === 'object' && opt !== null) {
-              const label = typeof opt.label === 'string' && opt.label.trim() ? opt.label.trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+              let rawLabel = typeof opt.label === 'string' && opt.label.trim() ? opt.label.trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+              if (rawLabel === 'S') rawLabel = 'C';
+              const label = ['A', 'B', 'C', 'D'].includes(rawLabel) ? rawLabel : String.fromCharCode(65 + oIdx);
               const caption = typeof opt.caption === 'string' ? opt.caption.trim() : '';
               const objectKey = typeof opt.object_key === 'string' && opt.object_key.trim() ? opt.object_key.trim() : (typeof opt.objectKey === 'string' ? opt.objectKey.trim() : null);
               const imageUrl = typeof opt.image_url === 'string' ? opt.image_url.trim() : '';
@@ -4744,6 +4951,19 @@ OUTPUT SCHEMA (Strict JSON):
                   q.stimulus_image_url = matchedStim ? matchedStim.url : null;
                 }
 
+                let qNum = null;
+                const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
+                if (qNumMatch) {
+                  qNum = parseInt(qNumMatch[1], 10);
+                }
+
+                const hasImageUrls = Array.isArray(q.options) && q.options.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
+                const allOptionsAreLongText = Array.isArray(q.options) && q.options.length > 0 && q.options.every(opt => {
+                  const txt = (typeof opt === 'string' ? opt : (opt.value || opt.text || opt.caption || '')).trim();
+                  return txt.length > 20 || txt.split(/\s+/).length >= 4;
+                });
+
+                const hasMatchingCrops = qNum !== null && visualCrops.some(c => c.questionNumber === qNum);
                 const hasVisualChoicePattern = Array.isArray(q.options) && q.options.some(opt => {
                   if (typeof opt === 'object' && opt !== null) {
                     if (opt.type === 'image' || opt.image_index !== undefined || opt.image_url || opt.object_key) return true;
@@ -4754,71 +4974,60 @@ OUTPUT SCHEMA (Strict JSON):
                   return /\[?picture\s*[a-z]\]?/i.test(s) || s.startsWith('picture ');
                 });
 
-                const isExplicitlyVisual = q.has_visual_options === true || hasVisualChoicePattern;
+                // A question should ONLY have visual options if:
+                // 1. It explicitly matches visual question crop coordinates OR has valid image_url in options.
+                // 2. Options are NOT long prose sentences (e.g. "The gallery is open every day").
+                const isExplicitlyVisual = (hasMatchingCrops || hasImageUrls || (q.has_visual_options === true && hasVisualChoicePattern)) && !allOptionsAreLongText;
+
                 if (isExplicitlyVisual) {
                   q.has_visual_options = true;
-                  let qNum = null;
-                  const qNumMatch = (q.question_text || '').match(/(?:^|\s|\b)(?:question\s*)?([1-9]\d?)\b/i);
-                  if (qNumMatch) {
-                    qNum = parseInt(qNumMatch[1], 10);
-                  }
-
                   q.options = (Array.isArray(q.options) ? q.options : []).map((opt, oIdx) => {
-                    let label = String.fromCharCode(65 + oIdx);
+                    let rawLabel = String.fromCharCode(65 + oIdx);
                     let caption = '';
-                    let optImgIdx = globalChoiceImgCounter + oIdx;
                     let existingUrl = '';
+                    let existingKey = null;
 
                     if (typeof opt === 'object' && opt !== null) {
-                      label = (opt.label ? String(opt.label).trim().toUpperCase() : label);
-                      caption = opt.caption || '';
-                      if (opt.image_index !== undefined && opt.image_index !== null) {
-                        optImgIdx = Number(opt.image_index);
-                      }
+                      if (opt.label) rawLabel = String(opt.label).trim().toUpperCase();
+                      caption = opt.caption || opt.value || opt.text || '';
                       existingUrl = opt.image_url || '';
+                      existingKey = opt.object_key || null;
                     } else {
                       const str = String(opt || '').trim();
                       const match = str.match(/picture\s*([a-z])/i);
-                      if (match) label = match[1].toUpperCase();
-                      caption = str.replace(/\[?picture\s*[a-z]\]?/gi, '').trim();
+                      if (match) rawLabel = match[1].toUpperCase();
+                      caption = str.replace(/\[?picture\s*[a-z]\]?/gi, '').replace(/^[A-D]:\s*/i, '').trim();
                     }
 
-                    // Priority 1: Match by visualCrops with question number & letter
+                    // Sanitize letter: only allow A, B, C, D and fix 'S' -> 'C'
+                    if (rawLabel === 'S') rawLabel = 'C';
+                    const label = ['A', 'B', 'C', 'D'].includes(rawLabel) ? rawLabel : String.fromCharCode(65 + oIdx);
+
+                    // Strictly align crops by Question Number and Option Letter
                     let matchedCrop = null;
-                    if (visualCrops.length > 0) {
-                      if (qNum) {
-                        matchedCrop = visualCrops.find(c => c.questionNumber === qNum && c.letter === label);
-                      }
-                      // Priority 2: Match by sequential position in visualCrops
-                      if (!matchedCrop && optImgIdx < visualCrops.length) {
-                        matchedCrop = visualCrops[optImgIdx];
-                      }
+                    if (visualCrops.length > 0 && qNum) {
+                      matchedCrop = visualCrops.find(c => c.questionNumber === qNum && c.letter === label);
                     }
 
-                    const matchedOpt = matchedCrop || extractedImages.find(img => img.index === optImgIdx) || extractedImages[optImgIdx];
                     return {
                       type: 'image',
                       label,
-                      object_key: matchedOpt ? matchedOpt.object_key : (opt?.object_key || null),
-                      image_url: matchedOpt ? matchedOpt.url : (existingUrl || ''),
-                      caption,
-                      image_index: optImgIdx
+                      object_key: matchedCrop ? matchedCrop.object_key : (existingKey || null),
+                      image_url: matchedCrop ? matchedCrop.url : (existingUrl || ''),
+                      caption
                     };
                   });
                   globalChoiceImgCounter += q.options.length;
                 } else if (Array.isArray(q.options)) {
+                  q.has_visual_options = false;
                   q.options = q.options.map((opt, oIdx) => {
-                    if (typeof opt === 'object' && opt !== null) {
-                      return {
-                        type: 'text',
-                        label: opt.label || String.fromCharCode(65 + oIdx),
-                        value: opt.value !== undefined ? String(opt.value).trim() : (opt.text ? String(opt.text).trim() : '')
-                      };
-                    }
+                    const rawLabel = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+                    const label = ['A', 'B', 'C', 'D'].includes(rawLabel) ? (rawLabel === 'S' ? 'C' : rawLabel) : String.fromCharCode(65 + oIdx);
+                    const val = typeof opt === 'string' ? opt : (opt?.value !== undefined ? String(opt.value) : (opt?.text !== undefined ? String(opt.text) : (opt?.caption || '')));
                     return {
                       type: 'text',
-                      label: String.fromCharCode(65 + oIdx),
-                      value: String(opt || '').trim()
+                      label,
+                      value: String(val || '').trim()
                     };
                   });
                 }
@@ -5130,13 +5339,31 @@ app.get('/api/online-tests/:testId', authenticateToken, requireApprovedUser, asy
         const pts = Number(q.points) || 1;
         totalMarks += pts;
 
+        // Safety heuristic: If options are long sentences and have no image URLs, force has_visual_options = false
+        const hasImageUrls = Array.isArray(parsedOptions) && parsedOptions.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
+        const allOptionsAreLongText = Array.isArray(parsedOptions) && parsedOptions.length > 0 && parsedOptions.every(opt => {
+          const txt = (typeof opt === 'string' ? opt : (opt.value || opt.text || opt.caption || '')).trim();
+          return txt.length > 20 || txt.split(/\s+/).length >= 4;
+        });
+
+        let isVisualQ = Number(q.has_visual_options) === 1 || q.has_visual_options === true;
+        if (allOptionsAreLongText && !hasImageUrls) {
+          isVisualQ = false;
+          parsedOptions = parsedOptions.map((opt, oIdx) => {
+            const rawLabel = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+            const label = ['A', 'B', 'C', 'D'].includes(rawLabel) ? (rawLabel === 'S' ? 'C' : rawLabel) : String.fromCharCode(65 + oIdx);
+            const val = typeof opt === 'string' ? opt : (opt?.value !== undefined ? String(opt.value) : (opt?.text !== undefined ? String(opt.text) : (opt?.caption || '')));
+            return { type: 'text', label, value: String(val || '').trim() };
+          });
+        }
+
         parsedQuestions.push({
           ...q,
           options: parsedOptions,
           correct_answer: parsedCorrect,
           points: pts,
           stimulus_image_url: q.stimulus_image_url || null,
-          has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true,
+          has_visual_options: isVisualQ,
           group_title: q.group_title || null,
           group_instructions: q.group_instructions || null,
           word_bank: cleanWordBank || null,
@@ -5692,11 +5919,19 @@ app.post('/api/online-tests/:testId/publish', authenticateToken, requireApproved
       }
 
       // Check picture-choice questions: every picture option must have an image and no placeholders
-      if (Number(q.has_visual_options) === 1 || (q.options && q.options.includes('"type":"image"'))) {
-        let opts = q.options;
-        if (typeof opts === 'string') {
-          try { opts = JSON.parse(opts); } catch (_) { opts = []; }
-        }
+      let opts = q.options;
+      if (typeof opts === 'string') {
+        try { opts = JSON.parse(opts); } catch (_) { opts = []; }
+      }
+      const hasImageUrls = Array.isArray(opts) && opts.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
+      const allOptionsAreLongText = Array.isArray(opts) && opts.length > 0 && opts.every(opt => {
+        const txt = (typeof opt === 'string' ? opt : (opt.value || opt.text || opt.caption || '')).trim();
+        return txt.length > 20 || txt.split(/\s+/).length >= 4;
+      });
+
+      const isVisualQ = (Number(q.has_visual_options) === 1 || (q.options && q.options.includes('"type":"image"'))) && !(allOptionsAreLongText && !hasImageUrls);
+
+      if (isVisualQ) {
         if (Array.isArray(opts)) {
           for (let i = 0; i < opts.length; i++) {
             const opt = opts[i];
@@ -5745,8 +5980,65 @@ app.delete('/api/online-tests/:testId', authenticateToken, requireApprovedUser, 
     }
     const test = auth.test;
 
-    if (test.audio_path) {
-      try { await deleteAudioFromFilebase(test.audio_path); } catch (_) { }
+    // Storage cleanup: Collect all associated media files before cascading DB deletes
+    const filesToDelete = [];
+    if (test.audio_path) filesToDelete.push(test.audio_path);
+
+    // 1. Question stimulus images and option visual crops
+    try {
+      const qRows = await db.execute({
+        sql: 'SELECT stimulus_image_url, options FROM online_test_questions WHERE section_id IN (SELECT id FROM online_test_sections WHERE test_id = ?)',
+        args: [testId]
+      });
+      for (const row of qRows.rows) {
+        if (row.stimulus_image_url) filesToDelete.push(row.stimulus_image_url);
+        let opts = row.options;
+        if (typeof opts === 'string') {
+          try { opts = JSON.parse(opts); } catch (_) { opts = []; }
+        }
+        if (Array.isArray(opts)) {
+          for (const opt of opts) {
+            if (opt && typeof opt === 'object') {
+              if (opt.image_url) filesToDelete.push(opt.image_url);
+              if (opt.object_key) filesToDelete.push(opt.object_key);
+            }
+          }
+        }
+      }
+    } catch (qErr) {
+      console.warn('[Online Test Delete Media Warning]:', qErr.message);
+    }
+
+    // 2. Student attempt uploads (handwritten essay images)
+    try {
+      const attRows = await db.execute({
+        sql: 'SELECT answers FROM online_test_attempts WHERE test_id = ?',
+        args: [testId]
+      });
+      for (const row of attRows.rows) {
+        let ans = row.answers;
+        if (typeof ans === 'string') {
+          try { ans = JSON.parse(ans); } catch (_) { ans = []; }
+        }
+        if (Array.isArray(ans)) {
+          for (const a of ans) {
+            if (a && typeof a === 'object') {
+              if (Array.isArray(a.essay_images)) {
+                for (const img of a.essay_images) if (img) filesToDelete.push(img);
+              }
+              if (Array.isArray(a.images)) {
+                for (const img of a.images) if (img) filesToDelete.push(img);
+              }
+            }
+          }
+        }
+      }
+    } catch (attErr) {
+      console.warn('[Online Test Delete Attempts Media Warning]:', attErr.message);
+    }
+
+    if (filesToDelete.length > 0) {
+      await deleteStorageFiles(filesToDelete);
     }
 
     await db.execute({
@@ -5879,13 +6171,31 @@ app.get('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, requ
         if (typeof parsedSharedWordBank === 'string') {
           try { parsedSharedWordBank = JSON.parse(parsedSharedWordBank); } catch (_) { }
         }
+        // Safety heuristic: If options are long sentences and have no image URLs, force has_visual_options = false
+        const hasImageUrls = Array.isArray(parsedOptions) && parsedOptions.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
+        const allOptionsAreLongText = Array.isArray(parsedOptions) && parsedOptions.length > 0 && parsedOptions.every(opt => {
+          const txt = (typeof opt === 'string' ? opt : (opt.value || opt.text || opt.caption || '')).trim();
+          return txt.length > 20 || txt.split(/\s+/).length >= 4;
+        });
+
+        let isVisualQ = Number(q.has_visual_options) === 1 || q.has_visual_options === true;
+        if (allOptionsAreLongText && !hasImageUrls) {
+          isVisualQ = false;
+          parsedOptions = parsedOptions.map((opt, oIdx) => {
+            const rawLabel = (typeof opt === 'object' && opt?.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+            const label = ['A', 'B', 'C', 'D'].includes(rawLabel) ? (rawLabel === 'S' ? 'C' : rawLabel) : String.fromCharCode(65 + oIdx);
+            const val = typeof opt === 'string' ? opt : (opt?.value !== undefined ? String(opt.value) : (opt?.text !== undefined ? String(opt.text) : (opt?.caption || '')));
+            return { type: 'text', label, value: String(val || '').trim() };
+          });
+        }
+
         const qObj = {
           ...q,
           options: parsedOptions,
           correct_answer: parsedCorrect,
           points: Number(q.points) || 1,
           stimulus_image_url: q.stimulus_image_url || null,
-          has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true,
+          has_visual_options: isVisualQ,
           group_title: q.group_title || null,
           group_instructions: q.group_instructions || null,
           shared_word_bank: parsedSharedWordBank || null,
@@ -6026,11 +6336,34 @@ app.delete('/api/online-tests/:testId/attempts/:attemptId', authenticateToken, r
     }
 
     const attemptRes = await db.execute({
-      sql: 'SELECT id FROM online_test_attempts WHERE id = ? AND test_id = ?',
+      sql: 'SELECT id, answers FROM online_test_attempts WHERE id = ? AND test_id = ?',
       args: [attemptId, testId]
     });
     if (attemptRes.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Attempt not found.' });
+    }
+
+    // Purge attempt media
+    const attemptRow = attemptRes.rows[0];
+    const filesToDelete = [];
+    let ans = attemptRow.answers;
+    if (typeof ans === 'string') {
+      try { ans = JSON.parse(ans); } catch (_) { ans = []; }
+    }
+    if (Array.isArray(ans)) {
+      for (const a of ans) {
+        if (a && typeof a === 'object') {
+          if (Array.isArray(a.essay_images)) {
+            for (const img of a.essay_images) if (img) filesToDelete.push(img);
+          }
+          if (Array.isArray(a.images)) {
+            for (const img of a.images) if (img) filesToDelete.push(img);
+          }
+        }
+      }
+    }
+    if (filesToDelete.length > 0) {
+      await deleteStorageFiles(filesToDelete);
     }
 
     await db.execute({
@@ -6286,7 +6619,7 @@ app.get('/api/public/online-tests/:code/audio-url', async (req, res) => {
 // 4. POST /api/public/online-tests/:code/submit - Student exam submission handler
 app.post(
   '/api/public/online-tests/:code/submit',
-  express.text({ type: '*/*', limit: '10mb' }),
+  express.text({ type: '*/*', limit: '50mb' }),
   async (req, res) => {
     try {
       const code = (req.params.code || '').trim();
@@ -6427,6 +6760,70 @@ app.post(
         } else if (qType === 'writing') {
           hasWritingQuestions = true;
           pointsAwarded = 0; // Evaluated asynchronously in background pass
+
+          let isPhotoSubmission = false;
+          let savedEssayImages = [];
+          let submissionMode = subEntry.mode || 'type';
+
+          const candidateImages = Array.isArray(subEntry.essay_images) && subEntry.essay_images.length > 0
+            ? subEntry.essay_images
+            : (Array.isArray(subEntry.images) && subEntry.images.length > 0
+              ? subEntry.images
+              : (body && body[`writing_images_${q.id}`]
+                ? (Array.isArray(body[`writing_images_${q.id}`]) ? body[`writing_images_${q.id}`] : [body[`writing_images_${q.id}`]])
+                : []));
+
+          if (subEntry.mode === 'photo' || candidateImages.length > 0) {
+            isPhotoSubmission = true;
+            submissionMode = 'photo';
+            const localSubmissionsDir = path.join(__dirname, 'public', 'uploads', 'online-tests', 'submissions');
+            if (!fs.existsSync(localSubmissionsDir)) {
+              fs.mkdirSync(localSubmissionsDir, { recursive: true });
+            }
+
+            const rawImages = candidateImages;
+            rawImages.forEach((imgData, pIdx) => {
+              if (typeof imgData === 'string' && imgData.startsWith('data:')) {
+                try {
+                  const matches = imgData.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+                  if (matches) {
+                    const ext = matches[1].includes('png') ? 'png' : 'jpg';
+                    const filename = `essay_sub_${Date.now()}_q${q.id}_p${pIdx + 1}_${crypto.randomBytes(4).toString('hex')}.${ext}`;
+                    const filePath = path.join(localSubmissionsDir, filename);
+                    fs.writeFileSync(filePath, Buffer.from(matches[2], 'base64'));
+                    savedEssayImages.push(`/uploads/online-tests/submissions/${filename}`);
+                  }
+                } catch (writeErr) {
+                  console.warn('[Essay Photo Save Warning]:', writeErr.message);
+                }
+              } else if (typeof imgData === 'string' && imgData.trim()) {
+                savedEssayImages.push(imgData.trim());
+              }
+            });
+          }
+
+          gradedAnswers.push({
+            question_id: Number(q.id),
+            section_id: Number(q.section_id),
+            section_type: q.section_type || 'general',
+            question_type: qType,
+            question_text: q.question_text,
+            options: parsedOptions,
+            mode: submissionMode,
+            essay_images: savedEssayImages,
+            images: savedEssayImages,
+            student_answer: studentAns,
+            transcribed_text: '',
+            correct_answer: parsedCorrect,
+            points_awarded: pointsAwarded,
+            max_points: qPts,
+            min_words: q.min_words,
+            max_words: q.max_words,
+            word_count: wordCount,
+            stimulus_image_url: q.stimulus_image_url || null,
+            has_visual_options: Number(q.has_visual_options) === 1 || q.has_visual_options === true
+          });
+          continue;
         }
 
         initialObjectiveScore += pointsAwarded;
@@ -6438,7 +6835,10 @@ app.post(
           question_type: qType,
           question_text: q.question_text,
           options: parsedOptions,
+          mode: 'type',
+          essay_images: [],
           student_answer: studentAns,
+          transcribed_text: '',
           correct_answer: parsedCorrect,
           points_awarded: pointsAwarded,
           max_points: qPts,
@@ -6516,13 +6916,88 @@ async function evaluateAndDiagnoseAttempt(attemptId, testId) {
     const sectionsMap = new Map();
     sectionsRes.rows.forEach((s) => sectionsMap.set(Number(s.id), s));
 
-    const geminiModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash'];
+    const geminiModels = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash'];
 
-    // 1. Evaluate Writing / Essay Questions
+    // 1. Evaluate Writing / Essay Questions (Hybrid: Type vs. Photo Upload with Gemini OCR)
     const writingTasks = answers.filter((a) => a.question_type === 'writing');
     for (const w of writingTasks) {
-      const studentText = (w.student_answer || '').trim();
-      if (studentText) {
+      // Step A: If submitted as handwritten photos, run multimodal OCR transcription pipeline first
+      const hasPhotos = w.mode === 'photo' || (Array.isArray(w.essay_images) && w.essay_images.length > 0);
+      if (hasPhotos) {
+        const imagePayloadParts = [];
+        const rawImages = Array.isArray(w.essay_images) ? w.essay_images : [];
+
+        for (const imgRef of rawImages) {
+          try {
+            if (typeof imgRef === 'string' && imgRef.startsWith('data:')) {
+              const matches = imgRef.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+              if (matches) {
+                const mimeType = matches[1].includes('png') ? 'image/png' : 'image/jpeg';
+                imagePayloadParts.push({
+                  inlineData: {
+                    mimeType,
+                    data: matches[2]
+                  }
+                });
+              }
+            } else if (typeof imgRef === 'string' && imgRef.trim()) {
+              const cleanRelPath = imgRef.trim().replace(/^\//, '');
+              const localAbsPath = path.join(__dirname, 'public', cleanRelPath);
+              if (fs.existsSync(localAbsPath)) {
+                const fileBuf = fs.readFileSync(localAbsPath);
+                const ext = path.extname(localAbsPath).toLowerCase();
+                const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
+                imagePayloadParts.push({
+                  inlineData: {
+                    mimeType,
+                    data: fileBuf.toString('base64')
+                  }
+                });
+              }
+            }
+          } catch (readErr) {
+            console.warn('[OCR Image Read Warning]:', readErr.message);
+          }
+        }
+
+        let transcribedText = '';
+        if (imagePayloadParts.length > 0) {
+          const ocrPrompt = 'Transcribe all handwritten student text across these pages sequentially and verbatim. Maintain paragraph breaks. Return ONLY the transcribed text without conversational preamble.';
+          const ocrContents = [...imagePayloadParts, ocrPrompt];
+
+          const ocrModels = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash'];
+          for (const m of ocrModels) {
+            try {
+              const resp = await ai.models.generateContent({
+                model: m,
+                contents: ocrContents
+              });
+              if (resp && resp.text && resp.text.trim()) {
+                transcribedText = resp.text.trim();
+                break;
+              }
+            } catch (ocrErr) {
+              console.warn(`[OCR Gemini Model ${m} Notice]:`, ocrErr.message);
+            }
+          }
+        }
+
+        if (!transcribedText) {
+          transcribedText = (w.student_answer || '').trim() || '[Handwritten submission - transcription pending teacher review]';
+        }
+
+        const calculatedWords = transcribedText.trim().split(/\s+/).filter(Boolean).length;
+        w.mode = 'photo';
+        w.essay_images = rawImages;
+        w.images = rawImages;
+        w.transcribed_text = transcribedText;
+        w.student_answer = transcribedText;
+        w.word_count = calculatedWords;
+      }
+
+      // Step B: Grade student response against rubric criteria
+      const studentText = (w.student_answer || w.transcribed_text || '').trim();
+      if (studentText && !studentText.startsWith('[Handwritten submission - transcription pending')) {
         const rubricObj = w.correct_answer || {};
         const writingPrompt = `You are the Senior IGCSE/GCSE English Writing Examiner for Mimir Marking.
 Evaluate the student's writing response strictly according to the official marking scheme rubric criteria.
@@ -6576,17 +7051,32 @@ Evaluate strictly using the rubric. Output valid JSON in this exact structure:
 
           w.points_awarded = awarded;
           w.writing_evaluation = evalJson;
+          w.rubric_scores = evalJson;
         } else {
           // Fallback if AI unavailable: award 70% provisional mark
           const fallbackPts = Math.round(Number(w.max_points) * 0.7);
-          w.points_awarded = fallbackPts;
-          w.writing_evaluation = {
+          const fallbackEval = {
             total_score: fallbackPts,
             commentary: 'Provisional score generated. Awaiting teacher review.',
             achieved_criteria: ['Addressed prompt response'],
             missed_criteria: []
           };
+          w.points_awarded = fallbackPts;
+          w.writing_evaluation = fallbackEval;
+          w.rubric_scores = fallbackEval;
         }
+      } else {
+        // Fallback for pending or blank submissions
+        const defaultPts = studentText ? Math.round(Number(w.max_points) * 0.7) : 0;
+        const defaultEval = {
+          total_score: defaultPts,
+          commentary: studentText ? 'Provisional score generated. Awaiting teacher review.' : 'No response submitted.',
+          achieved_criteria: studentText ? ['Submitted response pages'] : [],
+          missed_criteria: studentText ? [] : ['Complete task response']
+        };
+        w.points_awarded = defaultPts;
+        w.writing_evaluation = defaultEval;
+        w.rubric_scores = defaultEval;
       }
     }
 

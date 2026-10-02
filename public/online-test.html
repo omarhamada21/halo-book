@@ -1084,6 +1084,165 @@
     border-color: #FCD34D;
   }
 
+  /* Hybrid Essay / Writing Submission Tabs & Dropzone */
+  .ot-writing-container {
+    margin-top: 10px;
+  }
+  .ot-writing-mode-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .ot-mode-tab {
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: inherit;
+  }
+  .ot-mode-tab:hover {
+    background: var(--paper);
+    color: var(--ink);
+  }
+  .ot-mode-tab.active {
+    background: var(--pen);
+    color: #fff;
+    border-color: var(--pen);
+    box-shadow: 0 2px 6px rgba(29, 58, 102, 0.2);
+  }
+  .ot-mode-panel {
+    display: none;
+  }
+  .ot-mode-panel.active {
+    display: block;
+  }
+  .ot-photo-dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 24px 16px;
+    text-align: center;
+    background: #FBFCFE;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .ot-photo-dropzone:hover, .ot-photo-dropzone.dragover {
+    border-color: var(--pen);
+    background: var(--paper);
+  }
+  .ot-dropzone-icon {
+    font-size: 32px;
+    margin-bottom: 6px;
+  }
+  .ot-dropzone-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+  .ot-dropzone-sub {
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+  .ot-photo-pages-list {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .ot-photo-page-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .ot-photo-page-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .ot-photo-page-thumb {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--paper-line);
+    background: #F8FAFC;
+    cursor: pointer;
+  }
+  .ot-photo-page-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ot-photo-page-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .ot-photo-page-size {
+    font-size: 11px;
+    color: var(--ink-soft);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .ot-photo-page-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ot-page-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: #F8FAFC;
+    color: var(--ink-soft);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .ot-page-btn:hover:not(:disabled) {
+    background: var(--paper-line);
+    color: var(--ink);
+  }
+  .ot-page-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .ot-page-btn-delete {
+    color: #DC2626;
+    border-color: #FCA5A5;
+    background: #FEF2F2;
+  }
+  .ot-page-btn-delete:hover {
+    background: #FEE2E2;
+    color: #B91C1C;
+  }
+  .ot-photo-summary {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: #F0FDF4;
+    border: 1px solid #BBF7D0;
+    border-radius: 6px;
+    font-size: 12.5px;
+    color: #166534;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   /* Bottom Submission Bar */
   .bottom-bar {
     position: fixed;
@@ -1468,6 +1627,7 @@ function getOrCreateDeviceId() {
     stored.startsWith('dev_NDQweDk1') ||
     stored.startsWith('dev_NDI4eDky') ||
     stored.startsWith('dev_MzYweDgw') ||
+    stored.length < 35 ||
     (stored.length <= 36 && !stored.includes('-'))
   );
   if (stored && !isLegacyTruncated) return stored;
@@ -2569,15 +2729,22 @@ function renderQuestion(sec, q, displayNum) {
 
   if (qType === 'mcq') {
     const opts = Array.isArray(q.options) ? q.options : [];
-    const isVisual = q.has_visual_options || (opts.length > 0 && typeof opts[0] === 'object' && opts[0] !== null && (opts[0].type === 'image' || opts[0].image_url || opts[0].object_key));
+    const hasImageUrls = opts.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
+    const allOptionsAreLongText = opts.length > 0 && opts.every(opt => {
+      const txt = (typeof opt === 'string' ? opt : (opt?.value || opt?.text || opt?.caption || '')).trim();
+      return txt.length > 20 || txt.split(/\s+/).length >= 4;
+    });
+    const hasVisualType = opts.some(opt => typeof opt === 'object' && opt !== null && (opt.type === 'image' || opt.image_url || opt.object_key));
+    const isVisual = (Number(q.has_visual_options) === 1 || q.has_visual_options === true) && (hasVisualType || !allOptionsAreLongText);
 
     if (isVisual) {
       inputMarkup = `
         <div class="mcq-visual-options-grid" id="mcq-group-${q.id}">
           ${opts.map((opt, oIdx) => {
-            const letter = (opt && opt.label) ? opt.label : String.fromCharCode(65 + oIdx);
+            const rawL = (opt && opt.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+            const letter = rawL === 'S' ? 'C' : (['A', 'B', 'C', 'D'].includes(rawL) ? rawL : String.fromCharCode(65 + oIdx));
             const imgUrl = (opt && opt.image_url) ? opt.image_url : '';
-            const caption = (opt && (opt.caption || opt.value)) ? (opt.caption || opt.value) : '';
+            const caption = (opt && (opt.caption || opt.value || opt.text)) ? (opt.caption || opt.value || opt.text) : '';
             return `
               <div class="mcq-visual-card" id="mcq-opt-${q.id}-${oIdx}" onclick="handleSelectMcq(${q.id}, '${oIdx}')">
                 <div class="mcq-visual-img-wrap">
@@ -2599,8 +2766,9 @@ function renderQuestion(sec, q, displayNum) {
       inputMarkup = `
         <div class="mcq-options-grid" id="mcq-group-${q.id}">
           ${opts.map((opt, oIdx) => {
-            const letter = (typeof opt === 'object' && opt && opt.label) ? opt.label : String.fromCharCode(65 + oIdx);
-            const textVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.caption || '')) : String(opt || '');
+            const rawL = (typeof opt === 'object' && opt && opt.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+            const letter = rawL === 'S' ? 'C' : (['A', 'B', 'C', 'D'].includes(rawL) ? rawL : String.fromCharCode(65 + oIdx));
+            const textVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.text || opt.caption || '')) : String(opt || '');
             return `
               <div class="mcq-choice-row" id="mcq-opt-${q.id}-${oIdx}" onclick="handleSelectMcq(${q.id}, '${oIdx}')">
                 <span class="mcq-letter">${letter}</span>
@@ -2640,12 +2808,38 @@ function renderQuestion(sec, q, displayNum) {
       : (minW ? `(Minimum: ${minW} words)` : (maxW ? `(Maximum: ${maxW} words)` : ''));
 
     inputMarkup = `
-      <textarea class="ot-writing-textarea" id="input-q-${q.id}" rows="8"
-        placeholder="Type your essay or response here..."
-        oninput="handleWritingInput(${q.id}, this.value, ${minW || 0}, ${maxW || 0})"></textarea>
-      <div class="word-counter-badge" id="wc-badge-${q.id}">
-        <span>Words: <b id="wc-count-${q.id}">0</b></span>
-        <span>${boundsLabel}</span>
+      <div class="ot-writing-container" id="ot-writing-box-${q.id}" data-question-id="${q.id}">
+        <div class="ot-writing-mode-tabs">
+          <button type="button" class="ot-mode-tab active" id="tab-type-${q.id}" data-mode="type" onclick="switchWritingMode(${q.id}, 'type')">
+            ⌨️ Type Response
+          </button>
+          <button type="button" class="ot-mode-tab" id="tab-photo-${q.id}" data-mode="photo" onclick="switchWritingMode(${q.id}, 'photo')">
+            📸 Upload Handwritten Photos
+          </button>
+        </div>
+
+        <!-- Mode A: Type Response -->
+        <div class="ot-mode-panel ot-panel-type active" id="panel-type-${q.id}">
+          <textarea class="ot-writing-textarea" id="input-q-${q.id}" rows="8"
+            placeholder="Type your essay or response here..."
+            oninput="handleWritingInput(${q.id}, this.value, ${minW || 0}, ${maxW || 0})"></textarea>
+          <div class="word-counter-badge" id="wc-badge-${q.id}">
+            <span>Words: <b id="wc-count-${q.id}">0</b></span>
+            <span>${boundsLabel}</span>
+          </div>
+        </div>
+
+        <!-- Mode B: Multi-Page Photo Upload -->
+        <div class="ot-mode-panel ot-panel-photo" id="panel-photo-${q.id}" style="display:none;">
+          <div class="ot-photo-dropzone" id="dropzone-${q.id}" onclick="document.getElementById('file-input-${q.id}').click()">
+            <div class="ot-dropzone-icon">📷</div>
+            <div class="ot-dropzone-text">Tap to take photo or choose pages</div>
+            <div class="ot-dropzone-sub">Supports camera photos, JPG, PNG (multi-page enabled, auto-compressed)</div>
+          </div>
+          <input type="file" id="file-input-${q.id}" accept="image/*" capture="environment" multiple style="display:none;" onchange="handleEssayPhotosSelected(${q.id}, this.files)">
+          <div class="ot-photo-pages-list" id="photo-list-${q.id}"></div>
+          <div class="ot-photo-summary" id="photo-summary-${q.id}" style="display:none;"></div>
+        </div>
       </div>
     `;
   }
@@ -2747,6 +2941,245 @@ function refreshMatchingOptionDisables() {
   }
 }
 
+window.writingPages = window.writingPages || {};
+window.writingModes = window.writingModes || {};
+
+function switchWritingMode(questionId, mode) {
+  window.writingModes[questionId] = mode;
+  const tabType = document.getElementById(`tab-type-${questionId}`);
+  const tabPhoto = document.getElementById(`tab-photo-${questionId}`);
+  const panelType = document.getElementById(`panel-type-${questionId}`);
+  const panelPhoto = document.getElementById(`panel-photo-${questionId}`);
+
+  if (mode === 'photo') {
+    if (tabType) tabType.classList.remove('active');
+    if (tabPhoto) tabPhoto.classList.add('active');
+    if (panelType) panelType.style.display = 'none';
+    if (panelPhoto) panelPhoto.style.display = 'block';
+
+    const pages = window.writingPages[questionId] || [];
+    if (pages.length > 0) {
+      clientAnswers.set(questionId, {
+        mode: 'photo',
+        answer: '',
+        word_count: null,
+        essay_images: pages.map(p => p.dataUrl)
+      });
+    } else {
+      clientAnswers.delete(questionId);
+    }
+  } else {
+    if (tabPhoto) tabPhoto.classList.remove('active');
+    if (tabType) tabType.classList.add('active');
+    if (panelPhoto) panelPhoto.style.display = 'none';
+    if (panelType) panelType.style.display = 'block';
+
+    const textarea = document.getElementById(`input-q-${questionId}`);
+    const text = (textarea ? textarea.value : '').trim();
+    if (text) {
+      const words = text.match(/\S+/g);
+      clientAnswers.set(questionId, {
+        mode: 'type',
+        answer: text,
+        word_count: words ? words.length : 0
+      });
+    } else {
+      clientAnswers.delete(questionId);
+    }
+  }
+  updateCompletionCount();
+}
+
+async function compressImageFile(file, maxDimension = 2048, quality = 0.82) {
+  if (!file || !file.type || !file.type.startsWith('image/')) {
+    return file;
+  }
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onerror = () => resolve(file);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => resolve(file);
+      img.onload = () => {
+        try {
+          let width = img.naturalWidth || img.width;
+          let height = img.naturalHeight || img.height;
+          if (!width || !height) return resolve(file);
+
+          const MAX_PIXELS = 16000000;
+          const currentPixels = width * height;
+          let safeMaxDim = maxDimension;
+          if (currentPixels > MAX_PIXELS) {
+            const downscaleRatio = Math.sqrt(MAX_PIXELS / currentPixels);
+            safeMaxDim = Math.min(safeMaxDim, Math.floor(Math.max(width, height) * downscaleRatio));
+          }
+
+          const scale = Math.min(1, safeMaxDim / Math.max(width, height));
+          let targetWidth = Math.round(width * scale);
+          let targetHeight = Math.round(height * scale);
+
+          const canvas = document.createElement('canvas');
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return resolve(file);
+
+          ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) return resolve(file);
+              if (blob.size >= file.size) return resolve(file);
+
+              const extMatch = file.name.match(/\.[^.]+$/);
+              const baseName = extMatch ? file.name.slice(0, extMatch.index) : file.name;
+              const compressedFile = new File([blob], `${baseName}.jpg`, {
+                type: 'image/jpeg',
+                lastModified: Date.now()
+              });
+              resolve(compressedFile);
+            },
+            'image/jpeg',
+            quality
+          );
+        } catch (err) {
+          console.warn('[Compression Exception]:', err);
+          resolve(file);
+        }
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleEssayPhotosSelected(questionId, files) {
+  if (!files || files.length === 0) return;
+  window.writingPages = window.writingPages || {};
+  if (!window.writingPages[questionId]) {
+    window.writingPages[questionId] = [];
+  }
+
+  showToast(`⏳ Optimizing ${files.length} photo${files.length === 1 ? '' : 's'}...`);
+
+  for (let i = 0; i < files.length; i++) {
+    const origFile = files[i];
+    if (!origFile.type || !origFile.type.startsWith('image/')) continue;
+    try {
+      const compressed = await compressImageFile(origFile, 2048, 0.82);
+      const dataUrl = await fileToDataUrl(compressed);
+      window.writingPages[questionId].push({
+        id: 'p_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        name: compressed.name || origFile.name,
+        size: compressed.size,
+        dataUrl: dataUrl
+      });
+    } catch (err) {
+      console.warn('[Photo Processing Error]:', err);
+    }
+  }
+
+  renderPhotoPagesList(questionId);
+
+  const pages = window.writingPages[questionId];
+  if (pages.length > 0) {
+    clientAnswers.set(questionId, {
+      mode: 'photo',
+      answer: '',
+      word_count: null,
+      essay_images: pages.map(p => p.dataUrl)
+    });
+  } else {
+    clientAnswers.delete(questionId);
+  }
+  updateCompletionCount();
+}
+
+function renderPhotoPagesList(questionId) {
+  const listEl = document.getElementById(`photo-list-${questionId}`);
+  const summaryEl = document.getElementById(`photo-summary-${questionId}`);
+  if (!listEl) return;
+
+  const pages = window.writingPages ? (window.writingPages[questionId] || []) : [];
+
+  if (pages.length === 0) {
+    listEl.innerHTML = '';
+    if (summaryEl) summaryEl.style.display = 'none';
+    return;
+  }
+
+  listEl.innerHTML = pages.map((page, idx) => {
+    const sizeKb = (page.size / 1024).toFixed(1);
+    const isFirst = idx === 0;
+    const isLast = idx === pages.length - 1;
+    return `
+      <div class="ot-photo-page-card" id="page-card-${questionId}-${idx}">
+        <div class="ot-photo-page-left">
+          <img src="${escapeHtml(page.dataUrl)}" alt="Page ${idx + 1}" class="ot-photo-page-thumb" onclick="openDiagramLightbox('${escapeHtml(page.dataUrl)}')" title="Click to enlarge" />
+          <div class="ot-photo-page-info">
+            <span class="ot-photo-page-title">📄 Page ${idx + 1}</span>
+            <span class="ot-photo-page-size">${sizeKb} KB (Compressed)</span>
+          </div>
+        </div>
+        <div class="ot-photo-page-actions">
+          <button type="button" class="ot-page-btn" onclick="moveEssayPhotoPage(${questionId}, ${idx}, -1)" ${isFirst ? 'disabled' : ''} title="Move Up">⬆</button>
+          <button type="button" class="ot-page-btn" onclick="moveEssayPhotoPage(${questionId}, ${idx}, 1)" ${isLast ? 'disabled' : ''} title="Move Down">⬇</button>
+          <button type="button" class="ot-page-btn ot-page-btn-delete" onclick="deleteEssayPhotoPage(${questionId}, ${idx})" title="Delete Page">🗑️</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  if (summaryEl) {
+    summaryEl.style.display = 'flex';
+    summaryEl.innerHTML = `<span>✓</span> <b>${pages.length} handwritten page${pages.length === 1 ? '' : 's'} attached</b> (will be transcribed via OCR during grading).`;
+  }
+}
+
+function moveEssayPhotoPage(questionId, index, direction) {
+  if (!window.writingPages || !window.writingPages[questionId]) return;
+  const pages = window.writingPages[questionId];
+  const newIndex = index + direction;
+  if (newIndex < 0 || newIndex >= pages.length) return;
+  const temp = pages[index];
+  pages[index] = pages[newIndex];
+  pages[newIndex] = temp;
+  renderPhotoPagesList(questionId);
+  clientAnswers.set(questionId, {
+    mode: 'photo',
+    answer: '',
+    word_count: null,
+    essay_images: pages.map(p => p.dataUrl)
+  });
+}
+
+function deleteEssayPhotoPage(questionId, index) {
+  if (!window.writingPages || !window.writingPages[questionId]) return;
+  const pages = window.writingPages[questionId];
+  pages.splice(index, 1);
+  renderPhotoPagesList(questionId);
+  if (pages.length > 0) {
+    clientAnswers.set(questionId, {
+      mode: 'photo',
+      answer: '',
+      word_count: null,
+      essay_images: pages.map(p => p.dataUrl)
+    });
+  } else {
+    clientAnswers.delete(questionId);
+  }
+  updateCompletionCount();
+}
+
 function handleWritingInput(questionId, text, minW, maxW) {
   const words = (text || '').trim().match(/\S+/g);
   const count = words ? words.length : 0;
@@ -2766,7 +3199,7 @@ function handleWritingInput(questionId, text, minW, maxW) {
   }
 
   if (text.trim()) {
-    clientAnswers.set(questionId, { answer: text, word_count: count });
+    clientAnswers.set(questionId, { mode: 'type', answer: text, word_count: count });
   } else {
     clientAnswers.delete(questionId);
   }
@@ -2803,11 +3236,20 @@ function handleClickSubmit() {
     (sec.questions || []).forEach((q, idx) => {
       if (q.question_type === 'writing') {
         const entry = clientAnswers.get(q.id);
-        const count = entry ? (entry.word_count || 0) : 0;
-        if (q.min_words && count < q.min_words) {
-          wordWarnings.push(`<b>Part ${sec.part_number} Q${idx + 1}</b> response has ${count} words (Minimum requested: ${q.min_words}).`);
-        } else if (q.max_words && count > q.max_words) {
-          wordWarnings.push(`<b>Part ${sec.part_number} Q${idx + 1}</b> response has ${count} words (Maximum requested: ${q.max_words}).`);
+        const mode = entry ? (entry.mode || 'type') : 'type';
+        if (mode === 'photo') {
+          // Photo mode: validated by attached page count, word count evaluated via OCR on backend
+          const pages = (window.writingPages && window.writingPages[q.id]) ? window.writingPages[q.id] : [];
+          if (pages.length === 0) {
+            // Handled as unanswered question
+          }
+        } else {
+          const count = entry ? (entry.word_count || 0) : 0;
+          if (q.min_words && count < q.min_words) {
+            wordWarnings.push(`<b>Part ${sec.part_number} Q${idx + 1}</b> response has ${count} words (Minimum requested: ${q.min_words}).`);
+          } else if (q.max_words && count > q.max_words) {
+            wordWarnings.push(`<b>Part ${sec.part_number} Q${idx + 1}</b> response has ${count} words (Maximum requested: ${q.max_words}).`);
+          }
         }
       }
     });
@@ -2865,8 +3307,10 @@ async function executeSubmission(terminationReason = 'normal') {
     const entry = clientAnswers.get(qId);
     formattedAnswers.push({
       question_id: qId,
-      answer: entry ? entry.answer : '',
-      word_count: entry ? entry.word_count : null
+      mode: entry ? (entry.mode || 'type') : 'type',
+      answer: entry ? (entry.answer || '') : '',
+      word_count: entry ? entry.word_count : null,
+      essay_images: entry && Array.isArray(entry.essay_images) ? entry.essay_images : []
     });
   });
 
@@ -2921,6 +3365,13 @@ async function executeSubmission(terminationReason = 'normal') {
     }
   }
 }
+
+// Window bindings for hybrid essay submissions
+window.switchWritingMode = switchWritingMode;
+window.handleEssayPhotosSelected = handleEssayPhotosSelected;
+window.moveEssayPhotoPage = moveEssayPhotoPage;
+window.deleteEssayPhotoPage = deleteEssayPhotoPage;
+window.compressImageFile = compressImageFile;
 </script>
 </body>
 </html>

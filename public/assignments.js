@@ -1073,29 +1073,66 @@ function renderMcqEditor() {
       `;
     } else {
       // 'mcq'
-      bodyHtml = `
-        <div>
-          <label style="display:block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--ink-soft);">
-            Options & Correct Answer (Select the radio button for the correct option)
-          </label>
-          <div class="mcq-options-grid">
-            ${opts.map((optText, optIdx) => {
-              const isCorrect = Number(q.correct_index) === optIdx;
-              const letter = optionLetters[optIdx] || String(optIdx + 1);
-              return `
-                <div class="mcq-option-row ${isCorrect ? 'correct' : ''}" id="mcq-opt-row-${q.id}-${optIdx}">
-                  <input type="radio" name="mcq-correct-${q.id}" class="mcq-radio"
-                    ${isCorrect ? 'checked' : ''} onchange="onRadioCorrectChanged(${q.id}, ${optIdx})" />
-                  <span class="mcq-opt-label">${letter}.</span>
-                  <input type="text" class="mcq-opt-input" id="mcq-opt-input-${q.id}-${optIdx}"
-                    value="${escapeHtml(optText || '')}" placeholder="Option ${letter} text..."
-                    oninput="onQuestionFieldChanged(${q.id})" />
-                </div>
-              `;
-            }).join('')}
+      const isVisual = Array.isArray(opts) && opts.some(o => typeof o === 'object' && o !== null && (o.type === 'image' || o.image_url));
+      if (isVisual) {
+        bodyHtml = `
+          <div>
+            <label style="display:block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--ink-soft);">
+              Visual Picture Options (Select radio for correct answer, edit caption):
+            </label>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 8px;">
+              ${opts.map((opt, optIdx) => {
+                const isCorrect = Number(q.correct_index) === optIdx;
+                const rawL = (opt && opt.label) ? String(opt.label).trim().toUpperCase() : (optionLetters[optIdx] || String(optIdx + 1));
+                const letter = rawL === 'S' ? 'C' : rawL;
+                const imgUrl = (opt && opt.image_url) ? opt.image_url : '';
+                const caption = (opt && (opt.caption || opt.value || opt.text)) ? (opt.caption || opt.value || opt.text) : '';
+                return `
+                  <div class="mcq-visual-opt-card ${isCorrect ? 'is-correct' : ''}" style="border: 2px solid ${isCorrect ? '#10b981' : 'var(--border)'}; background: ${isCorrect ? '#f0fdf4' : '#fff'}; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
+                    <div style="min-height: 90px; display: flex; align-items: center; justify-content: center; background: #fafafa; border-radius: 4px; margin-bottom: 6px; border: 1px solid var(--border);">
+                      ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Picture ${letter}" style="max-height: 100px; max-width: 100%; object-fit: contain;" />` : `<div style="font-size: 11px; font-weight: 600; color: #b91c1c; padding: 6px; background: #fef2f2; border: 1px dashed #f87171; border-radius: 4px;">⚠️ Missing Image</div>`}
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                      <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 700; font-size: 12.5px; color: var(--pen); margin: 0;">
+                        <input type="radio" name="mcq-correct-${q.id}" class="mcq-radio" ${isCorrect ? 'checked' : ''} onchange="onRadioCorrectChanged(${q.id}, ${optIdx})" />
+                        Picture ${letter}
+                      </label>
+                    </div>
+                    <input type="text" class="mcq-opt-input" id="mcq-opt-input-${q.id}-${optIdx}"
+                      value="${escapeHtml(caption)}" placeholder="Caption (optional)"
+                      oninput="onQuestionFieldChanged(${q.id})" style="font-size: 12px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px;" />
+                  </div>
+                `;
+              }).join('')}
+            </div>
           </div>
-        </div>
-      `;
+        `;
+      } else {
+        bodyHtml = `
+          <div>
+            <label style="display:block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--ink-soft);">
+              Options & Correct Answer (Select the radio button for the correct option)
+            </label>
+            <div class="mcq-options-grid">
+              ${opts.map((optText, optIdx) => {
+                const isCorrect = Number(q.correct_index) === optIdx;
+                const letter = optionLetters[optIdx] || String(optIdx + 1);
+                const val = typeof optText === 'object' && optText !== null ? (optText.value || optText.caption || optText.text || '') : String(optText || '');
+                return `
+                  <div class="mcq-option-row ${isCorrect ? 'correct' : ''}" id="mcq-opt-row-${q.id}-${optIdx}">
+                    <input type="radio" name="mcq-correct-${q.id}" class="mcq-radio"
+                      ${isCorrect ? 'checked' : ''} onchange="onRadioCorrectChanged(${q.id}, ${optIdx})" />
+                    <span class="mcq-opt-label">${letter}.</span>
+                    <input type="text" class="mcq-opt-input" id="mcq-opt-input-${q.id}-${optIdx}"
+                      value="${escapeHtml(val)}" placeholder="Option ${letter} text..."
+                      oninput="onQuestionFieldChanged(${q.id})" />
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
     }
 
     return `
@@ -1211,10 +1248,22 @@ async function executeQuestionSave(questionId) {
     correct_index = isNaN(selVal) ? 0 : selVal;
   } else {
     // 'mcq'
-    for (let i = 0; i < 4; i++) {
+    const isVisual = Array.isArray(q?.options) && q.options.some(o => typeof o === 'object' && o !== null && (o.type === 'image' || o.image_url));
+    const optCount = Array.isArray(q?.options) ? q.options.length : 4;
+    for (let i = 0; i < optCount; i++) {
       const optEl = document.getElementById(`mcq-opt-input-${questionId}-${i}`);
-      if (optEl) {
-        options.push(optEl.value.trim());
+      const val = optEl ? optEl.value.trim() : '';
+      if (isVisual) {
+        const orig = q.options[i] || {};
+        options.push({
+          type: 'image',
+          label: orig.label || optionLetters[i] || String.fromCharCode(65 + i),
+          image_url: orig.image_url || '',
+          object_key: orig.object_key || null,
+          caption: val
+        });
+      } else {
+        options.push(val);
       }
     }
     const radios = document.getElementsByName(`mcq-correct-${questionId}`);

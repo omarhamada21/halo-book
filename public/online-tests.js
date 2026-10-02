@@ -516,7 +516,13 @@ function renderQuestionCard(sectionId, q, displayNum) {
   if (qType === 'mcq') {
     const opts = Array.isArray(q.options) ? q.options : [];
     const correctIdx = Number(q.correct_answer) || 0;
-    const isVisual = q.has_visual_options || (opts.length > 0 && typeof opts[0] === 'object' && opts[0] !== null);
+    const hasImageUrls = opts.some(opt => opt && (opt.image_url || opt.imageUrl || opt.object_key));
+    const allOptionsAreLongText = opts.length > 0 && opts.every(opt => {
+      const txt = (typeof opt === 'string' ? opt : (opt?.value || opt?.text || opt?.caption || '')).trim();
+      return txt.length > 20 || txt.split(/\s+/).length >= 4;
+    });
+    const hasVisualType = opts.some(opt => typeof opt === 'object' && opt !== null && (opt.type === 'image' || opt.image_url || opt.object_key));
+    const isVisual = (Number(q.has_visual_options) === 1 || q.has_visual_options === true) && (hasVisualType || !allOptionsAreLongText);
 
     if (isVisual) {
       controlsHtml = `
@@ -524,9 +530,10 @@ function renderQuestionCard(sectionId, q, displayNum) {
           <div class="fb-label">Visual Options (Click radio to set correct answer, upload/replace image, or edit caption):</div>
           <div class="ot-visual-options-admin-grid">
             ${opts.map((opt, oIdx) => {
-              const letter = (opt && opt.label) ? opt.label : String.fromCharCode(65 + oIdx);
+              const rawL = (opt && opt.label) ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+              const letter = rawL === 'S' ? 'C' : (['A', 'B', 'C', 'D'].includes(rawL) ? rawL : String.fromCharCode(65 + oIdx));
               const imgUrl = (opt && opt.image_url) ? opt.image_url : '';
-              const caption = (opt && (opt.caption || opt.value)) ? (opt.caption || opt.value) : '';
+              const caption = (opt && (opt.caption || opt.value || opt.text)) ? (opt.caption || opt.value || opt.text) : '';
               const isCorrect = oIdx === correctIdx;
               return `
                 <div class="ot-visual-opt-admin-card ${isCorrect ? 'is-correct' : ''}">
@@ -563,7 +570,7 @@ function renderQuestionCard(sectionId, q, displayNum) {
           <div class="fb-label">Options (Click dot to set correct answer):</div>
           <div class="ot-options-vertical-list">
             ${opts.map((opt, oIdx) => {
-              const optVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.caption || '')) : String(opt || '');
+              const optVal = (typeof opt === 'object' && opt !== null) ? (opt.value !== undefined ? opt.value : (opt.text || opt.caption || '')) : String(opt || '');
               return `
               <div class="ot-opt-row ${oIdx === correctIdx ? 'is-correct' : ''}">
                 <span class="ot-opt-radio" onclick="setMcqCorrectOption(${currentReviewTest.id}, ${q.id}, ${oIdx})" title="Click to set as correct answer">
@@ -1521,8 +1528,57 @@ function renderAttemptQuestionsBreakdown(testId, attempt) {
         </div>
       `;
     } else if (qType === 'writing') {
-      const studentText = ans.student_answer || '(No response submitted)';
-      const evalObj = ans.writing_evaluation || null;
+      const isPhoto = ans.mode === 'photo' || (Array.isArray(ans.essay_images) && ans.essay_images.length > 0);
+      const studentText = ans.transcribed_text || ans.student_answer || '(No response submitted)';
+      const evalObj = ans.writing_evaluation || ans.rubric_scores || null;
+      const images = Array.isArray(ans.essay_images) ? ans.essay_images : [];
+
+      let photoGalleryHtml = '';
+      if (isPhoto && images.length > 0) {
+        photoGalleryHtml = `
+          <div style="margin-bottom:12px; background:#F8FAFC; border:1px solid var(--border); border-radius:8px; padding:10px 12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span style="font-size:12px; font-weight:600; color:var(--ink); display:flex; align-items:center; gap:6px;">
+                📸 <b>Handwritten Submitted Pages</b> (${images.length} page${images.length > 1 ? 's' : ''})
+              </span>
+              <span style="font-size:11px; color:var(--ink-soft);">Click thumbnail to expand</span>
+            </div>
+            <div class="ot-essay-gallery" style="display:flex; gap:10px; overflow-x:auto; padding-bottom:6px;">
+              ${images.map((imgUrl, imgIdx) => `
+                <div class="ot-essay-thumb-card"
+                  onclick="openOnlineTestPhotoLightbox('${escapeHtml(imgUrl)}', ${imgIdx}, ${images.length})"
+                  style="cursor:pointer; flex:0 0 110px; border:1px solid var(--border); border-radius:6px; overflow:hidden; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.06); text-align:center; transition:transform 0.15s ease;"
+                  onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'">
+                  <img src="${escapeHtml(imgUrl)}" alt="Page ${imgIdx + 1}" style="width:110px; height:140px; object-fit:cover; display:block;" />
+                  <div style="font-size:11px; font-weight:600; padding:4px; background:#F1F5F9; color:var(--ink); display:flex; justify-content:center; align-items:center; gap:4px;">
+                    <span>Page ${imgIdx + 1}</span> <span>🔍</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      let responseHeaderHtml = '';
+      if (isPhoto) {
+        responseHeaderHtml = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span class="badge-ocr" style="background:#EEF2FF; color:#4338CA; border:1px solid #C7D2FE; padding:2px 8px; border-radius:4px; font-weight:600; font-size:11px;">🤖 OCR Transcribed</span>
+              <span style="font-size:12px; font-weight:600; color:var(--ink-soft);">Extracted Handwritten Text:</span>
+            </div>
+            <span class="badge-words" style="background:#F0FDF4; color:#15803D; border:1px solid #BBF7D0; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; font-family:'IBM Plex Mono',monospace;">📝 Handwritten (OCR Transcribed): ${ans.word_count || 0} words ${ans.min_words ? `(Target: ${ans.min_words}–${ans.max_words || '∞'})` : ''}</span>
+          </div>
+        `;
+      } else {
+        responseHeaderHtml = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+            <span style="font-size:12px; font-weight:600; color:var(--ink-soft);">⌨️ Student Typed Response:</span>
+            <span class="ot-code-badge" style="font-size:11px; font-family:'IBM Plex Mono',monospace;">📝 ${ans.word_count || 0} words ${ans.min_words ? `(Target: ${ans.min_words}–${ans.max_words || '∞'})` : ''}</span>
+          </div>
+        `;
+      }
 
       let rubricFeedbackHtml = '';
       if (evalObj) {
@@ -1566,10 +1622,8 @@ function renderAttemptQuestionsBreakdown(testId, attempt) {
 
       answerDetailsHtml = `
         <div style="margin-top:8px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <span style="font-size:12px; font-weight:600; color:var(--ink-soft);">Student's Response:</span>
-            <span class="ot-code-badge" style="font-size:11px;">📝 ${ans.word_count || 0} words ${ans.min_words ? `(Target: ${ans.min_words}–${ans.max_words || '∞'})` : ''}</span>
-          </div>
+          ${photoGalleryHtml}
+          ${responseHeaderHtml}
           <div style="background:#fff; border:1px solid var(--border); border-radius:8px; padding:12px; font-family:'Source Serif 4',serif; font-size:13.5px; line-height:1.6; color:var(--ink); white-space:pre-wrap; max-height:220px; overflow-y:auto;">${escapeHtml(studentText)}</div>
           ${rubricFeedbackHtml}
         </div>
@@ -1833,6 +1887,31 @@ async function printOnlineTestReport(testId, attemptId, reportType) {
       }).join('')
     : `<tr><td colspan="5" style="padding:12px; text-align:center; color:#6B7280; font-style:italic;">No pedagogical errors identified. Full marks achieved across all criteria!</td></tr>`;
 
+  // Build Section Performance Summary Table
+  const sectionSummaryMap = new Map();
+  answers.forEach(a => {
+    const secKey = a.section_title || 'General';
+    if (!sectionSummaryMap.has(secKey)) {
+      sectionSummaryMap.set(secKey, { title: secKey, type: a.section_type || 'General', earned: 0, max: 0, count: 0 });
+    }
+    const s = sectionSummaryMap.get(secKey);
+    s.earned += Number(a.points_awarded || 0);
+    s.max += Number(a.max_points || 0);
+    s.count++;
+  });
+  const sectionSummaryRows = Array.from(sectionSummaryMap.values()).map(s => {
+    const pct = s.max > 0 ? Math.round((s.earned / s.max) * 100) : 0;
+    return `
+      <tr style="border-bottom: 1px solid #E5E7EB;">
+        <td style="padding: 7px 10px; font-weight:600; color:#1F2937;">${escapeHtml(s.title)}</td>
+        <td style="padding: 7px 10px; text-transform:capitalize; color:#4B5563;">${escapeHtml(s.type)}</td>
+        <td style="padding: 7px 10px; text-align:right;">${s.count}</td>
+        <td style="padding: 7px 10px; text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:600;">${s.earned} / ${s.max}</td>
+        <td style="padding: 7px 10px; text-align:right; font-weight:700; color:${pct >= 70 ? '#059669' : (pct >= 40 ? '#D97706' : '#DC2626')};">${pct}%</td>
+      </tr>
+    `;
+  }).join('');
+
   // Build Questions Breakdown
   const questionsBreakdownHtml = answers.map((ans, qIdx) => {
     const qNum = qIdx + 1;
@@ -1841,42 +1920,104 @@ async function printOnlineTestReport(testId, attemptId, reportType) {
 
     let optionsHtml = '';
     if (qType === 'mcq' && Array.isArray(ans.options)) {
-      optionsHtml = `
-        <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px;">
-          ${ans.options.map((opt, oIdx) => {
-            const letter = String.fromCharCode(65 + oIdx);
-            const optText = typeof opt === 'string' ? opt : (opt.text || opt.label || '');
-            const isStudent = (ans.student_answer !== null && ans.student_answer !== undefined) &&
-              (parseInt(ans.student_answer, 10) === oIdx || String(ans.student_answer).trim().toUpperCase() === letter);
-            const isCorrect = (ans.correct_answer !== null && ans.correct_answer !== undefined) &&
-              (parseInt(ans.correct_answer, 10) === oIdx || String(ans.correct_answer).trim().toUpperCase() === letter);
+      const isVisualChoice = (ans.has_visual_options === true || Number(ans.has_visual_options) === 1) && ans.options.some(o => typeof o === 'object' && o && (o.image_url || o.object_key));
+      if (isVisualChoice) {
+        optionsHtml = `
+          <div style="margin-top:10px; display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px;">
+            ${ans.options.map((opt, oIdx) => {
+              const rawL = typeof opt === 'object' && opt.label ? String(opt.label).trim().toUpperCase() : String.fromCharCode(65 + oIdx);
+              const letter = rawL === 'S' ? 'C' : rawL;
+              const imgUrl = typeof opt === 'object' && opt.image_url ? opt.image_url : '';
+              const caption = typeof opt === 'object' ? (opt.caption || opt.value || '') : String(opt || '');
+              const isStudent = (ans.student_answer !== null && ans.student_answer !== undefined) &&
+                (parseInt(ans.student_answer, 10) === oIdx || String(ans.student_answer).trim().toUpperCase() === letter);
+              const isCorrect = (ans.correct_answer !== null && ans.correct_answer !== undefined) &&
+                (parseInt(ans.correct_answer, 10) === oIdx || String(ans.correct_answer).trim().toUpperCase() === letter);
 
-            let marker = '○';
-            let style = 'padding: 4px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #E5E7EB;';
-            if (isCorrect) {
-              style += ' background: #ECFDF5; border-color: #A7F3D0; font-weight:600; color:#065F46;';
-              marker = '✓';
-            }
-            if (isStudent && !isCorrect) {
-              style += ' background: #FEF2F2; border-color: #FECACA; color:#991B1B;';
-              marker = '✗';
-            }
+              let border = '#E5E7EB';
+              let bg = '#FFFFFF';
+              if (isCorrect) { border = '#10B981'; bg = '#ECFDF5'; }
+              if (isStudent && !isCorrect) { border = '#EF4444'; bg = '#FEF2F2'; }
 
-            return `
-              <div style="${style}">
-                <b>${marker} (${letter})</b> ${escapeHtml(optText)}
-                ${isStudent ? '<span style="font-size:11px; margin-left:6px; font-weight:bold;">[Student]</span>' : ''}
-                ${isCorrect ? '<span style="font-size:11px; margin-left:6px; font-weight:bold;">[Key]</span>' : ''}
-              </div>
-            `;
-          }).join('')}
-        </div>
-      `;
+              return `
+                <div style="border: 2px solid ${border}; background: ${bg}; border-radius: 6px; padding: 8px; text-align: center;">
+                  ${imgUrl ? `<img src="${imgUrl}" style="max-height:85px; max-width:100%; object-fit:contain; border-radius:4px; margin-bottom:4px;" />` : ''}
+                  <div style="font-weight:700; font-size:12px; margin-top:2px;">(${letter}) ${escapeHtml(caption)}</div>
+                  <div style="margin-top:4px;">
+                    ${isCorrect ? '<span style="background:#10B981; color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px;">✓ Key</span>' : ''}
+                    ${isStudent ? '<span style="background:#3B82F6; color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; margin-left:4px;">Student</span>' : ''}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      } else {
+        optionsHtml = `
+          <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px;">
+            ${ans.options.map((opt, oIdx) => {
+              const letter = String.fromCharCode(65 + oIdx);
+              const optText = typeof opt === 'string' ? opt : (opt.text || opt.label || '');
+              const isStudent = (ans.student_answer !== null && ans.student_answer !== undefined) &&
+                (parseInt(ans.student_answer, 10) === oIdx || String(ans.student_answer).trim().toUpperCase() === letter);
+              const isCorrect = (ans.correct_answer !== null && ans.correct_answer !== undefined) &&
+                (parseInt(ans.correct_answer, 10) === oIdx || String(ans.correct_answer).trim().toUpperCase() === letter);
+
+              let marker = '○';
+              let style = 'padding: 4px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #E5E7EB;';
+              if (isCorrect) {
+                style += ' background: #ECFDF5; border-color: #A7F3D0; font-weight:600; color:#065F46;';
+                marker = '✓';
+              }
+              if (isStudent && !isCorrect) {
+                style += ' background: #FEF2F2; border-color: #FECACA; color:#991B1B;';
+                marker = '✗';
+              }
+
+              return `
+                <div style="${style}">
+                  <b>${marker} (${letter})</b> ${escapeHtml(optText)}
+                  ${isStudent ? '<span style="font-size:11px; margin-left:6px; font-weight:bold;">[Student]</span>' : ''}
+                  ${isCorrect ? '<span style="font-size:11px; margin-left:6px; font-weight:bold;">[Key]</span>' : ''}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }
     } else if (qType === 'writing') {
+      const isPhoto = ans.mode === 'photo' || (Array.isArray(ans.essay_images) && ans.essay_images.length > 0);
+      const studentText = ans.transcribed_text || ans.student_answer || '(No response submitted)';
+      const images = Array.isArray(ans.essay_images) ? ans.essay_images : [];
+
+      let photoStripHtml = '';
+      if (isPhoto && images.length > 0) {
+        photoStripHtml = `
+          <div style="margin-top:8px; margin-bottom:8px; page-break-inside: avoid;">
+            <div style="font-size:11px; font-weight:700; color:#4B5563; margin-bottom:4px; text-transform:uppercase;">Handwritten Submitted Pages:</div>
+            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+              ${images.map((img, i) => `
+                <div style="border:1px solid #D1D5DB; border-radius:4px; overflow:hidden; width:130px; text-align:center; background:#F9FAFB; page-break-inside: avoid;">
+                  <img src="${escapeHtml(img)}" alt="Page ${i + 1}" style="width:130px; height:170px; object-fit:cover; display:block;" />
+                  <div style="font-size:10px; font-weight:600; padding:2px; color:#374151; background:#E5E7EB;">Page ${i + 1}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
       optionsHtml = `
-        <div style="margin-top:6px; background:#F9FAFB; border:1px solid #E5E7EB; border-radius:6px; padding:10px; font-size:12.5px; font-family:'Source Serif 4',serif; line-height:1.5;">
-          <b>Candidate Response (${ans.word_count || 0} words):</b>
-          <p style="margin:4px 0 0 0; white-space:pre-wrap;">${escapeHtml(ans.student_answer || '(Blank)')}</p>
+        <div style="margin-top:6px; background:#F9FAFB; border:1px solid #E5E7EB; border-radius:6px; padding:10px; font-size:12.5px; font-family:'Source Serif 4',serif; line-height:1.5; page-break-inside: avoid;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <b>${isPhoto ? 'Candidate Response [Handwritten - OCR Transcribed]' : 'Candidate Response [Typed]'}:</b>
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; color:#1E3A8A;">${ans.word_count || 0} words</span>
+          </div>
+          ${photoStripHtml}
+          <div style="margin-top:4px;">
+            <div style="font-size:11px; font-weight:700; color:#4B5563; margin-bottom:2px; text-transform:uppercase;">Transcribed Text:</div>
+            <p style="margin:0; white-space:pre-wrap;">${escapeHtml(studentText)}</p>
+          </div>
         </div>
       `;
     } else {
@@ -1960,6 +2101,29 @@ async function printOnlineTestReport(testId, attemptId, reportType) {
           })()}</div>
         </div>
       </div>
+
+      <!-- Section Performance Summary Table -->
+      ${sectionSummaryRows ? `
+        <div style="margin-bottom:18px;">
+          <h2 style="font-family:'Source Serif 4',serif; font-size:14px; margin:0 0 6px 0; color:#111827; text-transform:uppercase; letter-spacing:0.04em;">
+            Section Performance Summary
+          </h2>
+          <table style="width:100%; border-collapse:collapse; background:#fff; border:1px solid #E5E7EB; border-radius:6px; overflow:hidden; font-size:12px;">
+            <thead>
+              <tr style="background:#F8FAFC; border-bottom:1px solid #E2E8F0; text-align:left; font-size:11px; text-transform:uppercase; color:#475569;">
+                <th style="padding:6px 10px;">Section / Part</th>
+                <th style="padding:6px 10px;">Type</th>
+                <th style="padding:6px 10px; text-align:right;">Questions</th>
+                <th style="padding:6px 10px; text-align:right;">Marks Earned</th>
+                <th style="padding:6px 10px; text-align:right;">Percentage</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sectionSummaryRows}
+            </tbody>
+          </table>
+        </div>
+      ` : ''}
 
       <!-- Executive Diagnostic Summary -->
       ${overallSummary ? `
@@ -2456,3 +2620,48 @@ if (typeof document !== 'undefined') {
     attachDeadlineListeners();
   }
 }
+
+// ----------------- ONLINE TEST PHOTO LIGHTBOX PREVIEW -----------------
+function openOnlineTestPhotoLightbox(imgUrl, pageIndex, totalPages) {
+  let lightbox = document.getElementById('ot-photo-lightbox-modal');
+  if (!lightbox) {
+    lightbox = document.createElement('div');
+    lightbox.id = 'ot-photo-lightbox-modal';
+    lightbox.style.cssText = 'display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.85); z-index:99999; justify-content:center; align-items:center; flex-direction:column; padding:20px; box-sizing:border-box;';
+    lightbox.innerHTML = `
+      <div style="position:relative; max-width:90vw; max-height:90vh; display:flex; flex-direction:column; align-items:center;">
+        <div style="display:flex; justify-content:space-between; align-items:center; width:100%; color:#fff; margin-bottom:8px;">
+          <span id="ot-lightbox-label" style="font-size:14px; font-weight:600; font-family:'IBM Plex Mono',monospace;">Page Preview</span>
+          <button type="button" onclick="closeOnlineTestPhotoLightbox()" style="background:rgba(255,255,255,0.2); border:none; color:#fff; font-size:18px; line-height:1; padding:6px 12px; border-radius:4px; cursor:pointer; font-weight:700;">✕</button>
+        </div>
+        <img id="ot-lightbox-img" src="" alt="Enlarged Handwritten Page" style="max-width:88vw; max-height:80vh; object-fit:contain; border-radius:6px; box-shadow:0 8px 30px rgba(0,0,0,0.5); background:#fff;" />
+      </div>
+    `;
+    lightbox.addEventListener('click', (e) => {
+      if (e.target === lightbox) closeOnlineTestPhotoLightbox();
+    });
+    document.body.appendChild(lightbox);
+  }
+
+  const labelEl = document.getElementById('ot-lightbox-label');
+  const imgEl = document.getElementById('ot-lightbox-img');
+  if (labelEl) {
+    labelEl.innerText = (typeof pageIndex === 'number' && totalPages)
+      ? `Handwritten Essay - Page ${pageIndex + 1} of ${totalPages}`
+      : 'Handwritten Essay Page Preview';
+  }
+  if (imgEl) {
+    imgEl.src = imgUrl;
+  }
+  lightbox.style.display = 'flex';
+}
+
+function closeOnlineTestPhotoLightbox() {
+  const lightbox = document.getElementById('ot-photo-lightbox-modal');
+  if (lightbox) {
+    lightbox.style.display = 'none';
+  }
+}
+
+window.openOnlineTestPhotoLightbox = openOnlineTestPhotoLightbox;
+window.closeOnlineTestPhotoLightbox = closeOnlineTestPhotoLightbox;
