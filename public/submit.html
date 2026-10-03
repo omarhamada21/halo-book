@@ -138,6 +138,7 @@
       stored.startsWith('dev_NDQweDk1') ||
       stored.startsWith('dev_NDI4eDky') ||
       stored.startsWith('dev_MzYweDgw') ||
+      stored.length < 35 ||
       (stored.length <= 36 && !stored.includes('-'))
     );
     if (stored && !isLegacyTruncated) return stored;

@@ -2366,6 +2366,53 @@
           page-break-after: always;
         }
       }
+
+      /* Online Test Handwritten Essay Photo Gallery & Badges */
+      .ot-essay-gallery {
+        display: flex;
+        gap: 10px;
+        overflow-x: auto;
+        padding-bottom: 6px;
+      }
+      .ot-essay-thumb-card {
+        cursor: pointer;
+        flex: 0 0 110px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+        background: #fff;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        text-align: center;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+      }
+      .ot-essay-thumb-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+      }
+      .badge-ocr {
+        background: #EEF2FF;
+        color: #4338CA;
+        border: 1px solid #C7D2FE;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 11px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .badge-words {
+        background: #F0FDF4;
+        color: #15803D;
+        border: 1px solid #BBF7D0;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
   </style>
 </head>
 
