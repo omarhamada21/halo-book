@@ -1,9 +1,24 @@
+# Dependencies
 node_modules/
+package-lock.json.backup
+
+# Environment Variables
 .env
-halobook.db
-halobook.db-wal
-halobook.db-shm
-.env
+.env.*
+!.env.example
+
+# Databases
 *.db
-mimirmarking.db
-node_modules/
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Test artifacts and screenshots
+verification_screenshots/
+comprehensive_verification_screenshots/
+scratch/
+
+# Operating System
+.DS_Store
+Thumbs.db
