@@ -1502,6 +1502,20 @@
   .ot-btn-reenter-fs:active {
     transform: translateY(0);
   }
+
+  /* Mobile Pseudo-Fullscreen Fallback (iOS Safari, WebViews) */
+  body.ot-mobile-pseudo-fullscreen {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    overflow-y: auto !important;
+    z-index: 9999 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-overflow-scrolling: touch;
+  }
 </style>
 </head>
 <body>
@@ -1574,7 +1588,7 @@
         style="width:100%; padding:12px 14px; font-size:14px; border:1px solid var(--border); border-radius:8px; outline:none; background:#fff; margin-bottom:6px; font-family:inherit;" />
       <div id="splash-name-error" style="color:var(--danger); font-size:12px; margin-bottom:14px; display:none;">Please enter your full name before beginning.</div>
 
-      <button type="button" id="btn-begin-lockdown-exam" onclick="startExamWithLockdown()" class="btn-lockdown-enter" style="width:100%;">
+      <button type="button" id="btn-begin-lockdown-exam" onclick="startExamWithLockdown(event)" ontouchend="startExamWithLockdown(event)" class="btn-lockdown-enter" style="width:100%;">
         <span>🔒</span> Enter Fullscreen & Begin Exam
       </button>
     </div>
@@ -1639,7 +1653,7 @@
       <span id="ot-fs-timer-display" class="recovery-countdown">01:00</span>
     </div>
     <div class="recovery-actions">
-      <button type="button" class="ot-btn-reenter-fs" onclick="triggerReenterFullscreen()">
+      <button type="button" class="ot-btn-reenter-fs" onclick="triggerReenterFullscreen(event)" ontouchend="triggerReenterFullscreen(event)">
         ⛶ Return to Fullscreen
       </button>
     </div>
@@ -1656,7 +1670,7 @@
       <br/><br/>
       <b>Click below to return to fullscreen and resume your test.</b> Your answers and audio progress remain saved.
     </p>
-    <button type="button" class="btn-lockdown-enter" style="width:100%; justify-content:center;" onclick="resumeFullscreenFromGate()">
+    <button type="button" class="btn-lockdown-enter" style="width:100%; justify-content:center;" onclick="triggerReenterFullscreen(event)" ontouchend="triggerReenterFullscreen(event)">
       <span>🔒</span> Return to Fullscreen & Resume
     </button>
   </div>
@@ -1690,7 +1704,7 @@
       <br/><br/>
       <b>Warning:</b> You have <b>1 strike remaining</b>. A second infraction will immediately <b>terminate and auto-submit</b> your exam.
     </p>
-    <button type="button" onclick="resumeFullscreen()"
+    <button type="button" onclick="triggerReenterFullscreen(event)" ontouchend="triggerReenterFullscreen(event)"
       style="background: var(--ink); color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">
       🔒 Return to Fullscreen & Resume Exam
     </button>
@@ -2025,7 +2039,10 @@ async function loadOnlineTest() {
 
 // ----------------- 2. LOCKDOWN & FULLSCREEN ENTRY GATE -----------------
 
-async function startExamWithLockdown() {
+async function startExamWithLockdown(e) {
+  if (e && e.preventDefault) {
+    try { e.preventDefault(); } catch (_) {}
+  }
   const splashInput = document.getElementById('splash-student-name');
   const studentName = (splashInput?.value || document.getElementById('student-name-input')?.value || '').trim();
   const errEl = document.getElementById('splash-name-error');
@@ -2041,21 +2058,21 @@ async function startExamWithLockdown() {
   const bottomInput = document.getElementById('student-name-input');
   if (bottomInput) bottomInput.value = studentName;
 
-  // Request Fullscreen (Direct User Interaction Requirement)
+  // Request Fullscreen synchronously upon user gesture
   try {
-    const elem = document.documentElement;
-    if (elem.requestFullscreen) {
-      await elem.requestFullscreen();
-    } else if (elem.webkitRequestFullscreen) {
-      await elem.webkitRequestFullscreen();
-    } else if (elem.mozRequestFullScreen) {
-      await elem.mozRequestFullScreen();
-    } else if (elem.msRequestFullscreen) {
-      await elem.msRequestFullscreen();
+    const promise = requestNativeFullscreen();
+    if (promise && promise.then) {
+      promise.then(() => {
+        window.isMobileFallbackFullscreenActive = false;
+        document.body.classList.remove('ot-mobile-pseudo-fullscreen');
+      }).catch(err => {
+        console.warn('[StartExam] Native fullscreen rejected. Activating mobile fallback:', err ? err.message : err);
+        activateMobileFallbackFullscreen();
+      });
     }
   } catch (fsErr) {
-    console.warn('Fullscreen request blocked or not granted:', fsErr);
-    showToast('⚠️ Fullscreen permission was not granted by browser. Please remain focused on this window.');
+    console.warn('[StartExam] Fullscreen API unsupported. Activating mobile fallback:', fsErr ? fsErr.message : fsErr);
+    activateMobileFallbackFullscreen();
   }
 
   revealExamContent();
@@ -2227,27 +2244,108 @@ function dismissFullscreenRecoveryTimer(opts = {}) {
   }
 }
 
-async function triggerReenterFullscreen() {
+// Mobile Fullscreen & Fallback State
+window.isMobileFallbackFullscreenActive = false;
+let lastReenterTs = 0;
+
+function isNativeFullscreenSupported() {
+  const doc = document;
+  return !!(
+    doc.fullscreenEnabled ||
+    doc.webkitFullscreenEnabled ||
+    doc.mozFullScreenEnabled ||
+    doc.msFullscreenEnabled
+  );
+}
+
+function requestNativeFullscreen() {
+  const el = document.documentElement;
+  const rfs = el.requestFullscreen ||
+              el.webkitRequestFullscreen ||
+              el.mozRequestFullScreen ||
+              el.msRequestFullscreen;
+  if (rfs) {
+    return rfs.call(el);
+  }
+  return Promise.reject(new Error('Fullscreen API not supported'));
+}
+
+function isExamInFullscreen() {
+  const nativeFs = !!(
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.mozFullScreenElement ||
+    document.msFullscreenElement
+  );
+  return nativeFs || window.isMobileFallbackFullscreenActive === true;
+}
+
+function activateMobileFallbackFullscreen() {
+  document.body.classList.add('ot-mobile-pseudo-fullscreen');
   try {
-    const elem = document.documentElement;
-    if (elem.requestFullscreen) {
-      await elem.requestFullscreen();
-    } else if (elem.webkitRequestFullscreen) {
-      await elem.webkitRequestFullscreen();
-    } else if (elem.mozRequestFullScreen) {
-      await elem.mozRequestFullScreen();
-    } else if (elem.msRequestFullscreen) {
-      await elem.msRequestFullscreen();
+    window.scrollTo(0, 1);
+  } catch (_) {}
+  window.isMobileFallbackFullscreenActive = true;
+
+  // Reveal exam content if hidden
+  const resumeOverlay = document.getElementById('fullscreen-resume-overlay');
+  if (resumeOverlay) resumeOverlay.style.display = 'none';
+  const warningModal = document.getElementById('lockdown-warning-modal');
+  if (warningModal) warningModal.style.display = 'none';
+
+  const mainContent = document.getElementById('exam-main-content');
+  const bottomBar = document.getElementById('exam-bottom-bar');
+  if (mainContent) mainContent.style.display = 'block';
+  if (bottomBar) bottomBar.style.display = 'flex';
+  const navStrip = document.getElementById('exam-section-nav') || document.getElementById('section-nav-strip') || document.querySelector('.section-tabs-wrap');
+  if (navStrip && testData?.sections && testData.sections.length > 1) {
+    navStrip.style.display = 'flex';
+  }
+
+  // Resume audio playback if it was active before exiting
+  if (wasAudioPlayingBeforeExit) {
+    const player = document.getElementById('exam-audio-element');
+    if (player && !player.ended) {
+      player.play().catch(() => {});
     }
-    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
-    if (isFs) {
-      dismissFullscreenRecoveryTimer();
-    }
-  } catch (err) {
-    console.warn('Could not re-enter fullscreen:', err);
-    showToast('⚠️ Could not activate fullscreen. Click to retry.');
+    wasAudioPlayingBeforeExit = false;
   }
 }
+
+function triggerReenterFullscreen(e) {
+  if (e && e.preventDefault) {
+    try { e.preventDefault(); } catch (_) {}
+  }
+  const now = Date.now();
+  if (now - lastReenterTs < 400) return;
+  lastReenterTs = now;
+
+  // 1. Try Native Fullscreen synchronously to preserve user gesture
+  try {
+    const promise = requestNativeFullscreen();
+    if (promise && promise.then) {
+      promise.then(() => {
+        console.log('[Fullscreen] Native fullscreen granted successfully.');
+        window.isMobileFallbackFullscreenActive = false;
+        document.body.classList.remove('ot-mobile-pseudo-fullscreen');
+        dismissFullscreenRecoveryTimer();
+      }).catch(err => {
+        console.warn('[Fullscreen] Native request rejected/blocked. Activating Mobile Fallback Fullscreen:', err ? err.message : err);
+        activateMobileFallbackFullscreen();
+        dismissFullscreenRecoveryTimer();
+      });
+      return;
+    }
+  } catch (err) {
+    console.warn('[Fullscreen] Native call failed synchronously. Activating Fallback:', err ? err.message : err);
+  }
+
+  // 2. If API is unsupported (iOS Safari / WebView)
+  activateMobileFallbackFullscreen();
+  dismissFullscreenRecoveryTimer();
+}
+
+window.triggerReenterFullscreen = triggerReenterFullscreen;
 
 function registerStrike(type, details) {
   handleSecurityInfraction(type, details);
@@ -2332,31 +2430,17 @@ function handleSecurityInfraction(type, details) {
   }
 }
 
-async function resumeFullscreenFromGate() {
-  const elem = document.documentElement;
-  try {
-    if (elem.requestFullscreen) {
-      await elem.requestFullscreen();
-    } else if (elem.webkitRequestFullscreen) {
-      await elem.webkitRequestFullscreen();
-    } else if (elem.mozRequestFullScreen) {
-      await elem.mozRequestFullScreen();
-    } else if (elem.msRequestFullscreen) {
-      await elem.msRequestFullscreen();
-    }
-  } catch (err) {
-    console.warn('Could not re-enter fullscreen:', err);
-    showToast('⚠️ Could not activate fullscreen. Click to retry.');
-  }
+function resumeFullscreenFromGate(e) {
+  triggerReenterFullscreen(e);
 }
 
-function resumeFullscreen() {
-  resumeFullscreenFromGate();
+function resumeFullscreen(e) {
+  triggerReenterFullscreen(e);
 }
 
 // Fullscreen exit & resume detection
 function handleFullscreenChange() {
-  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+  const isFs = isExamInFullscreen();
 
   if (!isFs && isExamActive && !isSubmitted) {
     if (window.isCapturingPhoto) {
@@ -2394,6 +2478,10 @@ function handleFullscreenChange() {
     registerStrike('fullscreen_exit', 'Candidate exited fullscreen mode.');
   } else if (isFs && isExamActive && !isSubmitted) {
     // Return to fullscreen: cancel recovery timer, dismiss overlay, 0 strikes!
+    if (document.fullscreenElement) {
+      window.isMobileFallbackFullscreenActive = false;
+      document.body.classList.remove('ot-mobile-pseudo-fullscreen');
+    }
     dismissFullscreenRecoveryTimer();
 
     const resumeOverlay = document.getElementById('fullscreen-resume-overlay');
@@ -3467,8 +3555,9 @@ async function handleEssayPhotosSelected(questionId, files) {
   updateCompletionCount();
 
   // Fullscreen compliance check:
-  // If student is outside fullscreen after attaching paper(s), start or reset the 5-minute compliance window
-  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+  // Reset mobile fallback flag so candidate must re-engage fullscreen or fallback
+  window.isMobileFallbackFullscreenActive = false;
+  const isFs = isExamInFullscreen();
   if (!isFs && isExamActive && !isSubmitted) {
     startOrResetFullscreenRecoveryTimer(pages.length, questionId);
   } else if (isFs) {
@@ -3712,6 +3801,8 @@ async function executeSubmission(terminationReason = 'normal') {
       if (document.fullscreenElement && document.exitFullscreen) {
         document.exitFullscreen().catch(() => {});
       }
+      document.body.classList.remove('ot-mobile-pseudo-fullscreen');
+      window.isMobileFallbackFullscreenActive = false;
     } catch (_) {}
 
     // Show appropriate confirmation overlay
@@ -3753,6 +3844,10 @@ window.registerStrike = registerStrike;
 window.startOrResetFullscreenRecoveryTimer = startOrResetFullscreenRecoveryTimer;
 window.dismissFullscreenRecoveryTimer = dismissFullscreenRecoveryTimer;
 window.triggerReenterFullscreen = triggerReenterFullscreen;
+window.isNativeFullscreenSupported = isNativeFullscreenSupported;
+window.requestNativeFullscreen = requestNativeFullscreen;
+window.isExamInFullscreen = isExamInFullscreen;
+window.activateMobileFallbackFullscreen = activateMobileFallbackFullscreen;
 </script>
 </body>
 </html>

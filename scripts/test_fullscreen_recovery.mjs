@@ -20,7 +20,7 @@ const requiredElements = [
   'id="ot-fs-recovery-title"',
   'id="ot-fs-recovery-desc"',
   'id="ot-fs-timer-display"',
-  'triggerReenterFullscreen()'
+  'triggerReenterFullscreen'
 ];
 
 for (const el of requiredElements) {
