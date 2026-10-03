@@ -1636,7 +1636,7 @@
     <p id="ot-fs-recovery-desc">Your page has been saved. Please return to fullscreen mode to continue your exam securely, or attach additional pages if needed.</p>
     <div class="recovery-timer-box">
       <span id="ot-fs-timer-label">Fullscreen deadline:</span>
-      <span id="ot-fs-timer-display" class="recovery-countdown">05:00</span>
+      <span id="ot-fs-timer-display" class="recovery-countdown">01:00</span>
     </div>
     <div class="recovery-actions">
       <button type="button" class="ot-btn-reenter-fs" onclick="triggerReenterFullscreen()">
@@ -2113,7 +2113,7 @@ function markPhotoCaptureStart(qId) {
   }, 120000);
 }
 
-// Fullscreen Compliance Recovery State (5-minute compliance window for attached essay papers)
+// Fullscreen Compliance Recovery State (1-minute compliance window for attached essay papers)
 window.fullscreenRecoveryDeadline = null;
 window.fullscreenRecoveryTimerId = null;
 window.fullscreenRecoveryTickInterval = null;
@@ -2133,7 +2133,7 @@ function startOrResetFullscreenRecoveryTimer(pageCount = 1, questionId = null) {
     window.fullscreenRecoveryTickInterval = null;
   }
 
-  const durationMs = 300000; // 5 minutes (300,000 ms)
+  const durationMs = 60000; // 1 minute (60,000 ms)
   const now = Date.now();
   window.fullscreenRecoveryDeadline = now + durationMs;
   window.isPostPhotoRecoveryActive = true;
@@ -2172,7 +2172,7 @@ function startOrResetFullscreenRecoveryTimer(pageCount = 1, questionId = null) {
 
     if (timerDisplay) {
       timerDisplay.textContent = formatted;
-      timerDisplay.style.color = remainingSec <= 60 ? '#DC2626' : '#B45309';
+      timerDisplay.style.color = remainingSec <= 15 ? '#DC2626' : '#B45309';
     }
 
     if (remainingMs <= 0) {
@@ -2187,18 +2187,18 @@ function startOrResetFullscreenRecoveryTimer(pageCount = 1, questionId = null) {
     handleRecoveryTimeoutExpired();
   }, durationMs);
 
-  console.log(`[Proctoring] Fullscreen recovery compliance window started/reset: 5m (${pageNum} page(s) attached).`);
+  console.log(`[Proctoring] Fullscreen recovery compliance window started/reset: 1m (${pageNum} page(s) attached).`);
 }
 
 function handleRecoveryTimeoutExpired() {
   if (!window.isPostPhotoRecoveryActive) return;
-  console.warn('[Proctoring] 5-minute photo fullscreen compliance window expired without returning to fullscreen.');
+  console.warn('[Proctoring] 1-minute photo fullscreen compliance window expired without returning to fullscreen.');
 
   dismissFullscreenRecoveryTimer({ timeoutExpired: true });
 
   registerStrike(
     'fullscreen_not_restored_after_photo',
-    'Failed to return to fullscreen mode within 5 minutes of the last attached paper.'
+    'Failed to return to fullscreen mode within 1 minute of the last attached paper.'
   );
 
   if (isExamActive && !isSubmitted && strikesCount < MAX_STRIKES) {

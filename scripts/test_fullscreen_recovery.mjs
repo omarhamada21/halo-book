@@ -110,7 +110,7 @@ function startOrResetFullscreenRecoveryTimer(pageCount = 1, questionId = null) {
     win.fullscreenRecoveryTickInterval = null;
   }
 
-  const durationMs = 300000;
+  const durationMs = 60000;
   const now = Date.now();
   win.fullscreenRecoveryDeadline = now + durationMs;
   win.isPostPhotoRecoveryActive = true;
@@ -161,7 +161,7 @@ function handleRecoveryTimeoutExpired() {
   dismissFullscreenRecoveryTimer({ timeoutExpired: true });
   registerStrike(
     'fullscreen_not_restored_after_photo',
-    'Failed to return to fullscreen mode within 5 minutes of the last attached paper.'
+    'Failed to return to fullscreen mode within 1 minute of the last attached paper.'
   );
 }
 
@@ -197,7 +197,7 @@ function handleFullscreenChange(isFs) {
   }
 }
 
-// SIMULATION 1: Page 1 attached -> 5 min deadline started
+// SIMULATION 1: Page 1 attached -> 1 min deadline started
 console.log('\n[SIMULATION 1] Student attaches Page 1 outside fullscreen...');
 win.isCapturingPhoto = true;
 handleFullscreenChange(false); // Fullscreen exits when mobile camera / file picker opens
@@ -207,31 +207,33 @@ startOrResetFullscreenRecoveryTimer(1, 101);
 if (!win.isPostPhotoRecoveryActive) throw new Error('Recovery should be active!');
 if (mockElements['ot-fullscreen-recovery-overlay'].style.display !== 'flex') throw new Error('Overlay should be visible!');
 if (!mockElements['ot-fs-recovery-title'].textContent.includes('Paper Attached')) throw new Error('Title mismatch for Page 1');
-if (mockElements['ot-fs-timer-display'].textContent !== '05:00') throw new Error('Timer display must be 05:00 initially');
-console.log('✓ Page 1 starts fresh 5-minute window (05:00). Overlay visible.');
+if (mockElements['ot-fs-timer-display'].textContent !== '01:00') throw new Error('Timer display must be 01:00 initially');
+console.log('✓ Page 1 starts fresh 1-minute window (01:00). Overlay visible.');
 
 const page1Deadline = win.fullscreenRecoveryDeadline;
 
-// SIMULATION 2: 2 minutes pass, student attaches Page 2 -> timer dynamically resets!
-console.log('\n[SIMULATION 2] 2 minutes elapse, student attaches Page 2...');
-// Simulate time advancing 120 seconds
-win.fullscreenRecoveryDeadline -= 120000;
+// SIMULATION 2: 30 seconds pass, student attaches Page 2 -> timer dynamically resets!
+console.log('\n[SIMULATION 2] 30 seconds elapse, student attaches Page 2...');
+// Simulate remaining time had decayed to 30 seconds
+win.fullscreenRecoveryDeadline = Date.now() + 30000;
+const decayedRemaining = win.fullscreenRecoveryDeadline - Date.now();
 // Page 2 attached
 startOrResetFullscreenRecoveryTimer(2, 101);
 
-if (win.fullscreenRecoveryDeadline <= page1Deadline) {
-  throw new Error('Deadline should have been dynamically reset to +300,000 ms from now!');
+const freshRemaining = win.fullscreenRecoveryDeadline - Date.now();
+if (freshRemaining <= decayedRemaining) {
+  throw new Error('Deadline should have been dynamically reset to a fresh 60,000 ms window!');
 }
 if (!mockElements['ot-fs-recovery-title'].textContent.includes('Page 2 Attached')) {
   throw new Error('Title should reflect Page 2');
 }
-if (mockElements['ot-fs-timer-display'].textContent !== '05:00') {
-  throw new Error('Timer display must reset to 05:00 upon Page 2 attachment');
+if (mockElements['ot-fs-timer-display'].textContent !== '01:00') {
+  throw new Error('Timer display must reset to 01:00 upon Page 2 attachment');
 }
-console.log('✓ Page 2 dynamically cleared old timer and granted a fresh 5-minute window starting from Page 2 completion.');
+console.log('✓ Page 2 dynamically cleared old timer and granted a fresh 1-minute window starting from Page 2 completion.');
 
 // SIMULATION 3: Student re-enters fullscreen -> timer dismissed, 0 strikes!
-console.log('\n[SIMULATION 3] Student re-enters fullscreen at 3 minutes...');
+console.log('\n[SIMULATION 3] Student re-enters fullscreen at 20 seconds...');
 handleFullscreenChange(true);
 
 if (win.isPostPhotoRecoveryActive) throw new Error('Recovery should be inactive after returning to fullscreen');
@@ -239,8 +241,8 @@ if (mockElements['ot-fullscreen-recovery-overlay'].style.display !== 'none') thr
 if (strikesCount !== 0) throw new Error(`Strikes must be 0, got: ${strikesCount}`);
 console.log('✓ Returning to fullscreen dismissed recovery overlay and recorded 0 strikes.');
 
-// SIMULATION 4: Student attaches Page 1 again, but 5 minutes elapse without returning
-console.log('\n[SIMULATION 4] Student attaches Page 1 again, but lets 5 minutes expire...');
+// SIMULATION 4: Student attaches Page 1 again, but 1 minute elapses without returning
+console.log('\n[SIMULATION 4] Student attaches Page 1 again, but lets 1 minute expire...');
 startOrResetFullscreenRecoveryTimer(1, 102);
 // Fast forward deadline to 0
 win.fullscreenRecoveryDeadline = Date.now() - 100;
@@ -251,7 +253,7 @@ const violation = securityViolations[0];
 if (violation.type !== 'fullscreen_not_restored_after_photo') {
   throw new Error(`Expected type 'fullscreen_not_restored_after_photo', got: ${violation.type}`);
 }
-if (violation.details !== 'Failed to return to fullscreen mode within 5 minutes of the last attached paper.') {
+if (violation.details !== 'Failed to return to fullscreen mode within 1 minute of the last attached paper.') {
   throw new Error(`Violation details do not match required string! Got: ${violation.details}`);
 }
 console.log('✓ Timeout registered exactly 1 strike with exact required type and message.');
