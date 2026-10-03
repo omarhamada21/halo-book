@@ -1503,18 +1503,28 @@
     transform: translateY(0);
   }
 
-  /* Mobile Pseudo-Fullscreen Fallback (iOS Safari, WebViews) */
+  /* Mobile Pseudo-Fullscreen: Fluid touch scrolling without viewport lock */
+  html.ot-mobile-pseudo-fullscreen,
   body.ot-mobile-pseudo-fullscreen {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100vw !important;
-    height: 100dvh !important;
+    position: relative !important;
+    width: 100% !important;
+    min-height: 100% !important;
+    min-height: 100dvh !important;
+    height: auto !important;
+    overflow-x: hidden !important;
     overflow-y: auto !important;
-    z-index: 9999 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    -webkit-overflow-scrolling: touch;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain !important;
+  }
+
+  /* Ensure internal test containers do not clip scroll */
+  body.ot-mobile-pseudo-fullscreen #exam-container,
+  body.ot-mobile-pseudo-fullscreen .ot-main-container,
+  body.ot-mobile-pseudo-fullscreen .ot-test-layout {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 100% !important;
   }
 </style>
 </head>
@@ -2064,6 +2074,7 @@ async function startExamWithLockdown(e) {
     if (promise && promise.then) {
       promise.then(() => {
         window.isMobileFallbackFullscreenActive = false;
+        document.documentElement.classList.remove('ot-mobile-pseudo-fullscreen');
         document.body.classList.remove('ot-mobile-pseudo-fullscreen');
       }).catch(err => {
         console.warn('[StartExam] Native fullscreen rejected. Activating mobile fallback:', err ? err.message : err);
@@ -2281,6 +2292,7 @@ function isExamInFullscreen() {
 }
 
 function activateMobileFallbackFullscreen() {
+  document.documentElement.classList.add('ot-mobile-pseudo-fullscreen');
   document.body.classList.add('ot-mobile-pseudo-fullscreen');
   try {
     window.scrollTo(0, 1);
@@ -2327,6 +2339,7 @@ function triggerReenterFullscreen(e) {
       promise.then(() => {
         console.log('[Fullscreen] Native fullscreen granted successfully.');
         window.isMobileFallbackFullscreenActive = false;
+        document.documentElement.classList.remove('ot-mobile-pseudo-fullscreen');
         document.body.classList.remove('ot-mobile-pseudo-fullscreen');
         dismissFullscreenRecoveryTimer();
       }).catch(err => {
@@ -2480,6 +2493,7 @@ function handleFullscreenChange() {
     // Return to fullscreen: cancel recovery timer, dismiss overlay, 0 strikes!
     if (document.fullscreenElement) {
       window.isMobileFallbackFullscreenActive = false;
+      document.documentElement.classList.remove('ot-mobile-pseudo-fullscreen');
       document.body.classList.remove('ot-mobile-pseudo-fullscreen');
     }
     dismissFullscreenRecoveryTimer();
@@ -3801,6 +3815,7 @@ async function executeSubmission(terminationReason = 'normal') {
       if (document.fullscreenElement && document.exitFullscreen) {
         document.exitFullscreen().catch(() => {});
       }
+      document.documentElement.classList.remove('ot-mobile-pseudo-fullscreen');
       document.body.classList.remove('ot-mobile-pseudo-fullscreen');
       window.isMobileFallbackFullscreenActive = false;
     } catch (_) {}
