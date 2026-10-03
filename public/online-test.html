@@ -1383,6 +1383,125 @@
     .bottom-actions { justify-content: space-between; }
     body { padding-bottom: 140px; }
   }
+
+  /* Fullscreen Recovery Compliance Banner / Overlay */
+  .ot-fullscreen-recovery-overlay {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10010;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    width: 100%;
+    max-width: 520px;
+    padding: 0 16px;
+    box-sizing: border-box;
+    pointer-events: none;
+    animation: otDropIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes otDropIn {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -20px);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+  }
+
+  .ot-fullscreen-recovery-card {
+    pointer-events: auto;
+    width: 100%;
+    background: #FFFFFF;
+    border: 2px solid #2563EB;
+    border-radius: 16px;
+    box-shadow: 0 20px 45px -10px rgba(15, 23, 42, 0.35), 0 0 0 1px rgba(37, 99, 235, 0.15);
+    padding: 24px;
+    text-align: center;
+    font-family: inherit;
+  }
+
+  .recovery-icon {
+    font-size: 36px;
+    line-height: 1;
+    margin-bottom: 10px;
+    display: inline-block;
+    color: #2563EB;
+  }
+
+  #ot-fs-recovery-title {
+    font-size: 19px;
+    font-weight: 700;
+    color: #0F172A;
+    margin: 0 0 8px 0;
+    letter-spacing: -0.01em;
+  }
+
+  #ot-fs-recovery-desc {
+    font-size: 13.5px;
+    color: #475569;
+    line-height: 1.55;
+    margin: 0 0 16px 0;
+  }
+
+  .recovery-timer-box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: #FEF3C7;
+    border: 1px solid #FCD34D;
+    border-radius: 8px;
+    padding: 8px 16px;
+    margin-bottom: 18px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #92400E;
+  }
+
+  .recovery-countdown {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 18px;
+    font-weight: 800;
+    color: #B45309;
+    letter-spacing: 1px;
+  }
+
+  .recovery-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  .ot-btn-reenter-fs {
+    background: linear-gradient(135deg, #2563EB, #1D4ED8);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+  }
+
+  .ot-btn-reenter-fs:hover {
+    background: linear-gradient(135deg, #1D4ED8, #1E40AF);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
+  }
+
+  .ot-btn-reenter-fs:active {
+    transform: translateY(0);
+  }
 </style>
 </head>
 <body>
@@ -1506,6 +1625,24 @@
     <button type="button" class="btn-submit-exam" id="btn-submit-exam" onclick="handleClickSubmit()">
       🚀 Submit Exam
     </button>
+  </div>
+</div>
+
+<!-- Fullscreen Recovery Compliance Banner / Overlay (Multi-Page Essay Photos) -->
+<div id="ot-fullscreen-recovery-overlay" class="ot-fullscreen-recovery-overlay" style="display:none;">
+  <div class="ot-fullscreen-recovery-card">
+    <div class="recovery-icon">⛶</div>
+    <h3 id="ot-fs-recovery-title">📸 Paper Attached!</h3>
+    <p id="ot-fs-recovery-desc">Your page has been saved. Please return to fullscreen mode to continue your exam securely, or attach additional pages if needed.</p>
+    <div class="recovery-timer-box">
+      <span id="ot-fs-timer-label">Fullscreen deadline:</span>
+      <span id="ot-fs-timer-display" class="recovery-countdown">05:00</span>
+    </div>
+    <div class="recovery-actions">
+      <button type="button" class="ot-btn-reenter-fs" onclick="triggerReenterFullscreen()">
+        ⛶ Return to Fullscreen
+      </button>
+    </div>
   </div>
 </div>
 
@@ -1976,6 +2113,142 @@ function markPhotoCaptureStart(qId) {
   }, 120000);
 }
 
+// Fullscreen Compliance Recovery State (5-minute compliance window for attached essay papers)
+window.fullscreenRecoveryDeadline = null;
+window.fullscreenRecoveryTimerId = null;
+window.fullscreenRecoveryTickInterval = null;
+window.isPostPhotoRecoveryActive = false;
+window.lastAttachedPhotoQuestionId = null;
+
+function startOrResetFullscreenRecoveryTimer(pageCount = 1, questionId = null) {
+  if (!isExamActive || isSubmitted) return;
+
+  // Clear existing recovery timer and interval if active
+  if (window.fullscreenRecoveryTimerId) {
+    clearTimeout(window.fullscreenRecoveryTimerId);
+    window.fullscreenRecoveryTimerId = null;
+  }
+  if (window.fullscreenRecoveryTickInterval) {
+    clearInterval(window.fullscreenRecoveryTickInterval);
+    window.fullscreenRecoveryTickInterval = null;
+  }
+
+  const durationMs = 300000; // 5 minutes (300,000 ms)
+  const now = Date.now();
+  window.fullscreenRecoveryDeadline = now + durationMs;
+  window.isPostPhotoRecoveryActive = true;
+  if (questionId) window.lastAttachedPhotoQuestionId = questionId;
+
+  const overlay = document.getElementById('ot-fullscreen-recovery-overlay');
+  const titleEl = document.getElementById('ot-fs-recovery-title');
+  const descEl = document.getElementById('ot-fs-recovery-desc');
+  const timerDisplay = document.getElementById('ot-fs-timer-display');
+
+  const pageNum = Number(pageCount) || 1;
+  if (titleEl) {
+    titleEl.textContent = pageNum > 1 ? `📸 Page ${pageNum} Attached!` : '📸 Paper Attached!';
+  }
+  if (descEl) {
+    descEl.textContent = pageNum > 1
+      ? `Page ${pageNum} has been saved. Please return to fullscreen mode to continue your exam securely, or attach additional pages if needed.`
+      : 'Your page has been saved. Please return to fullscreen mode to continue your exam securely, or attach additional pages if needed.';
+  }
+
+  // Dismiss generic fullscreen resume overlay if open to avoid conflicting dialogs
+  const resumeOverlay = document.getElementById('fullscreen-resume-overlay');
+  if (resumeOverlay) resumeOverlay.style.display = 'none';
+  const warningModal = document.getElementById('lockdown-warning-modal');
+  if (warningModal) warningModal.style.display = 'none';
+
+  if (overlay) overlay.style.display = 'flex';
+
+  function updateRecoveryCountdown() {
+    if (!window.isPostPhotoRecoveryActive) return;
+    const remainingMs = Math.max(0, (window.fullscreenRecoveryDeadline || 0) - Date.now());
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    const mins = Math.floor(remainingSec / 60);
+    const secs = remainingSec % 60;
+    const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+    if (timerDisplay) {
+      timerDisplay.textContent = formatted;
+      timerDisplay.style.color = remainingSec <= 60 ? '#DC2626' : '#B45309';
+    }
+
+    if (remainingMs <= 0) {
+      handleRecoveryTimeoutExpired();
+    }
+  }
+
+  updateRecoveryCountdown();
+  window.fullscreenRecoveryTickInterval = setInterval(updateRecoveryCountdown, 500);
+
+  window.fullscreenRecoveryTimerId = setTimeout(() => {
+    handleRecoveryTimeoutExpired();
+  }, durationMs);
+
+  console.log(`[Proctoring] Fullscreen recovery compliance window started/reset: 5m (${pageNum} page(s) attached).`);
+}
+
+function handleRecoveryTimeoutExpired() {
+  if (!window.isPostPhotoRecoveryActive) return;
+  console.warn('[Proctoring] 5-minute photo fullscreen compliance window expired without returning to fullscreen.');
+
+  dismissFullscreenRecoveryTimer({ timeoutExpired: true });
+
+  registerStrike(
+    'fullscreen_not_restored_after_photo',
+    'Failed to return to fullscreen mode within 5 minutes of the last attached paper.'
+  );
+
+  if (isExamActive && !isSubmitted && strikesCount < MAX_STRIKES) {
+    const resumeOverlay = document.getElementById('fullscreen-resume-overlay');
+    if (resumeOverlay) resumeOverlay.style.display = 'flex';
+  }
+}
+
+function dismissFullscreenRecoveryTimer(opts = {}) {
+  if (window.fullscreenRecoveryTimerId) {
+    clearTimeout(window.fullscreenRecoveryTimerId);
+    window.fullscreenRecoveryTimerId = null;
+  }
+  if (window.fullscreenRecoveryTickInterval) {
+    clearInterval(window.fullscreenRecoveryTickInterval);
+    window.fullscreenRecoveryTickInterval = null;
+  }
+  window.fullscreenRecoveryDeadline = null;
+  window.isPostPhotoRecoveryActive = false;
+
+  const overlay = document.getElementById('ot-fullscreen-recovery-overlay');
+  if (overlay) overlay.style.display = 'none';
+
+  if (!opts.timeoutExpired) {
+    console.log('[Proctoring] Fullscreen recovery overlay dismissed. 0 strikes recorded.');
+  }
+}
+
+async function triggerReenterFullscreen() {
+  try {
+    const elem = document.documentElement;
+    if (elem.requestFullscreen) {
+      await elem.requestFullscreen();
+    } else if (elem.webkitRequestFullscreen) {
+      await elem.webkitRequestFullscreen();
+    } else if (elem.mozRequestFullScreen) {
+      await elem.mozRequestFullScreen();
+    } else if (elem.msRequestFullscreen) {
+      await elem.msRequestFullscreen();
+    }
+    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+    if (isFs) {
+      dismissFullscreenRecoveryTimer();
+    }
+  } catch (err) {
+    console.warn('Could not re-enter fullscreen:', err);
+    showToast('⚠️ Could not activate fullscreen. Click to retry.');
+  }
+}
+
 function registerStrike(type, details) {
   handleSecurityInfraction(type, details);
 }
@@ -1985,9 +2258,9 @@ function handleWindowBlur(e) {
   const now = Date.now();
   window.lastBlurTimestamp = now;
 
-  // If user initiated photo capture within grace period:
-  if (window.isCapturingPhoto) {
-    console.log('[Proctoring] Student opened camera/photo picker. 2-minute grace active.');
+  // If user initiated photo capture or is in post-photo fullscreen recovery window:
+  if (window.isCapturingPhoto || window.isPostPhotoRecoveryActive) {
+    console.log('[Proctoring] Student taking/handling photo. Blur strike waived.');
     return; // Do NOT trigger strike immediately
   }
 
@@ -2090,6 +2363,14 @@ function handleFullscreenChange() {
       console.log('[Proctoring] Fullscreen exited during camera/photo capture. 2-minute grace active.');
       return;
     }
+    if (window.isPostPhotoRecoveryActive) {
+      console.log('[Proctoring] Fullscreen absent during photo recovery window. Compliance timer active.');
+      const recOverlay = document.getElementById('ot-fullscreen-recovery-overlay');
+      if (recOverlay) recOverlay.style.display = 'flex';
+      const resumeOverlay = document.getElementById('fullscreen-resume-overlay');
+      if (resumeOverlay) resumeOverlay.style.display = 'none';
+      return;
+    }
 
     // Hide exam content immediately to deter tab switching / unauthorized inspection
     const mainContent = document.getElementById('exam-main-content');
@@ -2112,7 +2393,9 @@ function handleFullscreenChange() {
 
     registerStrike('fullscreen_exit', 'Candidate exited fullscreen mode.');
   } else if (isFs && isExamActive && !isSubmitted) {
-    // Return to fullscreen: reveal content WITHOUT resetting answers
+    // Return to fullscreen: cancel recovery timer, dismiss overlay, 0 strikes!
+    dismissFullscreenRecoveryTimer();
+
     const resumeOverlay = document.getElementById('fullscreen-resume-overlay');
     if (resumeOverlay) resumeOverlay.style.display = 'none';
     const warningModal = document.getElementById('lockdown-warning-modal');
@@ -2145,8 +2428,8 @@ function handleFullscreenChange() {
 // Tab visibility detection
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden' && isExamActive && !isSubmitted) {
-    if (window.isCapturingPhoto) {
-      console.log('[Proctoring] Tab hidden during photo capture. 2-minute grace active.');
+    if (window.isCapturingPhoto || window.isPostPhotoRecoveryActive) {
+      console.log('[Proctoring] Tab hidden during photo capture/recovery. Grace active.');
       return;
     }
     registerStrike('tab_switch', 'Candidate switched browser tab or minimized window.');
@@ -3182,6 +3465,15 @@ async function handleEssayPhotosSelected(questionId, files) {
     clientAnswers.delete(questionId);
   }
   updateCompletionCount();
+
+  // Fullscreen compliance check:
+  // If student is outside fullscreen after attaching paper(s), start or reset the 5-minute compliance window
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+  if (!isFs && isExamActive && !isSubmitted) {
+    startOrResetFullscreenRecoveryTimer(pages.length, questionId);
+  } else if (isFs) {
+    dismissFullscreenRecoveryTimer();
+  }
 }
 
 function renderPhotoPagesList(questionId) {
@@ -3362,6 +3654,8 @@ async function executeSubmission(terminationReason = 'normal') {
   if (isSubmitted) return;
   isSubmitted = true;
 
+  dismissFullscreenRecoveryTimer();
+
   try {
     localStorage.setItem('online_test_locked_' + testCode, 'true');
   } catch (_) {}
@@ -3456,6 +3750,9 @@ window.markPhotoCaptureStart = markPhotoCaptureStart;
 window.handleWindowBlur = handleWindowBlur;
 window.handleWindowFocus = handleWindowFocus;
 window.registerStrike = registerStrike;
+window.startOrResetFullscreenRecoveryTimer = startOrResetFullscreenRecoveryTimer;
+window.dismissFullscreenRecoveryTimer = dismissFullscreenRecoveryTimer;
+window.triggerReenterFullscreen = triggerReenterFullscreen;
 </script>
 </body>
 </html>
