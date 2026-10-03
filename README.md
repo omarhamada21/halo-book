@@ -1,4 +1,4 @@
-# 🛡️ Mimir Marking (Halo-Book)
+# 🛡️ Mimir Marking
 
 > **Enterprise AI-Powered Examination Ingestion, Proctored Testing & Automated Grading Platform**  
 > Designed for Cambridge, IELTS, and GCSE English assessments.
