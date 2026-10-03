@@ -1,11 +1,44 @@
 # Dependencies
 node_modules/
-package-lock.json.backup
+package-lock.json
+yarn.lock
 
 # Environment Variables
 .env
 .env.*
 !.env.example
+
+# Build & Distribution
+dist/
+build/
+out/
+.next/
+.nuxt/
+.cache/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.sublime-project
+.sublime-workspace
 
 # Databases
 *.db
@@ -14,11 +47,14 @@ package-lock.json.backup
 *.sqlite
 *.sqlite3
 
-# Test artifacts and screenshots
+# Test artifacts
 verification_screenshots/
 comprehensive_verification_screenshots/
 scratch/
+coverage/
 
-# Operating System
+# Misc
+.turbo/
+.env.local
+.env.*.local
 .DS_Store
-Thumbs.db
