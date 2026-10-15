@@ -1216,7 +1216,7 @@ app.get('/api/assignments/:code/submissions', authenticateToken, requireApproved
     const { code } = req.params;
     const isElevated = ['root', 'admin'].includes(req.user.role);
     const assignResult = await db.execute({
-      sql: 'SELECT id, title, deadline FROM assignments WHERE code = ?' + (isElevated ? '' : ' AND teacher_id = ?'),
+      sql: 'SELECT id, title, deadline, bundle_code FROM assignments WHERE code = ?' + (isElevated ? '' : ' AND teacher_id = ?'),
       args: isElevated ? [code] : [code, req.user.id]
     });
 
@@ -1224,17 +1224,71 @@ app.get('/api/assignments/:code/submissions', authenticateToken, requireApproved
     if (!assignment) return res.status(404).json({ error: 'Assignment not found.' });
 
     const subsResult = await db.execute({
-      sql: `SELECT id, student_name as name, student_name, teacher_name, page_count as pageCount, total_score, 
+      sql: `SELECT id, student_name as name, student_name, teacher_name, device_id, page_count as pageCount, total_score, 
             category_breakdown, mistakes, weaknesses, similarity_score, similarity_details, ai_score, ai_details, web_score, 
             possible_duplicate, ip_address, created_at 
             FROM submissions WHERE assignment_id = ? ORDER BY id ASC`,
       args: [assignment.id]
     });
 
+    const submissions = subsResult.rows || [];
+
+    // If this assignment is part of a multi-task bundle, compute advisory completeness per submission
+    if (assignment.bundle_code) {
+      const bundleTasksResult = await db.execute({
+        sql: 'SELECT id, code, title FROM assignments WHERE bundle_code = ? ORDER BY id ASC',
+        args: [assignment.bundle_code]
+      });
+      const bundleTasks = bundleTasksResult.rows || [];
+
+      if (bundleTasks.length > 1) {
+        const bundleSubsResult = await db.execute({
+          sql: `SELECT s.id, s.assignment_id, s.student_name, s.device_id, a.title as task_title
+                FROM submissions s
+                JOIN assignments a ON s.assignment_id = a.id
+                WHERE a.bundle_code = ?`,
+          args: [assignment.bundle_code]
+        });
+        const allBundleSubs = bundleSubsResult.rows || [];
+
+        for (const sub of submissions) {
+          const devId = (sub.device_id || '').trim();
+          const studentNameClean = (sub.student_name || '').trim().toLowerCase();
+
+          let submittedTaskIds = new Set();
+          if (devId && !isInvalidOrCollidedDeviceId(devId)) {
+            // Match on device_id first (handles typos, device-based tracking)
+            allBundleSubs
+              .filter(s => s.device_id && s.device_id.trim() === devId)
+              .forEach(s => submittedTaskIds.add(s.assignment_id));
+          } else if (studentNameClean) {
+            // Fallback to normalized student name
+            allBundleSubs
+              .filter(s => (s.student_name || '').trim().toLowerCase() === studentNameClean)
+              .forEach(s => submittedTaskIds.add(s.assignment_id));
+          }
+
+          // Always ensure the current task is marked submitted for this record
+          submittedTaskIds.add(assignment.id);
+
+          const missingTasks = bundleTasks.filter(t => !submittedTaskIds.has(t.id));
+          if (missingTasks.length > 0) {
+            sub.missing_tasks = missingTasks.map(t => t.title);
+            sub.bundle_missing_label = `Incomplete: missing ${missingTasks.map(t => t.title).join(', ')}`;
+            sub.is_incomplete_bundle = true;
+          } else {
+            sub.missing_tasks = [];
+            sub.bundle_missing_label = null;
+            sub.is_incomplete_bundle = false;
+          }
+        }
+      }
+    }
+
     res.json({
       success: true,
       assignment,
-      submissions: subsResult.rows
+      submissions
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch submissions.' });
@@ -1546,9 +1600,14 @@ app.post(
         }
       }
 
+      // NOTE: Do NOT add a "check all bundle tasks" server rule: single-task requests are valid by design (e.g. retrying a single failed task in a bundle, or submitting individual tasks).
       const files = (req.files && req.files['pages']) || [];
       if (!files.length) {
-        return res.status(400).json({ error: 'Please upload at least one photo or document of your work.' });
+        return res.status(400).json({
+          success: false,
+          code: 'EMPTY_UPLOAD',
+          error: 'Please upload at least one photo or document of your work.'
+        });
       }
 
       const cachedSchemePayload = JSON.parse(assignment.scheme_files_json || '[]');

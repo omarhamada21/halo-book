@@ -1564,3 +1564,75 @@ if (document.readyState === 'loading') {
 } else {
   initMcqFileHandlers();
 }
+
+// ==========================================================
+// BUNDLE COMPLETENESS ADVISORY DECORATOR (TEACHER VIEW)
+// ==========================================================
+(function setupBundleAdvisoryDecorator() {
+  function decorateBundleIncompletes(dataList, modePrefix = 'portal') {
+    if (!dataList || !dataList.length) return;
+    dataList.forEach((r, idx) => {
+      if (!r.bundle_missing_label) return;
+
+      // 1. Add advisory pill to table row
+      const tr = document.getElementById(`${modePrefix}-summary-tr-${idx}`);
+      if (tr) {
+        const pillsContainer = tr.querySelector('.integrity-pills');
+        if (pillsContainer && !pillsContainer.querySelector('.advisory-incomplete-pill')) {
+          const pill = document.createElement('span');
+          pill.className = 'pill-badge pill-amber advisory-incomplete-pill';
+          pill.style.cssText = 'background:#FEF3C7; color:#92400E; border:1px solid #FCD34D; font-weight:600; font-size:11px; padding:1px 6px; border-radius:4px;';
+          pill.title = 'Advisory: student has submitted some tasks in this package but not others';
+          pill.textContent = `⚠️ ${r.bundle_missing_label}`;
+          pillsContainer.appendChild(pill);
+        }
+      }
+
+      // 2. Add advisory pill to card header
+      const cardName = document.getElementById(`${modePrefix}-card-name-${idx}`);
+      if (cardName) {
+        const cardPills = cardName.querySelector('.integrity-pills');
+        if (cardPills && !cardPills.querySelector('.advisory-incomplete-pill')) {
+          const pill = document.createElement('span');
+          pill.className = 'pill-badge pill-amber advisory-incomplete-pill';
+          pill.style.cssText = 'background:#FEF3C7; color:#92400E; border:1px solid #FCD34D; font-weight:600; font-size:11px; padding:1px 6px; border-radius:4px;';
+          pill.title = 'Advisory: student has submitted some tasks in this package but not others';
+          pill.textContent = `⚠️ ${r.bundle_missing_label}`;
+          cardPills.appendChild(pill);
+        }
+      }
+
+      // 3. Add detail row to card body integrity box
+      const bodyEl = document.getElementById(`${modePrefix}-body-${idx}`);
+      if (bodyEl) {
+        const auditBox = bodyEl.querySelector('.fb-integrity-box');
+        if (auditBox && !auditBox.querySelector('.advisory-incomplete-detail')) {
+          const detailDiv = document.createElement('div');
+          detailDiv.className = 'advisory-incomplete-detail';
+          detailDiv.style.cssText = 'margin-top: 4px;';
+          detailDiv.innerHTML = `• <b style="color:#B45309;">⚠️ Package Completeness:</b> <span style="background:#FEF3C7; color:#92400E; border:1px solid #FCD34D; padding:1px 6px; border-radius:4px; font-weight:600; font-size:11px;">${escapeHtml(r.bundle_missing_label)}</span> — <i>Advisory: this student or device submitted some tasks in this bundle, but has not completed all of them.</i>`;
+          const auditContent = auditBox.querySelector('div[style*="font-size:12px"]') || auditBox;
+          auditContent.appendChild(detailDiv);
+        }
+      }
+    });
+  }
+
+  // Hook into window.renderCardsAndSummaryTable
+  const checkHook = setInterval(() => {
+    if (typeof window.renderCardsAndSummaryTable === 'function') {
+      const orig = window.renderCardsAndSummaryTable;
+      window.renderCardsAndSummaryTable = function(dataList, modePrefix = 'portal') {
+        const ret = orig.apply(this, arguments);
+        try {
+          decorateBundleIncompletes(dataList, modePrefix);
+        } catch (e) {
+          console.warn('Advisory decorator error:', e);
+        }
+        return ret;
+      };
+      clearInterval(checkHook);
+    }
+  }, 50);
+})();
+

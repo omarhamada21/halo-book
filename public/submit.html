@@ -40,17 +40,116 @@
   
   .task-card {
     border: 1px solid var(--border); background: #fff; border-radius: 10px;
-    padding: 18px; margin-bottom: 18px;
+    padding: 18px; margin-bottom: 18px; transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .task-card.task-card-error {
+    border: 2px solid #EF4444 !important;
+    box-shadow: 0 0 0 3px #FEE2E2 !important;
   }
   .task-title { font-family: 'Source Serif 4', serif; font-size: 17px; margin: 0 0 10px; color: var(--pen); display: flex; justify-content: space-between; align-items: center; }
+
+  .required-badge {
+    background: #FEE2E2;
+    color: #DC2626;
+    border: 1px solid #FCA5A5;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    letter-spacing: 0.03em;
+  }
+  .task-status-pill {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .status-waiting {
+    background: #F1F5F9;
+    color: #64748B;
+    border: 1px solid #CBD5E1;
+  }
+  .status-uploading {
+    background: #EFF6FF;
+    color: #1D4ED8;
+    border: 1px solid #93C5FD;
+  }
+  .status-done {
+    background: #ECFDF5;
+    color: #065F46;
+    border: 1px solid #A7F3D0;
+  }
+  .status-failed {
+    background: #FEF2F2;
+    color: #991B1B;
+    border: 1px solid #FCA5A5;
+  }
 
   .form-group { margin-bottom: 18px; }
   label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
   input[type="text"] {
     width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px;
     font-size: 14px; background: #fff; outline: none; font-family: 'Inter', sans-serif;
+    transition: border-color 0.2s, box-shadow 0.2s;
   }
   input[type="text"]:focus { border-color: var(--pen); box-shadow: 0 0 0 2px var(--pen-soft); }
+  input[type="text"].input-error {
+    border: 2px solid #EF4444 !important;
+    box-shadow: 0 0 0 3px #FEE2E2 !important;
+  }
+
+  .error-summary-box {
+    background: #FEF2F2;
+    border: 1.5px solid #F87171;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 18px;
+    display: none;
+  }
+  .error-summary-title {
+    color: #991B1B;
+    font-weight: 700;
+    font-size: 13.5px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .error-summary-list {
+    margin: 0;
+    padding-left: 20px;
+    color: #B91C1C;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .partial-failure-box {
+    background: #FFFBEB;
+    border: 1.5px solid #F59E0B;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 18px;
+    display: none;
+  }
+  .partial-failure-title {
+    color: #B45309;
+    font-weight: 700;
+    font-size: 13.5px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .partial-failure-msg {
+    color: #92400E;
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 0;
+  }
   
   .dropzone {
     border: 2px dashed var(--border); border-radius: 10px; padding: 20px 16px;
@@ -63,6 +162,11 @@
   .page-chip {
     background: var(--pen-soft); border: 1px solid var(--border); border-radius: 6px;
     padding: 8px 12px; font-size: 12.5px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .page-chip.page-chip-error {
+    background: #FEF2F2 !important;
+    border-color: #FCA5A5 !important;
+    color: #991B1B !important;
   }
   .page-remove { color: #DC2626; border: none; background: none; font-weight: bold; cursor: pointer; font-size: 16px; }
   
@@ -90,16 +194,28 @@
     <div class="teacher-sub" id="assign-teacher"></div>
     <div class="deadline-box" id="assign-deadline" style="display: none;"></div>
 
-    <form id="student-form" onsubmit="handleStudentSubmit(event)">
-      <div class="form-group">
+    <form id="student-form" onsubmit="handleStudentSubmit(event)" novalidate>
+      <div class="form-group" id="group-student-name">
         <label for="student-name">Your Full Name</label>
-        <input type="text" id="student-name" required placeholder="e.g. Fares Ahmed" autocomplete="name" maxlength="80" />
+        <input type="text" id="student-name" placeholder="e.g. Fares Ahmed" autocomplete="name" maxlength="80" />
         <small style="color:var(--ink-soft); font-size:11.5px; margin-top:4px; display:block;">
           ⚠️ <b>Notice:</b> Submissions are logged by student name and session identifier. Make sure all pages are attached before sending, as resubmissions require teacher reset.
         </small>
       </div>
 
       <div id="tasks-container"></div>
+
+      <!-- INLINE VALIDATION ERROR SUMMARY BOX -->
+      <div class="error-summary-box" id="submission-error-summary">
+        <div class="error-summary-title">⚠️ Please complete all required items before submitting:</div>
+        <ul class="error-summary-list" id="submission-error-list"></ul>
+      </div>
+
+      <!-- PARTIAL-FAILURE BOX -->
+      <div class="partial-failure-box" id="partial-failure-box">
+        <div class="partial-failure-title">⚠️ Incomplete Upload Notice</div>
+        <p class="partial-failure-msg" id="partial-failure-msg"></p>
+      </div>
 
       <button type="submit" class="btn-submit" id="submit-btn">🚀 Submit All Tasks to Teacher</button>
     </form>
@@ -163,6 +279,8 @@
   let taskFilesMap = {};
   let taskLockMap = {};
   let activeCompressions = 0;
+  window.getActiveCompressions = () => activeCompressions;
+  window.setActiveCompressions = (n) => { activeCompressions = n; updateSubmitButtonState(); };
 
   function formatCairoDateTime(dateObj) {
     return dateObj.toLocaleString('en-US', {
@@ -288,11 +406,17 @@
 
     container.innerHTML = bundleTasks.map((t, idx) => {
       const isDone = taskLockMap[t.code];
+      const taskTitle = t.title || `Task ${idx + 1}`;
       return `
-        <div class="task-card">
+        <div class="task-card" id="task-card-${t.code}">
           <div class="task-title">
-            <span>${idx + 1}. ${escapeHtml(t.title)}</span>
-            ${isDone ? '<span style="font-size: 12px; color: #059669; font-weight: 600;">✓ Completed</span>' : ''}
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span>${idx + 1}. ${escapeHtml(taskTitle)}</span>
+              ${!isDone ? `<span class="required-badge" id="badge-required-${t.code}">Required</span>` : ''}
+            </div>
+            <div id="status-wrap-${t.code}">
+              ${isDone ? '<span class="task-status-pill status-done">✓ Completed</span>' : `<span class="task-status-pill status-waiting" id="status-pill-${t.code}" style="display:none;">Waiting</span>`}
+            </div>
           </div>
 
           ${isDone ? `
@@ -300,7 +424,7 @@
               Your work for this task has already been recorded.
             </div>
           ` : `
-            <div class="dropzone" id="dz-${t.code}" onclick="document.getElementById('file-input-${t.code}').click()">
+            <div class="dropzone" id="dz-${t.code}" tabindex="0" onclick="document.getElementById('file-input-${t.code}').click()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();document.getElementById('file-input-${t.code}').click();}">
               <div style="font-size: 24px; margin-bottom: 4px;">📷</div>
               <b>Tap to take photo or select pages for this task</b>
               <div style="font-size: 11.5px; color: var(--ink-soft); margin-top: 2px;">Supports camera photos, PNG, JPG, or PDF (up to 20 pages)</div>
@@ -311,6 +435,13 @@
         </div>
       `;
     }).join('');
+
+    // Re-render previews for any pending tasks that have attached files
+    bundleTasks.forEach(t => {
+      if (!taskLockMap[t.code]) {
+        renderPreviews(t.code);
+      }
+    });
   }
 
   async function compressImageFile(file, maxDimension = 2048, quality = 0.82) {
@@ -402,6 +533,103 @@
     });
   }
 
+  function setTaskStatus(taskCode, status, label) {
+    const wrap = document.getElementById(`status-wrap-${taskCode}`);
+    if (!wrap) return;
+    wrap.innerHTML = `<span class="task-status-pill status-${status}">${escapeHtml(label)}</span>`;
+  }
+
+  function validateTasksAndSummary(shouldScrollAndFocus = true) {
+    const nameInput = document.getElementById('student-name');
+    const name = (nameInput?.value || '').trim();
+    const errors = [];
+
+    if (!name) {
+      errors.push({
+        type: 'name',
+        message: 'Your Full Name — please enter your full name',
+        el: nameInput
+      });
+      if (shouldScrollAndFocus && nameInput) nameInput.classList.add('input-error');
+    } else {
+      nameInput?.classList.remove('input-error');
+    }
+
+    const pending = bundleTasks.filter(t => !taskLockMap[t.code]);
+    for (let i = 0; i < pending.length; i++) {
+      const t = pending[i];
+      const items = taskFilesMap[t.code] || [];
+      const taskCard = document.getElementById(`task-card-${t.code}`);
+      const taskTitle = t.title || `Task ${i + 1}`;
+
+      if (!items.length) {
+        errors.push({
+          type: 'empty',
+          code: t.code,
+          message: `${taskTitle} — attach at least one page or photo`,
+          el: taskCard
+        });
+        if (shouldScrollAndFocus && taskCard) taskCard.classList.add('task-card-error');
+      } else if (items.some(it => it.isCompressing)) {
+        errors.push({
+          type: 'compressing',
+          code: t.code,
+          message: `${taskTitle} — photos are still compressing, please wait`,
+          el: taskCard
+        });
+        if (shouldScrollAndFocus && taskCard) taskCard.classList.add('task-card-error');
+      } else if (items.some(it => it.hasError)) {
+        errors.push({
+          type: 'error',
+          code: t.code,
+          message: `${taskTitle} — an image failed to process, please remove and re-attach`,
+          el: taskCard
+        });
+        if (shouldScrollAndFocus && taskCard) taskCard.classList.add('task-card-error');
+      } else {
+        if (taskCard) taskCard.classList.remove('task-card-error');
+      }
+    }
+
+    const summaryBox = document.getElementById('submission-error-summary');
+    const summaryList = document.getElementById('submission-error-list');
+
+    if (errors.length > 0) {
+      if (summaryList) {
+        summaryList.innerHTML = errors.map(err => `<li>${escapeHtml(err.message)}</li>`).join('');
+      }
+      if (summaryBox && (shouldScrollAndFocus || summaryBox.style.display === 'block')) {
+        summaryBox.style.display = 'block';
+      }
+      if (shouldScrollAndFocus) {
+        const first = errors[0];
+        if (first && first.el) {
+          first.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (first.type === 'name') {
+            first.el.focus();
+          } else {
+            const dz = first.el.querySelector('.dropzone');
+            if (dz) dz.focus();
+          }
+        }
+      }
+      return false;
+    } else {
+      if (summaryBox) summaryBox.style.display = 'none';
+      return true;
+    }
+  }
+
+  function clearTaskError(taskCode) {
+    const card = document.getElementById(`task-card-${taskCode}`);
+    if (card) card.classList.remove('task-card-error');
+    // If the error summary box is currently open, dynamically refresh it
+    const summaryBox = document.getElementById('submission-error-summary');
+    if (summaryBox && summaryBox.style.display === 'block') {
+      validateTasksAndSummary(false);
+    }
+  }
+
   function updateSubmitButtonState() {
     const btn = document.getElementById('submit-btn');
     if (!btn) return;
@@ -410,7 +638,13 @@
       btn.textContent = `⏳ Optimizing photos (${activeCompressions} compressing)...`;
     } else {
       btn.disabled = false;
-      btn.textContent = '🚀 Submit All Tasks to Teacher';
+      const pending = bundleTasks.filter(t => !taskLockMap[t.code]);
+      const anyDone = bundleTasks.some(t => taskLockMap[t.code]);
+      if (anyDone && pending.length > 0) {
+        btn.textContent = '🔄 Retry Uploading Remaining Tasks';
+      } else {
+        btn.textContent = '🚀 Submit All Tasks to Teacher';
+      }
     }
   }
 
@@ -426,13 +660,15 @@
         file: f,
         name: f.name,
         size: f.size,
-        isCompressing: f.type && f.type.startsWith('image/')
+        isCompressing: f.type && f.type.startsWith('image/'),
+        hasError: false
       });
     }
 
     for (const entry of newEntries) {
       taskFilesMap[taskCode].push(entry);
     }
+    clearTaskError(taskCode);
     renderPreviews(taskCode);
     updateSubmitButtonState();
 
@@ -453,6 +689,7 @@
           activeCompressions--;
           renderPreviews(taskCode);
           updateSubmitButtonState();
+          validateTasksAndSummary(false);
         }
       }
     }
@@ -463,11 +700,16 @@
     if (!el) return;
     const items = taskFilesMap[taskCode] || [];
     el.innerHTML = items.map((item, i) => {
-      const sizeStr = item.isCompressing
-        ? '<span style="color:#D97706; font-weight:600;">(Compressing...) ⏳</span>'
-        : `(${item.size < 1048576 ? (item.size / 1024).toFixed(1) + ' KB' : (item.size / 1048576).toFixed(2) + ' MB'})`;
+      let sizeStr = '';
+      if (item.isCompressing) {
+        sizeStr = '<span style="color:#D97706; font-weight:600;">(Compressing...) ⏳</span>';
+      } else if (item.hasError) {
+        sizeStr = '<span style="color:#DC2626; font-weight:600;">(Error processing image) ⚠️</span>';
+      } else {
+        sizeStr = `(${item.size < 1048576 ? (item.size / 1024).toFixed(1) + ' KB' : (item.size / 1048576).toFixed(2) + ' MB'})`;
+      }
       return `
-        <div class="page-chip">
+        <div class="page-chip ${item.hasError ? 'page-chip-error' : ''}">
           <span>📄 Page ${i + 1}: ${escapeHtml(item.name)} ${sizeStr}</span>
           <button type="button" class="page-remove" onclick="removeTaskFile('${taskCode}', ${i})">&times;</button>
         </div>
@@ -479,43 +721,80 @@
     taskFilesMap[taskCode].splice(i, 1);
     renderPreviews(taskCode);
     updateSubmitButtonState();
+    validateTasksAndSummary(false);
   }
+
+  // Live clear error on student name typing
+  document.addEventListener('DOMContentLoaded', () => {
+    const nameInp = document.getElementById('student-name');
+    if (nameInp) {
+      nameInp.addEventListener('input', () => {
+        if (nameInp.value.trim()) {
+          nameInp.classList.remove('input-error');
+          const summaryBox = document.getElementById('submission-error-summary');
+          if (summaryBox && summaryBox.style.display === 'block') {
+            validateTasksAndSummary(false);
+          }
+        }
+      });
+    }
+  });
 
   async function handleStudentSubmit(e) {
     e.preventDefault();
+
+    // Hide any previous partial failure banner
+    const partialBox = document.getElementById('partial-failure-box');
+    if (partialBox) partialBox.style.display = 'none';
+
+    // Validate ALL pending tasks at once
+    const isValid = validateTasksAndSummary(true);
+    if (!isValid) {
+      return; // Blocked: summary box populated, first field focused
+    }
+
+    if (activeCompressions > 0) {
+      const summaryBox = document.getElementById('submission-error-summary');
+      const summaryList = document.getElementById('submission-error-list');
+      if (summaryList && summaryBox) {
+        summaryList.innerHTML = '<li>Please wait until all photos finish compressing before submitting.</li>';
+        summaryBox.style.display = 'block';
+        summaryBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+
     const nameInput = document.getElementById('student-name');
     const name = nameInput.value.trim();
     const btn = document.getElementById('submit-btn');
 
-    if (!name) {
-      alert('Please enter your name.');
-      nameInput.focus();
+    const pending = bundleTasks.filter(t => !taskLockMap[t.code]);
+    if (!pending.length) {
+      renderTasksUI();
       return;
     }
 
-    const pending = bundleTasks.filter(t => !taskLockMap[t.code]);
-    for (const t of pending) {
-      const items = taskFilesMap[t.code] || [];
-      if (!items.length) {
-        alert(`Please attach at least one page or photo for: "${t.title}".`);
-        return;
-      }
-      if (items.some(item => item.isCompressing)) {
-        alert('Please wait until all photos finish compressing before submitting.');
-        return;
-      }
-    }
-
     btn.disabled = true;
-    btn.textContent = 'Uploading and grading submissions...';
     document.querySelectorAll('.dropzone').forEach(d => d.classList.add('disabled'));
 
-    try {
-      for (const t of pending) {
+    // Initialize waiting status for all pending tasks
+    for (const t of pending) {
+      setTaskStatus(t.code, 'waiting', 'Waiting in queue...');
+    }
+
+    const succeededTasks = [];
+    let failedTaskInfo = null;
+
+    for (let i = 0; i < pending.length; i++) {
+      const t = pending[i];
+      setTaskStatus(t.code, 'uploading', 'Uploading & grading work... ⏳');
+      btn.textContent = `Uploading task ${i + 1} of ${pending.length} (${t.title || 'Task'})...`;
+
+      try {
         const formData = new FormData();
         formData.append('studentName', name);
         formData.append('deviceId', clientDeviceId);
-        for (const item of taskFilesMap[t.code]) {
+        for (const item of (taskFilesMap[t.code] || [])) {
           formData.append('pages', item.file);
         }
 
@@ -530,28 +809,71 @@
 
         const d = await res.json().catch(() => ({}));
         if (!res.ok || !d.success) {
-          throw new Error(d.error || `Server responded with error status ${res.status} for ${t.title}`);
+          throw new Error(d.error || `Server responded with error status ${res.status}`);
         }
+
         taskLockMap[t.code] = true;
+        succeededTasks.push(t);
+        setTaskStatus(t.code, 'done', '✓ Received & Saved');
+      } catch (err) {
+        setTaskStatus(t.code, 'failed', '❌ Upload failed');
+        let friendlyMsg = 'Submission error. Please check your connection and retry.';
+        if (err.name === 'AbortError' || (err.message && err.message.toLowerCase().includes('timeout'))) {
+          friendlyMsg = 'Request timed out while uploading your submission.';
+        } else if (err.message === 'Failed to fetch' || (err.message && err.message.includes('NetworkError'))) {
+          friendlyMsg = 'Unable to reach the examination server.';
+        } else if (err.message) {
+          friendlyMsg = err.message;
+        }
+        failedTaskInfo = { task: t, error: friendlyMsg };
+        break; // stop upload loop on first failure
+      }
+    }
+
+    if (failedTaskInfo) {
+      // Re-enable remaining dropzones
+      document.querySelectorAll('.dropzone').forEach(d => d.classList.remove('disabled'));
+      btn.disabled = false;
+      btn.textContent = '🔄 Retry Uploading Remaining Tasks';
+
+      // Re-render completed tasks as done
+      renderTasksUI();
+
+      // Ensure previews are still visible for the failed and remaining tasks
+      bundleTasks.forEach(t => {
+        if (!taskLockMap[t.code]) {
+          renderPreviews(t.code);
+        }
+      });
+
+      // Construct partial failure message:
+      // "Tasks 1 and 2 were received. Task 3 failed. Tap Retry. Do not close this page."
+      let failureMsg = '';
+      if (succeededTasks.length > 0) {
+        const sTitles = succeededTasks.map(t => t.title).join(' and ');
+        const sVerb = succeededTasks.length === 1 ? 'was' : 'were';
+        failureMsg = `${sTitles} ${sVerb} received. ${failedTaskInfo.task.title} failed. Tap Retry. Do not close this page.`;
+      } else {
+        failureMsg = `${failedTaskInfo.task.title} failed. Tap Retry. Do not close this page.`;
       }
 
-      document.getElementById('submission-form-card').style.display = 'none';
-      document.getElementById('submitted-name').textContent = name;
-      document.getElementById('success-screen').style.display = 'block';
-    } catch (err) {
-      let friendlyMsg = 'Submission error. Please check your connection and retry.';
-      if (err.name === 'AbortError' || (err.message && err.message.toLowerCase().includes('timeout'))) {
-        friendlyMsg = 'Request timed out while uploading your submission. Please check your internet connection and try again.';
-      } else if (err.message === 'Failed to fetch' || (err.message && err.message.includes('NetworkError'))) {
-        friendlyMsg = 'Unable to reach the examination server. Please check your internet connection and try submitting again.';
-      } else if (err.message) {
-        friendlyMsg = err.message;
+      const partialBox = document.getElementById('partial-failure-box');
+      const partialMsgEl = document.getElementById('partial-failure-msg');
+      if (partialBox && partialMsgEl) {
+        partialMsgEl.textContent = failureMsg;
+        partialBox.style.display = 'block';
+        partialBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
-      alert(friendlyMsg);
-      btn.disabled = false;
-      btn.textContent = '🚀 Submit All Tasks to Teacher';
-      document.querySelectorAll('.dropzone').forEach(d => d.classList.remove('disabled'));
+
+      // CRITICAL: make sure a failed or timed-out task NEVER leaves the page looking like a full success
+      return;
     }
+
+    // Full success: All tasks completed successfully!
+    document.getElementById('submission-form-card').style.display = 'none';
+    document.getElementById('submitted-name').textContent = name;
+    document.getElementById('success-screen').style.display = 'block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 </script>
 </body>

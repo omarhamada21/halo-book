@@ -706,26 +706,26 @@
 
     // Collect answers across mcq, matching, and fill_blank
     const answers = {};
-    let unansweredCount = 0;
+    const unansweredNumbers = [];
 
-    for (const q of mcqQuestions) {
+    for (let idx = 0; idx < mcqQuestions.length; idx++) {
+      const q = mcqQuestions[idx];
       const qType = q.question_type || 'mcq';
+      let isAnswered = false;
 
       if (qType === 'fill_blank') {
         const inp = document.getElementById(`q-input-${q.id}`) || document.querySelector(`input[name="question_${q.id}"]`);
         const val = (inp?.value || '').trim();
         if (val) {
           answers[q.id] = val;
-        } else {
-          unansweredCount += 1;
+          isAnswered = true;
         }
       } else if (qType === 'matching') {
         const sel = document.getElementById(`q-select-${q.id}`) || document.querySelector(`select[name="question_${q.id}"]`);
         const val = sel?.value;
         if (val !== '' && val !== undefined && val !== null) {
           answers[q.id] = parseInt(val, 10);
-        } else {
-          unansweredCount += 1;
+          isAnswered = true;
         }
       } else {
         // 'mcq'
@@ -739,14 +739,17 @@
         }
         if (chosen !== -1) {
           answers[q.id] = chosen;
-        } else {
-          unansweredCount += 1;
+          isAnswered = true;
         }
+      }
+
+      if (!isAnswered) {
+        unansweredNumbers.push(`Question ${idx + 1}`);
       }
     }
 
-    if (unansweredCount > 0) {
-      const confirmed = confirm(`You have left ${unansweredCount} question(s) unanswered. Are you sure you want to submit your assessment now?`);
+    if (unansweredNumbers.length > 0) {
+      const confirmed = confirm(`You have left the following question(s) unanswered:\n- ${unansweredNumbers.join('\n- ')}\n\nSubmit anyway?`);
       if (!confirmed) return;
     }
 

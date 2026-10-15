@@ -1696,9 +1696,9 @@
         style="background:var(--paper); color:var(--ink); border:1px solid var(--border); padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;">
         Review Answers
       </button>
-      <button type="button" onclick="executeSubmission('normal')"
+      <button type="button" id="submit-warning-confirm-btn" onclick="executeSubmission('normal')"
         style="background:var(--pen); color:#fff; border:none; padding:8px 18px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">
-        Confirm & Submit
+        Submit anyway
       </button>
     </div>
   </div>
@@ -3702,45 +3702,75 @@ function handleClickSubmit() {
     return;
   }
 
-  const total = allQuestionIds.length;
-  const answered = clientAnswers.size;
-  const unansweredCount = total - answered;
+  const unansweredList = [];
+  let globalQNum = 0;
+
+  testData.sections.forEach((sec, sIdx) => {
+    (sec.questions || []).forEach((q, qIdx) => {
+      globalQNum++;
+      let isAnswered = false;
+
+      if (q.question_type === 'writing') {
+        const entry = clientAnswers.get(q.id);
+        const mode = entry ? (entry.mode || 'type') : 'type';
+        const hasText = Boolean(entry && typeof entry.answer === 'string' && entry.answer.trim().length > 0);
+        const pages = (window.writingPages && window.writingPages[q.id]) ? window.writingPages[q.id] : [];
+        const hasPhotos = pages.length > 0 || Boolean(entry && entry.essay_images && entry.essay_images.length > 0);
+        if (hasText || hasPhotos) {
+          isAnswered = true;
+        }
+      } else {
+        const entry = clientAnswers.get(q.id);
+        if (entry !== undefined && entry !== null) {
+          const ans = typeof entry === 'object' ? entry.answer : entry;
+          if (ans !== undefined && ans !== null && String(ans).trim() !== '' && ans !== -1) {
+            isAnswered = true;
+          }
+        }
+      }
+
+      if (!isAnswered) {
+        const qLabel = (testData.sections.length > 1)
+          ? `Part ${sec.part_number || (sIdx + 1)} Q${qIdx + 1}`
+          : `Question ${qIdx + 1}`;
+        unansweredList.push(qLabel);
+      }
+    });
+  });
 
   const wordWarnings = [];
-  testData.sections.forEach(sec => {
+  testData.sections.forEach((sec, sIdx) => {
     (sec.questions || []).forEach((q, idx) => {
       if (q.question_type === 'writing') {
         const entry = clientAnswers.get(q.id);
         const mode = entry ? (entry.mode || 'type') : 'type';
         if (mode === 'photo') {
           // Photo mode: validated by attached page count, word count evaluated via OCR on backend
-          const pages = (window.writingPages && window.writingPages[q.id]) ? window.writingPages[q.id] : [];
-          if (pages.length === 0) {
-            // Handled as unanswered question
-          }
         } else {
           const count = entry ? (entry.word_count || 0) : 0;
           if (q.min_words && count < q.min_words) {
-            wordWarnings.push(`<b>Part ${sec.part_number} Q${idx + 1}</b> response has ${count} words (Minimum requested: ${q.min_words}).`);
+            wordWarnings.push(`<b>Part ${sec.part_number || (sIdx + 1)} Q${idx + 1}</b> response has ${count} words (Minimum requested: ${q.min_words}).`);
           } else if (q.max_words && count > q.max_words) {
-            wordWarnings.push(`<b>Part ${sec.part_number} Q${idx + 1}</b> response has ${count} words (Maximum requested: ${q.max_words}).`);
+            wordWarnings.push(`<b>Part ${sec.part_number || (sIdx + 1)} Q${idx + 1}</b> response has ${count} words (Maximum requested: ${q.max_words}).`);
           }
         }
       }
     });
   });
 
-  if (unansweredCount > 0 || wordWarnings.length > 0) {
+  if (unansweredList.length > 0 || wordWarnings.length > 0) {
     let warningHtml = '';
-    if (unansweredCount > 0) {
-      warningHtml += `<p>⚠️ You have <b>${unansweredCount} unanswered question${unansweredCount === 1 ? '' : 's'}</b> out of ${total} total questions.</p>`;
+    if (unansweredList.length > 0) {
+      warningHtml += `<p>⚠️ You have <b>${unansweredList.length} unanswered question${unansweredList.length === 1 ? '' : 's'}</b>:<br><span style="font-weight:600; color:var(--pen);">${unansweredList.join(', ')}</span></p>`;
     }
     if (wordWarnings.length > 0) {
       warningHtml += `<p>⚠️ <b>Word-Count Boundaries:</b><br>${wordWarnings.join('<br>')}</p>`;
     }
-    warningHtml += `<p>Would you like to review your responses, or confirm and submit your exam now?</p>`;
+    warningHtml += `<p style="margin-top:12px; font-weight:600; color:var(--ink);">Submit anyway?</p>`;
 
     document.getElementById('submit-warning-body').innerHTML = warningHtml;
+    const confirmBtn = document.getElementById('submit-warning-confirm-btn');
+    if (confirmBtn) confirmBtn.textContent = 'Submit anyway';
     document.getElementById('submit-warning-modal').style.display = 'flex';
   } else {
     executeSubmission('normal');
