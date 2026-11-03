@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { loadPage } from '../helpers/loadPage.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -9,8 +10,7 @@ console.log('=====================================================');
 console.log('   TESTING MOBILE FULLSCREEN RE-ENTRY & FALLBACK     ');
 console.log('=====================================================');
 
-const htmlPath = path.join(__dirname, '..', 'public', 'online-test.html');
-const htmlContent = fs.readFileSync(htmlPath, 'utf8');
+const htmlContent = loadPage('online-test.html');
 
 // 1. Verify CSS definition
 console.log('\n[TEST 1] Verifying .ot-mobile-pseudo-fullscreen CSS...');

@@ -61,31 +61,59 @@
 
 ## 📂 Project Structure
 
+The backend is a **modular monolith organized by feature**: one Express server and one database. Each feature lives in its own module under `src/modules/`. Shared infrastructure (config, database, middleware, external services, helpers) lives in its own folders. Each module exports a `registerXRoutes(app)` function, and `src/app.js` calls them in a fixed order.
+
 ```text
 halo-book/
-├── public/                       # Frontend application assets
-│   ├── admin.js                  # Teacher authorization & user management
-│   ├── assignments.js            # Listening & MCQ test builder
-│   ├── dashboard.js              # Teacher statistics & analytics
-│   ├── index.html                # Teacher management console & review portal
-│   ├── login.html                # Teacher authentication portal
-│   ├── mcq-test.html             # Student listening/MCQ exam view
-│   ├── online-test.html          # Student full proctored exam environment
-│   ├── online-tests.js           # Online tests creation & review canvas
-│   ├── shared.js                 # Shared UI components & notifications
-│   ├── submissions.js            # Grading, submissions & diagnostic reports
-│   ├── submit.html               # Student standalone assignment submission portal
-│   └── uploads/                  # Local storage fallback for option images & audio
-├── scripts/                      # Verification, testing & audit test suite
-│   ├── capture_evidence.mjs      # Headless browser screenshot capture
-│   ├── test_option_images.mjs    # Option image upload integration test
-│   ├── test_photo_proctoring.mjs # Proctoring & 2-minute grace period test
-│   └── verify_audit_final.mjs    # Architecture & route collision validator
-├── .env.example                  # Environment variable configuration template
-├── .gitignore                    # Git ignore specifications
-├── package.json                  # Dependencies & npm scripts
-├── server.js                     # Main Express server & API endpoints
-└── README.md                     # Project documentation
+├── server.js                           # Entry point: loads config, initializes DB, starts the HTTP server
+├── src/
+│   ├── app.js                          # Express app: global middleware, feature routes, static pages, 404/error handlers
+│   ├── paths.js                        # Project-root directory used to resolve public/ and uploads/
+│   ├── config/
+│   │   └── env.js                      # Environment variables, JWT secret, root/admin email rules, password policy
+│   ├── db/
+│   │   ├── client.js                   # LibSQL / Turso client
+│   │   └── initDatabase.js             # Schema creation & column migrations (runs on startup)
+│   ├── middleware/
+│   │   ├── auth.js                     # authenticateToken, requireApprovedUser, requireAdmin
+│   │   ├── rateLimit.js                # In-memory IP rate limiter
+│   │   └── uploads.js                  # Multer upload configurations
+│   ├── integrations/
+│   │   ├── gemini.js                   # Google Gemini client & retrying callGemini
+│   │   ├── googleOAuth.js              # Google sign-in verification client
+│   │   └── storage.js                  # Filebase/S3 uploads, signed URLs, deletion, local-disk fallback
+│   ├── lib/                            # Pure helpers: pdf.js, text.js, fileTypes.js, deviceId.js, delay.js
+│   ├── jobs/
+│   │   └── cleanExpiredAssignments.js  # Hourly expired-assignment cleanup
+│   └── modules/
+│       ├── auth/                       # /api/auth/*        – register, login, Google sign-in, session
+│       ├── admin/                      # /api/admin/users/* – teacher authorization & user management
+│       ├── assignments/                # Assignment bundles, tasks, deadlines, public bundle/status
+│       ├── submissions/                # Student essay submission & AI batch marking
+│       ├── listening-tests/            # /api/mcq/*         – listening/MCQ test builder, attempts, diagnostics
+│       └── online-tests/               # /api/online-tests/* – exam ingestion, review canvas, proctored attempts, grading
+├── public/                             # Frontend (vanilla JS, no build step)
+│   ├── index.html                      # Teacher management console & review portal
+│   ├── login.html                      # Teacher authentication portal
+│   ├── submit.html                     # Student standalone assignment submission portal
+│   ├── mcq-test.html                   # Student listening/MCQ exam view
+│   ├── online-test.html                # Student full proctored exam environment
+│   ├── assets/
+│   │   ├── css/                        # One stylesheet per page
+│   │   └── js/
+│   │       ├── shared/shared.js        # Shared UI components & notifications
+│   │       ├── teacher/                # dashboard, assignments, submissions, admin, online-tests, login
+│   │       └── student/                # submit, mcq-test, online-test (proctoring & exam runtime)
+│   └── uploads/                        # Local storage fallback for option images & audio
+├── tests/
+│   ├── audit/verify_audit_final.mjs    # Architecture & route collision validator
+│   ├── frontend/                       # Proctoring, photo grace period & fullscreen recovery tests
+│   ├── integration/test_option_images.mjs  # Option image upload integration test
+│   └── helpers/loadPage.mjs            # Rebuilds a page with its CSS/JS inlined, for source-level tests
+├── tools/capture_evidence.mjs          # Headless browser screenshot capture
+├── .env.example                        # Environment variable configuration template
+├── package.json                        # Dependencies & npm scripts
+└── README.md                           # Project documentation
 ```
 
 ---
@@ -148,13 +176,15 @@ Run the built-in validation suite:
 
 ```bash
 # 1. Architectural audit (checks zero duplicate routes, zero foreign key locks, clean functions)
-node scripts/verify_audit_final.mjs
+node tests/audit/verify_audit_final.mjs
 
-# 2. Proctoring & photo-capture 2-minute grace period simulation
-node scripts/test_photo_proctoring.mjs
+# 2. Proctoring, photo-capture grace period & fullscreen recovery simulations
+node tests/frontend/test_photo_proctoring.mjs
+node tests/frontend/test_fullscreen_recovery.mjs
+node tests/frontend/test_mobile_fullscreen_fallback.mjs
 
 # 3. Dedicated option image upload integration test
-node scripts/test_option_images.mjs
+node tests/integration/test_option_images.mjs
 ```
 
 ---

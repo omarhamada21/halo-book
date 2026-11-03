@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { loadPage } from '../helpers/loadPage.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -9,8 +10,7 @@ console.log('=====================================================');
 console.log('   TESTING MULTI-PAGE FULLSCREEN RECOVERY TIMER     ');
 console.log('=====================================================');
 
-const htmlPath = path.join(__dirname, '..', 'public', 'online-test.html');
-const htmlContent = fs.readFileSync(htmlPath, 'utf8');
+const htmlContent = loadPage('online-test.html');
 
 // 1. Verify HTML element presence
 console.log('\n[TEST 1] Verifying DOM elements in online-test.html...');

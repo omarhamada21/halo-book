@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { loadPage } from '../helpers/loadPage.mjs';
 
 console.log('========================================================');
 console.log('   VERIFYING PROCTORING & PHOTO GRACE DETECTION LOGIC   ');
@@ -9,7 +10,7 @@ let errors = 0;
 
 // 1. Syntax check for online-test.html script contents
 console.log('\n[TEST 1] Syntax Validation of public/online-test.html scripts...');
-const htmlContent = fs.readFileSync('public/online-test.html', 'utf8');
+const htmlContent = loadPage('online-test.html');
 
 const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
 let match;
@@ -52,7 +53,7 @@ console.log('\n[TEST 3] Scanning for PRAGMA foreign_keys = ON...');
 function scanDirForPragma(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'scripts' || entry.name.endsWith('.db')) continue;
+    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'tests' || entry.name.endsWith('.db')) continue;
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       scanDirForPragma(fullPath);

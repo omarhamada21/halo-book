@@ -12,7 +12,7 @@ console.log('\n[CHECK 1] Scanning for PRAGMA foreign_keys = ON...');
 function scanDirForPragma(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'scripts' || entry.name.endsWith('.db')) continue;
+    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'tests' || entry.name.endsWith('.db')) continue;
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       scanDirForPragma(fullPath);
@@ -32,7 +32,13 @@ if (errors === 0) {
 
 // 2. Check for duplicate Express routes in server.js
 console.log('\n[CHECK 2] Scanning for duplicate Express routes in server.js...');
-const serverJs = fs.readFileSync('server.js', 'utf8');
+// Backend code is split across server.js and src/** — scan all of it as one source.
+function listJsFiles(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap((e) =>
+    e.isDirectory() ? listJsFiles(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []);
+}
+const backendFiles = ['server.js', ...listJsFiles('src')];
+const serverJs = backendFiles.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 const routeRegex = /app\.(get|post|put|delete|patch)\s*\(\s*(['"][^'"]+['"])/g;
 const seenRoutes = new Map();
 let routeMatch;
@@ -52,11 +58,11 @@ console.log(`✓ Scanned ${seenRoutes.size} unique Express endpoints in server.j
 // 3. Check for duplicate function declarations in server.js and public/*.js
 console.log('\n[CHECK 3] Scanning for duplicate function declarations...');
 const targetFiles = [
-  'server.js',
-  'public/online-tests.js',
-  'public/assignments.js',
-  'public/shared.js',
-  'public/submissions.js'
+  ...backendFiles,
+  'public/assets/js/teacher/online-tests.js',
+  'public/assets/js/teacher/assignments.js',
+  'public/assets/js/shared/shared.js',
+  'public/assets/js/teacher/submissions.js'
 ];
 
 for (const relPath of targetFiles) {
